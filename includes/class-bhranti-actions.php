@@ -191,7 +191,7 @@ final class Bhranti_Actions {
 	 * @return array Tool definitions keyed by tool name.
 	 */
 	public static function catalog() {
-		return array(
+		$catalog = array(
 			'wp_request'  => array(
 				'description' => 'Use reviewed core /wp/v2 routes. GET discovers content, types, taxonomies, comments, public users, installed themes, templates, styles and safe settings. GET /wp/v2/themes lists installed themes; theme writes are unavailable. POST/PUT/PATCH creates or updates content and comments, updates media descriptions, existing terms/menus, published templates, navigation, styles and safe settings. DELETE only trashes reversible content/comments after human confirmation. No arbitrary routes, user changes, secrets, files or core changes. Use plugin_request for reviewed plugin management and generate_image for native AI image creation. Use GET to discover IDs/schema before writing. New taxonomy terms and classic menus, arbitrary media upload, template source resets, deletion of existing templates and permanent deletes are unsupported. Examples: {"method":"GET","path":"/wp/v2/types"}, {"method":"GET","path":"/wp/v2/taxonomies"}, {"method":"POST","path":"/wp/v2/pages","params":{"title":"New page","content":"<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->","status":"draft"}}. Do not send OPTIONS requests.',
 				'parameters'  => array(
@@ -248,6 +248,7 @@ final class Bhranti_Actions {
 				),
 			),
 		);
+		return $catalog + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog();
 	}
 
 	/**
@@ -267,6 +268,12 @@ final class Bhranti_Actions {
 		}
 		if ( is_array( $command ) && in_array( $command['tool'] ?? '', array( 'plugin_request', 'plugin_search' ), true ) ) {
 			return Bhranti_Plugins::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
+		}
+		if ( is_array( $command ) && 'bhranti_task_limit' === ( $command['tool'] ?? '' ) ) {
+			return Bhranti_Settings::task_execute( $command, $requester_id, $session_id );
+		}
+		if ( is_array( $command ) && 'commerce_request' === ( $command['tool'] ?? '' ) ) {
+			return Bhranti_Commerce::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
 		}
 		if ( is_array( $command ) && 'generate_image' === ( $command['tool'] ?? '' ) ) {
 			return Bhranti_Media::execute( $command, $requester_id, $session_id );
@@ -505,6 +512,12 @@ final class Bhranti_Actions {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
+		}
+		if ( 0 === strpos( $action_id, 'task_' ) ) {
+			return Bhranti_Settings::task_rollback( $action_id, $requester_id, $session_id );
+		}
+		if ( 0 === strpos( $action_id, 'shop_' ) ) {
+			return Bhranti_Commerce::rollback( $action_id, $requester_id, $session_id );
 		}
 		if ( 0 === strpos( $action_id, 'plugin_' ) ) {
 			return Bhranti_Plugins::rollback( $action_id, $requester_id, $session_id );

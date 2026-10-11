@@ -52,6 +52,7 @@ $bhranti_remove_site_data = static function () {
 	delete_option( 'bhranti_settings' );
 	delete_option( 'bhranti_settings_lock' );
 	delete_option( 'bhranti_plugins_lock' );
+	delete_option( 'bhranti_commerce_lock' );
 	if ( get_option( 'bhranti_role_owned' ) ) {
 		remove_role( 'bhranti_agent' );
 		delete_option( 'bhranti_role_owned' );

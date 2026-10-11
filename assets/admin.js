@@ -13,7 +13,8 @@
 	const scrollPositions = new Map(), disclosureStates = new Map();
 	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
-	let editorControl = null;
+	let editorControl = null, siteControl = null;
+	const settingsEvents = new Map();
 	let triggerFingerprint = '';
 	function rememberOpen(open) { if (settings.isAdmin) { try { if (open) window.sessionStorage.setItem(openStorageKey, '1'); else window.sessionStorage.removeItem(openStorageKey); } catch (error) { /* Storage can be unavailable in private browsing. */ } } }
 	if (settings.isAdmin) { try { settings.autoOpen = settings.autoOpen || window.sessionStorage.getItem(openStorageKey) === '1'; } catch (error) { /* The explicit URL flag still works without storage. */ } }
@@ -128,16 +129,19 @@
 		if (active) {
 			try {
 				const editor = wp.data && wp.data.select('core/editor');
-				dirty = !!(editor && editor.isEditedPostDirty && editor.isEditedPostDirty());
+				dirty = !!(editor && (editor.isEditedPostDirty && editor.isEditedPostDirty() || editor.isSavingPost && editor.isSavingPost() || editor.isAutosavingPost && editor.isAutosavingPost()));
 				const site = wp.data && wp.data.select('core/edit-site'), core = wp.data && wp.data.select('core');
-				const id = editor && editor.getCurrentPostId ? editor.getCurrentPostId() : site && site.getEditedPostId && site.getEditedPostId();
-				const type = editor && editor.getCurrentPostType ? editor.getCurrentPostType() : site && site.getEditedPostType && site.getEditedPostType();
+				const id = editor && editor.getCurrentPostId && editor.getCurrentPostId() || site && site.getEditedPostId && site.getEditedPostId();
+				const type = editor && editor.getCurrentPostType && editor.getCurrentPostType() || site && site.getEditedPostType && site.getEditedPostType();
 				if (core && core.hasEditsForEntityRecord && id && type) { native = true; dirty = dirty || core.hasEditsForEntityRecord('postType', type, id); }
+				if (core && core.isSavingEntityRecord && id && type) dirty = dirty || core.isSavingEntityRecord('postType', type, id);
 				if (core && typeof core.__experimentalGetDirtyEntityRecords === 'function') dirty = dirty || core.__experimentalGetDirtyEntityRecords().length > 0;
 			} catch (error) { /* Classic editors use the native autosave change detector below. */ }
 			try { if (!native && wp.autosave && wp.autosave.server && wp.autosave.server.postChanged) dirty = dirty || wp.autosave.server.postChanged(); } catch (error) { /* The autosave module may not be initialized yet. */ }
 		}
-		return { editor_active: active, unsaved_changes: !!dirty };
+		const form = document.getElementById('bhranti-settings-app');
+		const formBusy = !!form && form.dataset.bhrantiBusy !== 'false';
+		return { editor_active: active, unsaved_changes: !!(dirty || pageFormDirty || formBusy || form && form.dataset.bhrantiDirty === 'true') };
 	}
 	function nativeEditorSnapshot() {
 		try {
@@ -168,7 +172,7 @@
 		Object.assign(editorControl.overlay.style, { top: rect.top + 'px', left: rect.left + 'px', width: rect.width + 'px', height: rect.height + 'px' });
 		document.dispatchEvent(new CustomEvent('bhranti:editor-launcher-position'));
 	}
-	function syncEditorControl() {
+	function syncPostControl() {
 		const run = currentRun(), snapshot = nativeEditorSnapshot(), editor = document.querySelector('#editor.block-editor__container'), frame = editor && editor.querySelector('.interface-interface-skeleton');
 		const key = snapshot && resultKey() + ':' + snapshot.type + ':' + snapshot.id;
 		const inFlight = run && run.phase === 'action' && editorControl && editorControl.key === key;
@@ -197,6 +201,43 @@
 		window.addEventListener('resize', positionEditorControl); positionEditorControl();
 		syncTrigger();
 	}
+	function releaseSiteControl() {
+		if (!siteControl) return;
+		const control = siteControl; siteControl = null;
+		if (control.observer) control.observer.disconnect();
+		window.removeEventListener('resize', positionSiteControl); window.removeEventListener('scroll', positionSiteControl, true);
+		['inert', 'aria-busy'].forEach((name) => { if (control.attributes[name] === null) control.frame.removeAttribute(name); else control.frame.setAttribute(name, control.attributes[name]); });
+		control.overlay.remove();
+	}
+	function positionSiteControl() {
+		if (!siteControl) return;
+		const rect = siteControl.frame.getBoundingClientRect(), bar = document.getElementById('wpadminbar');
+		const top = Math.max(0, rect.top, bar && triggerAvailable(bar) ? bar.getBoundingClientRect().bottom : 0), left = Math.max(0, rect.left);
+		const right = Math.min(window.innerWidth, rect.right, state.open ? root.getBoundingClientRect().left : window.innerWidth), bottom = Math.min(window.innerHeight, rect.bottom);
+		Object.assign(siteControl.overlay.style, { top: top + 'px', left: left + 'px', width: Math.max(0, right - left) + 'px', height: Math.max(0, bottom - top) + 'px' });
+	}
+	function syncSiteControl() {
+		const run = currentRun(), key = resultKey(), inFlight = run && run.phase === 'action' && siteControl && siteControl.key === key;
+		const postType = (settings.context || {}).post_type;
+		const postEditor = nativeEditorSnapshot() || /\/(?:post|post-new)\.php$/.test(window.location.pathname) && (!postType || ['post', 'page'].includes(postType));
+		const proven = run && (run.next_action || ['action', 'tool'].includes(run.phase) || (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id));
+		if (pageSuspended || editorControl || postEditor || !run || run.status !== 'running' || run.interrupted || !proven || (state.error || state.editorError || state.stopRequested) && !inFlight || state.pausedForEditor || !state.open && !inFlight || editorState().unsaved_changes) { releaseSiteControl(); return; }
+		const frame = settings.isAdmin ? document.querySelector('.edit-site-layout') || document.querySelector('#editor.block-editor__container') || document.querySelector('#wpbody-content') : Array.from(document.querySelectorAll('.wp-site-blocks, #page, main, [role="main"]')).find((node) => !node.contains(root) && !node.querySelector('#wpadminbar'));
+		const focused = document.activeElement;
+		let gesturing = false;
+		try { const blocks = wp.data && wp.data.select('core/block-editor'); gesturing = !!(blocks && (blocks.isDraggingBlocks && blocks.isDraggingBlocks() || blocks.isMultiSelecting && blocks.isMultiSelecting())); } catch (error) { /* Ordinary admin pages have no block editor. */ }
+		if (!frame || gesturing || window._wpCollaborationEnabled || frame.contains(root) || frame.querySelector('#wpadminbar') || focused && frame.contains(focused) && focused.closest('input, textarea, select, [contenteditable="true"], iframe') || Array.from(document.querySelectorAll('.components-modal__screen-overlay, .media-modal, .components-popover [role="dialog"]')).some((node) => !root.contains(node) && !node.hidden && node.getClientRects().length)) { releaseSiteControl(); return; }
+		if (siteControl && siteControl.key === key && siteControl.frame === frame) { positionSiteControl(); return; }
+		releaseSiteControl();
+		const overlay = element('div', 'bhranti-site-control', element('h2', '', __('Site is under Bhranti’s control', 'bhranti')));
+		overlay.setAttribute('role', 'status'); overlay.setAttribute('aria-live', 'polite'); overlay.tabIndex = -1;
+		siteControl = { key, frame, overlay, attributes: { inert: frame.getAttribute('inert'), 'aria-busy': frame.getAttribute('aria-busy') }, observer: null };
+		document.body.appendChild(overlay); if (frame.contains(focused)) overlay.focus({ preventScroll: true });
+		frame.setAttribute('inert', ''); frame.setAttribute('aria-busy', 'true');
+		if (window.ResizeObserver) { siteControl.observer = new window.ResizeObserver(positionSiteControl); siteControl.observer.observe(frame); }
+		window.addEventListener('resize', positionSiteControl); window.addEventListener('scroll', positionSiteControl, true); positionSiteControl();
+	}
+	function syncEditorControl() { syncPostControl(); syncSiteControl(); }
 	function nativeEditorChanged(schedule = true) {
 		syncEditorControl();
 		const next = nativeEditorSnapshot(), previous = editorSync.snapshot;
@@ -406,14 +447,27 @@
 		const results = state.results.get(key); if (!results) return;
 		(state.session.events || []).forEach((event) => { if (event.type === 'action' && event.success === true && event.run_id === run.id && ['write', 'image', 'rollback'].includes(event.operation) && safeTarget(event.target)) results.set(String(event.id), event); });
 	}
-	function markExistingEvents() { syncEditorControl(); observeEditorChanges(); collectResults(); (state.session && state.session.events || []).forEach((event) => state.seen.add(String(event.id))); }
+	function observeSettingsChanges() {
+		const run = currentRun(), key = resultKey(); if (!run || !key) return;
+		const events = state.session.events || [], seen = settingsEvents.get(key);
+		if (!seen) { settingsEvents.set(key, new Set(events.map((event) => String(event.id)))); return; }
+		events.forEach((event) => {
+			const id = String(event.id || ''); if (!id || seen.has(id)) return; seen.add(id);
+			if (event.type === 'action' && event.success === true && event.run_id === run.id && ['write', 'rollback'].includes(event.operation) && event.target && event.target.type === 'bhranti_settings' && safeTarget(event.target)) window.dispatchEvent(new CustomEvent('bhranti:settings-changed'));
+		});
+	}
+	function markExistingEvents() { syncEditorControl(); observeEditorChanges(); observeSettingsChanges(); collectResults(); (state.session && state.session.events || []).forEach((event) => state.seen.add(String(event.id))); }
 	function safeTarget(target) {
 		if (!target || typeof target.url !== 'string' || !target.url.trim()) return null;
 		try {
 			const url = new URL(target.url, window.location.href);
 			if (url.origin !== window.location.origin || !['http:', 'https:'].includes(url.protocol)) return null;
 			const admin = new URL(settings.connectorsUrl || '/wp-admin/options-connectors.php', window.location.origin).pathname.replace(/[^/]+$/, '');
-			if (url.pathname.startsWith(admin) && !['post.php', 'edit.php', 'revision.php', 'site-editor.php', 'upload.php', 'edit-tags.php', 'term.php', 'edit-comments.php', 'options-general.php', 'options-reading.php', 'nav-menus.php', 'comment.php', 'plugins.php'].includes(url.pathname.slice(admin.length))) return null;
+			const ownSettings = target.type === 'bhranti_settings' && url.pathname === admin + 'admin.php' && url.searchParams.get('page') === 'bhranti' && Array.from(url.searchParams.keys()).every((key) => key === 'page');
+			const commerceSettings = target.type === 'woocommerce_settings' && url.pathname === admin + 'admin.php' && url.searchParams.get('page') === 'wc-settings' && ['general', 'products', 'advanced'].includes(url.searchParams.get('tab')) && Array.from(url.searchParams.keys()).every((key) => ['page', 'tab'].includes(key)) && ['page', 'tab'].every((key) => url.searchParams.getAll(key).length === 1);
+			const productCategory = target.type === 'product_cat' && url.pathname === admin + 'term.php' && url.searchParams.get('taxonomy') === 'product_cat' && /^[1-9]\d*$/.test(url.searchParams.get('tag_ID') || '') && url.searchParams.get('post_type') === 'product' && Array.from(url.searchParams.keys()).every((key) => ['taxonomy', 'tag_ID', 'post_type'].includes(key)) && ['taxonomy', 'tag_ID', 'post_type'].every((key) => url.searchParams.getAll(key).length === 1);
+			if (url.pathname === admin + 'term.php' && (target.type === 'product_cat' || url.searchParams.get('taxonomy') === 'product_cat') && !productCategory) return null;
+			if (url.pathname.startsWith(admin) && !ownSettings && !commerceSettings && !productCategory && !['post.php', 'edit.php', 'revision.php', 'site-editor.php', 'upload.php', 'edit-tags.php', 'term.php', 'edit-comments.php', 'options-general.php', 'options-reading.php', 'nav-menus.php', 'comment.php', 'plugins.php'].includes(url.pathname.slice(admin.length))) return null;
 			if (url.searchParams.has('_wpnonce') || url.searchParams.get('action') && !['edit', 'view'].includes(url.searchParams.get('action')) && !(url.pathname.endsWith('/comment.php') && url.searchParams.get('action') === 'editcomment')) return null;
 			url.searchParams.set('bhranti', '1'); if (state.session) url.searchParams.set('bhranti_session', state.session.id);
 			return url;
@@ -489,7 +543,11 @@
 		}
 		if (state.open) { const control = root.querySelector('#bhranti-composer'); if (control && !control.disabled) control.focus(); else root.querySelector('#bhranti-close').focus(); continueRun(); }
 	}
+	function closeUnavailable() {
+		return !!(siteControl && currentRun() && currentRun().phase === 'action' && !Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a, [data-bhranti-open]')).some(triggerAvailable));
+	}
 	function closePanel() {
+		if (closeUnavailable()) return;
 		rememberOpen(false);
 		const url = new URL(window.location.href); if (url.searchParams.has('bhranti')) { url.searchParams.delete('bhranti'); window.history.replaceState(null, '', url); }
 		state.open = false; state.menu = false; root.hidden = true; document.body.classList.remove('bhranti-panel-open'); syncTrigger();
@@ -834,6 +892,7 @@
 	function render() {
 		syncEditorControl();
 		observeEditorChanges();
+		observeSettingsChanges();
 		// Native editor focus updates can otherwise replace a button before its click fires.
 		if (interacting) { renderPending = true; return; }
 		renderPending = false;
@@ -841,7 +900,7 @@
 		root.querySelectorAll('details[data-bhranti-disclosure]').forEach((node) => { if (String(node.open) !== node.dataset.openAtRender) { disclosureStates.set(node.dataset.bhrantiDisclosure, node.open); node.dataset.openAtRender = String(node.open); } });
 		if (!state.busy && !state.stepping && !activeRun() && state.workspace.agents && !state.workspace.agents.some((agent) => agent.id === state.agentId)) state.agentId = 'bhranti';
 		const context = runtimeContext(), retry = currentRun() && currentRun().status === 'running' ? Math.max(0, Math.ceil(Number(currentRun().retry_at) - Date.now() / 1000)) : 0;
-		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
+		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, closeUnavailable(), context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
 		if (fingerprint === renderedFingerprint) { syncTrigger(); return; }
 		renderedFingerprint = fingerprint;
 		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = ['bhranti-composer', 'bhranti-chat-search'].includes(focusId) ? [focused.selectionStart, focused.selectionEnd] : null;
@@ -855,7 +914,7 @@
 		const start = iconButton(__('New chat', 'bhranti'), 'bhranti-icon-button', newChat, 'plus', 'bhranti-new-chat'); start.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const controls = element('div', 'bhranti-header-controls', chats, start), trailing = element('div', 'bhranti-header-controls');
 		if (settings.settingsUrl) { const link = element('a', 'bhranti-icon-button', icon('settings')); link.id = 'bhranti-settings'; link.href = settings.settingsUrl; link.setAttribute('aria-label', __('Bhranti Settings', 'bhranti')); link.title = __('Bhranti Settings', 'bhranti'); trailing.appendChild(link); }
-		trailing.appendChild(iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'));
+		const close = iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'); close.disabled = closeUnavailable(); if (close.disabled) close.title = __('Available after the current change finishes', 'bhranti'); trailing.appendChild(close);
 		const brand = element('h2', 'bhranti-brand', __('Bhranti', 'bhranti')); brand.id = 'bhranti-panel-title';
 		const header = element('header', 'bhranti-header', controls, brand, trailing); header.id = 'bhranti-header';
 		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, attached rendered-page HTML/text, editor context and any screenshot you choose with your configured WordPress AI provider. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
@@ -876,11 +935,17 @@
 	}
 
 	window.addEventListener('bhranti:settings-saved', async () => {
-		pageFormDirty = false; await refreshWorkspaceQuietly();
+		await refreshWorkspaceQuietly();
 		render();
 	});
+	window.addEventListener('bhranti:settings-state', () => {
+		const form = document.getElementById('bhranti-settings-app'); if (!form) return;
+		pageFormDirty = form.dataset.bhrantiDirty === 'true'; syncEditorControl();
+		if (heartbeatToken && !pageSuspended) reportEditor().catch(() => {});
+		if (state.open) render();
+	});
 	['input', 'change'].forEach((name) => document.addEventListener(name, (event) => {
-		if (!editorIsOpen() && !root.contains(event.target) && event.target.closest && event.target.closest('#wpbody-content form, #bhranti-settings-app')) pageFormDirty = true;
+		if (!document.querySelector('#editor.block-editor__container, .edit-site-layout') && !/\/site-editor\.php$/.test(window.location.pathname) && !root.contains(event.target) && event.target.closest && !event.target.closest('#bhranti-settings-app') && event.target.closest('#wpbody-content form, .wp-site-blocks form, #page form, main form, [role="main"] form')) { pageFormDirty = true; syncEditorControl(); if (heartbeatToken && !pageSuspended) reportEditor().catch(() => {}); }
 	}));
 	['focusin', 'focusout'].forEach((name) => document.addEventListener(name, () => window.setTimeout(nativeEditorChanged, 0), true));
 	function finishInteraction(event) {
@@ -905,11 +970,11 @@
 	window.addEventListener('resize', syncTrigger);
 	root.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); if (state.menu) { state.menu = false; render(); root.querySelector('#bhranti-chats').focus(); } else closePanel(); } });
 	window.addEventListener('keydown', (event) => {
-		if (!editorControl || !(event.ctrlKey || event.metaKey) || !['z', 'y', 's'].includes(event.key.toLowerCase())) return;
+		if ((!editorControl && !siteControl) || !(event.ctrlKey || event.metaKey) || !['z', 'y', 's'].includes(event.key.toLowerCase())) return;
 		// Core undo/save shortcuts listen on document even while its editor is inert.
 		event.stopImmediatePropagation();
-		const composerUndo = event.key.toLowerCase() !== 's' && root.contains(event.target) && event.target.closest && event.target.closest('textarea, input, [contenteditable="true"]');
-		if (!composerUndo) event.preventDefault();
+		const textUndo = event.key.toLowerCase() !== 's' && event.target.closest && event.target.closest('textarea, input, [contenteditable="true"]') && (root.contains(event.target) || siteControl && !editorControl && !siteControl.frame.contains(event.target));
+		if (!textUndo) event.preventDefault();
 	}, true);
 	if (wp.data && wp.data.subscribe) wp.data.subscribe(() => {
 		nativeEditorChanged();
@@ -923,7 +988,7 @@
 		} catch (error) { return; }
 		if (fingerprint !== contextFingerprint) { contextFingerprint = fingerprint; if (state.open) render(); }
 	});
-	window.addEventListener('pagehide', () => { pageSuspended = true; releaseEditorControl(); composing = false; interacting = false; renderPending = false; window.clearTimeout(interactionTimer); interactionTimer = null; window.clearInterval(heartbeatTimer); heartbeatTimer = null; window.clearTimeout(backgroundTimer); backgroundTimer = null; window.clearInterval(progressTimer); progressTimer = null; window.clearTimeout(editorSync.timer); editorSync.timer = null; });
+	window.addEventListener('pagehide', () => { pageSuspended = true; releaseEditorControl(); releaseSiteControl(); composing = false; interacting = false; renderPending = false; window.clearTimeout(interactionTimer); interactionTimer = null; window.clearInterval(heartbeatTimer); heartbeatTimer = null; window.clearTimeout(backgroundTimer); backgroundTimer = null; window.clearInterval(progressTimer); progressTimer = null; window.clearTimeout(editorSync.timer); editorSync.timer = null; });
 	window.addEventListener('pageshow', (event) => { if (!event.persisted) return; pageSuspended = false; startHeartbeat(); if (editorSync.pending) { editorSync.pending.attempts = 0; scheduleEditorChanges(); } if (state.open) openPanel(); else scheduleBackgroundObservation(true); });
 	startHeartbeat(); if (!settings.autoOpen) scheduleBackgroundObservation(true);
 	syncTrigger(); if (settings.autoOpen) openPanel();

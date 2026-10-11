@@ -188,8 +188,8 @@ body:not(.wp-admin).bhranti-panel-open { width: calc(100% - var(--bhranti-panel-
 	font-weight: 400;
 	color: #c3c4c7;
 }
-.bhranti-editor-control { position: fixed; z-index: 99980; display: grid; place-items: center; box-sizing: border-box; padding: 24px; overflow: auto; background: rgba(30, 30, 30, .72); backdrop-filter: blur(2px); color: #f0f0f1; border-radius: 12px; outline: none; }
-.bhranti-editor-control h2 { margin: 0; padding: 0; max-width: 100%; color: inherit; font-size: clamp(16px, 1.25vw, 20px); font-weight: 500; line-height: 1.5; text-align: center; text-wrap: balance; }
+.bhranti-editor-control, .bhranti-site-control { position: fixed; z-index: 99980; display: grid; place-items: center; box-sizing: border-box; padding: 24px; overflow: auto; background: rgba(30, 30, 30, .72); backdrop-filter: blur(2px); color: #f0f0f1; border-radius: 12px; outline: none; }
+.bhranti-editor-control h2, .bhranti-site-control h2 { margin: 0; padding: 0; max-width: 100%; color: inherit; font-size: clamp(16px, 1.25vw, 20px); font-weight: 500; line-height: 1.5; text-align: center; text-wrap: balance; }
 .bhranti-editor-launcher-slot { display: inline-flex; width: 98px; height: 32px; }
 .bhranti-editor-launcher-fallback { display: inline-flex; align-items: center; }
 .bhranti-editor-launcher-floating { position: fixed; z-index: 99985; pointer-events: none; }

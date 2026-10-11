@@ -40,6 +40,17 @@ final class Bhranti_Progress {
 		if ( isset( $labels[ $tool ] ) ) {
 			$data['summary'] = $labels[ $tool ];
 		}
+		if ( 'bhranti_task_limit' === $tool ) {
+			$data['path']    = '/bhranti/v1/task-limit';
+			$data['summary'] = 'GET' === $method ? __( 'Reading Bhranti Task step limit', 'bhranti' ) : __( 'Updating Bhranti Task step limit', 'bhranti' );
+			$data['details'] = 'POST' === $method ? array( 'max_steps' ) : array();
+			if ( user_can( $requester_id, 'manage_options' ) && user_can( $actor_id, 'manage_options' ) ) {
+				$data['target'] = Bhranti_Settings::task_target();
+			}
+		}
+		if ( 'commerce_request' === $tool ) {
+			$data = array_replace( $data, Bhranti_Commerce::progress( $command, $requester_id, $actor_id ) );
+		}
 		if ( 'plugin_request' === $tool ) {
 			$data['summary'] = 'GET' === $method ? __( 'Reading installed plugin information', 'bhranti' ) : ( 'DELETE' === $method ? __( 'Requesting approval to uninstall a plugin', 'bhranti' ) : __( 'Installing or changing a WordPress plugin', 'bhranti' ) );
 		}
@@ -80,7 +91,7 @@ final class Bhranti_Progress {
 				}
 			}
 		}
-		if ( isset( $args['params'] ) && is_array( $args['params'] ) ) {
+		if ( 'commerce_request' !== $tool && isset( $args['params'] ) && is_array( $args['params'] ) ) {
 			$data['details'] = array_values( array_intersect( array_keys( $args['params'] ), array( 'title', 'content', 'excerpt', 'status', 'featured_media', 'alt_text', 'caption', 'description', 'slug', 'parent', 'menu_order', 'categories', 'tags', 'template', 'styles', 'settings' ) ) );
 		}
 		return $data;

@@ -23,11 +23,16 @@ function session(status = 'complete', extra = {}) {
   return { id: 17, agent_id: 'bhranti', messages: [message], events: [historical], run: { id: runId, status, phase: '', step: 3, background: true, editor: { dirty: false, active: false, write_blocked: false }, ...extra } };
 }
 function fixture(options = {}) {
-  const dom = new JSDOM('<!doctype html><div id="wp-admin-bar-bhranti"><a href="#">Bhranti</a></div><div id="wpbody-content"><form id="native-form"><input id="native-field" value="Unsaved native text"></form></div><div id="bhranti-app" hidden></div>', { url: options.url || 'https://bhranti.wp.local/wp-admin/edit.php?post_type=page', runScripts: 'outside-only', pretendToBeVisual: true });
+  const nativeForm = '<form id="native-form"><input id="native-field" value="Unsaved native text"></form><button id="native-main-button">Native page action</button>';
+  const nativeBar = '<div id="wpadminbar"><div id="wp-admin-bar-bhranti"><a href="#">Bhranti</a></div><form id="adminbarsearch"><input id="adminbar-search" aria-label="Search this site"></form></div><nav id="adminmenu"><a id="native-navigation" href="/wp-admin/index.php">Dashboard</a></nav>';
+  const frameMarkup = options.siteFrame === 'frontend' ? '<header id="native-site-header">Native site header</header><main id="page" class="wp-site-blocks">' + nativeForm + '</main>' : '<div id="wpbody-content">' + (options.siteFrame === 'fse' ? '<div class="edit-site-layout" id="native-site-editor">' + nativeForm + '</div>' : nativeForm) + '</div>';
+  const html = options.siteFrame ? '<!doctype html>' + nativeBar + frameMarkup + '<div id="bhranti-app" hidden></div>' : '<!doctype html><div id="wp-admin-bar-bhranti"><a href="#">Bhranti</a></div><div id="wpbody-content"><form id="native-form"><input id="native-field" value="Unsaved native text"></form></div><div id="bhranti-app" hidden></div>';
+  const dom = new JSDOM(html, { url: options.url || 'https://bhranti.wp.local/wp-admin/edit.php?post_type=page', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   let now = 1791500000000, sequence = 0;
   const timers = new Map(), requests = [], notices = [], subscriptions = [];
-  let localDirty = false, remoteEditor = { dirty: false, active: false, write_blocked: false, stale_dirty: false };
+  let localDirty = false, localSaving = false, localGesture = false, remoteEditor = { dirty: false, active: false, write_blocked: false, stale_dirty: false };
+  const resizeObservers = [], rectangles = new Map();
   const timer = (callback, delay = 0, interval = false) => { const id = ++sequence; timers.set(id, { callback, delay, at: now + delay, interval }); return id; };
   w.Date.now = () => now;
   w.setTimeout = (callback, delay) => timer(callback, delay);
@@ -41,6 +46,19 @@ function fixture(options = {}) {
   w.open = (url) => { w.review.navigation.push({ kind: 'open', url }); return null; };
   Object.defineProperty(w.HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return this.classList.contains('bhranti-stream') ? 1000 : 0; } });
   Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.classList.contains('bhranti-stream') ? 200 : 0; } });
+  if (options.siteFrame) {
+    Object.defineProperty(w, 'innerWidth', { configurable: true, value: 1280 }); Object.defineProperty(w, 'innerHeight', { configurable: true, value: 800 });
+    const rectangle = (left, top, right, bottom) => ({ x: left, y: top, left, top, right, bottom, width: right - left, height: bottom - top, toJSON() { return {}; } });
+    const frame = w.document.querySelector(options.siteFrame === 'frontend' ? 'main' : options.siteFrame === 'fse' ? '.edit-site-layout' : '#wpbody-content');
+    rectangles.set(frame, rectangle(160, 24, 1280, 940)); rectangles.set(w.document.getElementById('bhranti-app'), rectangle(944, 32, 1280, 800)); rectangles.set(w.document.getElementById('wpadminbar'), rectangle(0, 0, 1280, 32));
+    rectangles.forEach((rect, node) => { node.getBoundingClientRect = () => rectangles.get(node); node.getClientRects = () => [rectangles.get(node)]; });
+    w.document.querySelector('#wp-admin-bar-bhranti > a').getClientRects = () => [rectangle(0, 0, 100, 32)];
+    w.ResizeObserver = class { constructor(callback) { this.callback = callback; this.nodes = []; this.disconnected = false; resizeObservers.push(this); } observe(node) { this.nodes.push(node); } disconnect() { this.disconnected = true; } };
+    if (options.settingsForm) {
+      const mount = w.document.createElement('div'); mount.id = 'bhranti-settings-app'; mount.innerHTML = '<input id="settings-field" value="Original settings document">'; frame.appendChild(mount);
+      if (options.settingsForm === 'clean') { mount.dataset.bhrantiDirty = 'false'; mount.dataset.bhrantiBusy = 'false'; }
+    }
+  }
   w.bhrantiSettings = { autoOpen: false, isAdmin: options.isAdmin !== false, userId: 1, backgroundEnabled: !!options.background, connectorsUrl: 'https://bhranti.wp.local/wp-admin/options-connectors.php', settingsUrl: '/wp-admin/admin.php?page=bhranti', context: { screen: options.editor ? 'page' : 'edit-page', ...(options.context || {}) } };
   const workspace = { sessions: [{ id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], user: { name: 'Fixture requester' }, ai: { available: true } };
   let handler = options.handler || (async (request) => {
@@ -53,7 +71,7 @@ function fixture(options = {}) {
     i18n: { __: (text) => text, sprintf: (text, ...values) => { let index = 0; return text.replace(/%[sd]/g, () => values[index++]); } },
     data: {
       subscribe: (callback) => subscriptions.push(callback),
-      select: (store) => store === 'core/editor' && options.editor ? { getCurrentPostId: () => 99, getCurrentPostType: () => 'page', isEditedPostDirty: () => localDirty, getEditedPostAttribute: (name) => name === 'title' ? 'Fixture page' : '' } : undefined,
+      select: (store) => store === 'core/editor' && options.editor ? { getCurrentPostId: () => 99, getCurrentPostType: () => 'page', isEditedPostDirty: () => localDirty, getEditedPostAttribute: (name) => name === 'title' ? 'Fixture page' : '' } : options.siteFrame === 'fse' && store === 'core/edit-site' ? { getEditedPostId: () => 'fixture-theme//home', getEditedPostType: () => 'wp_template' } : options.siteFrame === 'fse' && store === 'core' ? { hasEditsForEntityRecord: () => localDirty, isSavingEntityRecord: () => localSaving, __experimentalGetDirtyEntityRecords: () => localDirty ? [{ kind: 'postType', name: 'wp_template', key: 'fixture-theme//home' }] : [] } : options.siteFrame === 'fse' && store === 'core/block-editor' ? { isDraggingBlocks: () => localGesture, isMultiSelecting: () => false } : undefined,
       dispatch: () => ({ createNotice: (type, text, details) => notices.push({ type, text, ...details }), removeNotice: (id) => { const index = notices.findIndex((notice) => notice.id === id); if (index >= 0) notices.splice(index, 1); } }),
     },
     notices: { store: 'core/notices' },
@@ -65,9 +83,11 @@ function fixture(options = {}) {
   w.document.body.classList.add('bhranti-panel-open'); w.document.getElementById('bhranti-app').hidden = false;
   api.markExistingEvents(); api.render();
   const output = {
-    dom, w, api, requests, notices, timers,
+    dom, w, api, requests, notices, timers, rectangles, resizeObservers,
     setHandler(next) { handler = next; },
     setDirty(dirty) { localDirty = dirty; subscriptions.forEach((callback) => callback()); },
+    setSaving(saving) { localSaving = saving; subscriptions.forEach((callback) => callback()); },
+    setGesture(gesturing) { localGesture = gesturing; subscriptions.forEach((callback) => callback()); },
     setRemote(next) { remoteEditor = next; api.state.editor = next; },
     async advance(milliseconds = 0) {
       now += milliseconds; let calls = 0;
@@ -288,6 +308,66 @@ async function testActionTargetLinks() {
     check(!editor.api.targetLink({ ...historical.target, url: 'https://external.invalid/result' }), 'Action links continue rejecting external targets');
     check(!editor.api.targetLink({ ...historical.target, url: '/wp-admin/post.php?post=99&action=delete' }), 'Action links continue rejecting mutation URLs');
   } finally { editor.close(); }
+}
+
+async function testCommerceTargetLinks() {
+  const settingsTarget = { type: 'woocommerce_settings', title: 'WooCommerce settings', url: '/wp-admin/admin.php?page=wc-settings&tab=general' };
+  const categoryTarget = { type: 'product_cat', id: 7, title: 'Handmade bowls', url: '/wp-admin/term.php?taxonomy=product_cat&tag_ID=7&post_type=product' };
+  const valid = [
+    ...['general', 'products', 'advanced'].map((tab) => ({ ...settingsTarget, title: 'WooCommerce ' + tab, url: '/wp-admin/admin.php?tab=' + tab + '&page=wc-settings' })),
+    categoryTarget,
+    { ...categoryTarget, title: 'Absolute native product category', url: 'https://bhranti.wp.local/wp-admin/term.php?post_type=product&tag_ID=17&taxonomy=product_cat' },
+  ];
+  const invalid = [
+    ...['checkout', 'payments', '', 'General'].map((tab) => ({ ...settingsTarget, url: '/wp-admin/admin.php?page=wc-settings&tab=' + tab })),
+    { ...settingsTarget, url: '/wp-admin/admin.php?page=wc-settings' },
+    { ...settingsTarget, url: '/wp-admin/admin.php?page=bhranti&tab=general' },
+    { ...settingsTarget, url: settingsTarget.url + '&action=edit' },
+    { ...settingsTarget, url: settingsTarget.url + '&_wpnonce=fixture' },
+    { ...settingsTarget, url: settingsTarget.url + '&section=tax' },
+    { ...settingsTarget, url: settingsTarget.url + '&page=wc-settings' },
+    { ...settingsTarget, url: settingsTarget.url + '&tab=products' },
+    { ...settingsTarget, url: settingsTarget.url + '&p%61ge=wc-settings' },
+    { ...settingsTarget, type: 'product_cat' },
+    { ...settingsTarget, type: 'page' },
+    { ...settingsTarget, url: 'https://external.invalid' + settingsTarget.url },
+    ...['0', '-1', '1.5', '07', 'no-id'].map((id) => ({ ...categoryTarget, url: '/wp-admin/term.php?taxonomy=product_cat&tag_ID=' + id + '&post_type=product' })),
+    { ...categoryTarget, url: '/wp-admin/term.php?taxonomy=product_cat&post_type=product' },
+    { ...categoryTarget, url: categoryTarget.url.replace('/term.php?', '/edit-tag.php?') },
+    { ...categoryTarget, url: categoryTarget.url.replace('product_cat', 'category') },
+    { ...categoryTarget, url: categoryTarget.url.replace('post_type=product', 'post_type=post') },
+    { ...categoryTarget, url: categoryTarget.url + '&action=delete' },
+    { ...categoryTarget, url: categoryTarget.url + '&action=edit' },
+    { ...categoryTarget, url: categoryTarget.url + '&_wpnonce=fixture' },
+    { ...categoryTarget, url: categoryTarget.url + '&taxonomy=product_cat' },
+    { ...categoryTarget, url: categoryTarget.url + '&tag_ID=8' },
+    { ...categoryTarget, url: categoryTarget.url + '&post_type=product' },
+    { ...categoryTarget, url: categoryTarget.url + '&description=unexpected' },
+    { ...categoryTarget, type: 'category' },
+    { ...categoryTarget, type: 'woocommerce_settings' },
+    { ...categoryTarget, url: 'https://external.invalid' + categoryTarget.url },
+  ];
+  const events = [...valid.map((target, index) => tool('commerce-valid-' + index, 'write', { target })), ...invalid.map((target, index) => tool('commerce-invalid-' + index, 'write', { target }))];
+  const page = fixture({ session: { ...session('complete'), events } });
+  try {
+    for (const target of valid) {
+      const safe = page.api.safeTarget(target), link = page.api.targetLink(target);
+      check(safe && link, 'Reviewed WooCommerce settings/category target renders a native result link');
+      equal(safe.origin, 'https://bhranti.wp.local', 'Commerce result stays on the exact WordPress origin');
+      equal(safe.searchParams.get('bhranti_session'), '17', 'Commerce result preserves its conversation context');
+      equal(link.textContent, target.title, 'Commerce result link retains the concrete affected target title');
+    }
+    for (const target of invalid) {
+      equal(page.api.safeTarget(target), null, 'Unexpected WooCommerce target type, route, query or origin is refused');
+      equal(page.api.targetLink(target), null, 'Refused Commerce targets cannot produce a clickable result link');
+    }
+    check(page.api.targetLink({ type: 'category', id: 9, title: 'Ordinary WordPress category', url: '/wp-admin/term.php?taxonomy=category&tag_ID=9&post_type=post' }), 'Strict product-category validation preserves other native WordPress term links');
+    const rendered = [...page.w.document.querySelectorAll('.bhranti-tool-event .bhranti-target-link')];
+    equal(rendered.length, valid.length, 'Completed Commerce history renders links only for reviewed exact native targets');
+    for (const target of valid) check(rendered.some((link) => link.textContent === target.title), 'Each reviewed Commerce content result retains its native link in the action details');
+    equal(page.api.navigation.length, 0, 'Rendering completed Commerce history never navigates or refreshes WordPress');
+    equal(page.requests.length, 0, 'Commerce target validation never sends a GET or mutation');
+  } finally { page.close(); }
 }
 
 function checkNoSavedChangesCard(page) {
@@ -932,6 +1012,277 @@ async function testComposerKeyboardSubmissionGuards() {
   }
 }
 
+const siteOverlay = (page) => page.w.document.querySelector('.bhranti-site-control');
+function siteTask(extra = {}) {
+  return session('running', { phase: 'prepared', step: 4, next_action: { tool: 'bhranti_task_limit', method: 'POST', write: true, summary: 'Change the task step limit.', target: { type: 'bhranti_settings', title: 'Bhranti Settings', url: '/wp-admin/admin.php?page=bhranti' } }, ...extra });
+}
+function mainFrame(page) { return page.w.document.querySelector('.edit-site-layout') || page.w.document.querySelector('main.wp-site-blocks') || page.w.document.querySelector('#wpbody-content'); }
+function assertSiteControlled(page, label) {
+  const doc = page.w.document, overlay = siteOverlay(page), frame = mainFrame(page);
+  check(overlay && overlay.isConnected, label + ' shows one connected site-control indicator');
+  equal(doc.querySelectorAll('.bhranti-site-control').length, 1, label + ' never duplicates the control indicator');
+  equal(overlay.textContent, 'Site is under Bhranti’s control', label + ' truthfully labels general WordPress control');
+  equal(overlay.getAttribute('role'), 'status', label + ' provides nonmodal accessible status');
+  equal(frame.getAttribute('aria-busy'), 'true', label + ' marks only the current main frame busy');
+  check(frame.hasAttribute('inert'), label + ' protects the main frame from concurrent editing');
+  check(!frame.contains(overlay), label + ' leaves its status outside the inert frame');
+  check(!doc.getElementById('bhranti-app').closest('[inert]'), label + ' keeps chat and Stop interactive');
+  check(!doc.getElementById('wpadminbar').closest('[inert]'), label + ' preserves the native admin bar');
+  check(!doc.getElementById('adminmenu').closest('[inert]'), label + ' preserves native WordPress navigation');
+  check(doc.getElementById('bhranti-stop') && !doc.getElementById('bhranti-stop').disabled, label + ' keeps the persistent live Stop control available');
+}
+function assertSiteReleased(page, label) {
+  equal(siteOverlay(page), null, label + ' releases the site-control indicator');
+  check(!mainFrame(page).hasAttribute('inert'), label + ' restores main-frame interaction');
+  equal(mainFrame(page).getAttribute('aria-busy'), null, label + ' restores absent native busy state');
+}
+
+async function testGeneralSiteControlLifecycle() {
+  const page = fixture({ siteFrame: 'admin', session: siteTask() });
+  try {
+    const doc = page.w.document, frame = mainFrame(page), first = siteOverlay(page);
+    assertSiteControlled(page, 'A proven prepared Settings tool');
+    equal(page.api.editorState().editor_active, false, 'An ordinary admin page is not misreported as an open editor');
+    equal(page.api.editorState().unsaved_changes, false, 'A clean ordinary admin page retains clean execution context');
+    page.api.state.draft = 'Keep this unsent draft while the site is controlled'; page.api.rememberDraft(); page.api.render();
+    const composer = doc.getElementById('bhranti-composer'); composer.focus(); composer.setSelectionRange(2, 8);
+    page.api.state.session = clone(page.api.state.session); page.api.render();
+    equal(siteOverlay(page), first, 'Cloned polling retains the same bound site-control node');
+    equal(doc.getElementById('bhranti-composer'), composer, 'General control preserves the native composer identity');
+    equal(doc.activeElement, composer, 'General control polling retains composer focus');
+    equal(composer.selectionStart, 2, 'General control polling retains the draft caret');
+    page.api.state.session.run.phase = 'model'; delete page.api.state.session.run.next_action;
+    page.api.state.session.events.push(tool('settings-completed', 'write', { target: { type: 'bhranti_settings', title: 'Bhranti Settings', url: '/wp-admin/admin.php?page=bhranti' } })); page.api.render();
+    assertSiteControlled(page, 'Planning after a same-run committed tool');
+    equal(siteOverlay(page), first, 'A planning chain retains the same proven site ownership');
+    for (const [label, change] of [
+      ['completed task', () => { page.api.state.session.run.status = 'complete'; }],
+      ['approval wait', () => { page.api.state.session.run.status = 'awaiting_confirmation'; }],
+      ['failed task', () => { page.api.state.session.run.status = 'failed'; }],
+      ['cancelled task', () => { page.api.state.session.run.status = 'cancelled'; }],
+      ['interrupted task', () => { page.api.state.session.run.interrupted = true; }],
+      ['human dirty pause', () => { page.api.state.pausedForEditor = true; }],
+      ['planning response error', () => { page.api.state.error = 'Known local request error.'; }],
+      ['editor safety error', () => { page.api.state.editorError = 'Known local safety error.'; }],
+      ['requested Stop before dispatch', () => { page.api.state.stopRequested = true; }],
+    ]) {
+      page.api.state.session = siteTask(); page.api.state.error = ''; page.api.state.editorError = ''; page.api.state.pausedForEditor = false; page.api.state.stopRequested = false; page.api.render();
+      check(siteOverlay(page), 'A clean prepared task reacquires control before ' + label); change(); page.api.render(); assertSiteReleased(page, label);
+      equal(doc.getElementById('bhranti-composer').value, 'Keep this unsent draft while the site is controlled', 'Handover preserves the exact unsent draft');
+    }
+    page.api.state.session = siteTask(); page.api.state.error = ''; page.api.state.editorError = ''; page.api.state.pausedForEditor = false; page.api.state.stopRequested = false; page.api.render();
+    page.api.closePanel(); assertSiteReleased(page, 'Closed queued/prepared task');
+    page.api.state.open = true; page.api.state.session = siteTask(); page.api.render();
+    page.api.state.session.run.phase = 'action'; page.api.render(); const executing = siteOverlay(page);
+    page.api.state.error = 'An in-flight response is uncertain.'; page.api.state.editorError = 'An in-flight safety response is uncertain.'; page.api.state.stopRequested = true; page.api.render();
+    equal(siteOverlay(page), executing, 'An already bound in-flight action retains protection through Stop and transport uncertainty');
+    page.api.closePanel(); equal(siteOverlay(page), executing, 'Closing during an already bound action retains native-frame protection');
+    check(page.api.triggerAvailable(doc.querySelector('#wp-admin-bar-bhranti > a')), 'The native Bhranti opener remains usable outside the held frame');
+    page.api.state.session.run.phase = 'model'; page.api.render(); assertSiteReleased(page, 'Server handover after a closed in-flight action');
+    equal(frame.querySelector('#native-field').value, 'Unsaved native text', 'Control and handover never edit native form values');
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Control lifecycle never dispatches a tool or replays a write');
+  } finally { page.close(); }
+}
+
+async function testGeneralSiteControlProofAndRestoration() {
+  const page = fixture({ siteFrame: 'admin', session: session('running', { phase: 'model' }) });
+  try {
+    const doc = page.w.document, frame = mainFrame(page);
+    assertSiteReleased(page, 'An initial model question without a tool');
+    for (const event of [tool('old-run', 'write', { run_id: 'another-run' }), tool('failed-tool', 'write', { success: false }), { ...historical }]) {
+      page.api.state.session.events = [event]; page.api.render(); assertSiteReleased(page, 'Historical, failed or unproven tool event');
+    }
+    frame.setAttribute('inert', 'another-owner'); frame.setAttribute('aria-busy', 'false'); frame.dataset.nativeValue = 'preserved';
+    page.api.state.session = siteTask(); page.api.render();
+    check(siteOverlay(page), 'A proven task can show ownership on an already protected native frame');
+    page.api.state.session.run.status = 'complete'; page.api.render();
+    equal(frame.getAttribute('inert'), 'another-owner', 'Release restores the exact prior native inert attribute');
+    equal(frame.getAttribute('aria-busy'), 'false', 'Release restores the exact prior native busy attribute');
+    equal(frame.dataset.nativeValue, 'preserved', 'Release preserves unrelated native attributes');
+    frame.removeAttribute('inert'); frame.removeAttribute('aria-busy');
+    page.api.state.session = siteTask(); page.api.render();
+    const countBefore = page.resizeObservers.length;
+    frame.remove(); page.api.syncEditorControl(); equal(siteOverlay(page), null, 'Removing the native frame releases its detached ownership indicator');
+    equal(frame.getAttribute('inert'), null, 'A detached native frame has its original interactive state restored');
+    check(page.resizeObservers.slice(0, countBefore).every((observer) => observer.disconnected), 'Released frame observers are disconnected');
+    doc.body.insertBefore(frame, doc.getElementById('bhranti-app')); frame.appendChild(doc.getElementById('bhranti-app')); page.api.syncEditorControl();
+    equal(siteOverlay(page), null, 'A main frame containing Bhranti itself can never be made inert');
+    doc.body.appendChild(doc.getElementById('bhranti-app')); page.api.syncEditorControl();
+    check(siteOverlay(page), 'A safe outside-sidebar frame can reacquire ownership');
+    page.w.dispatchEvent(new page.w.PageTransitionEvent('pagehide')); assertSiteReleased(page, 'Page unload');
+    equal(page.requests.length, 0, 'Proof, remount and attribute restoration are local UI operations only');
+  } finally { page.close(); }
+  for (const url of ['https://bhranti.wp.local/wp-admin/post.php?post=99&action=edit', 'https://bhranti.wp.local/wp-admin/post-new.php']) {
+    const post = fixture({ siteFrame: 'admin', editor: true, context: { screen: 'page', post_id: 99, post_type: 'page' }, url, session: siteTask() });
+    try { equal(siteOverlay(post), null, 'Generic takeover never masks an unrelated native post/page editor'); equal(post.w.document.querySelector('#wpbody-content').hasAttribute('inert'), false, 'Native post/page exact-entity safety remains authoritative'); equal(post.requests.length, 0, 'Skipping unrelated post editor never changes or fetches its canvas'); } finally { post.close(); }
+  }
+}
+
+async function testGeneralSiteControlDirtyAndDialogs() {
+  const page = fixture({ siteFrame: 'admin', session: siteTask() });
+  try {
+    const doc = page.w.document, frame = mainFrame(page), field = doc.getElementById('native-field');
+    assertSiteControlled(page, 'A clean ordinary admin form');
+    field.value = 'Preserve the human’s exact native setting'; field.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+    assertSiteReleased(page, 'Unsaved main-form input');
+    equal(page.api.editorState().editor_active, false, 'Dirty ordinary Settings still does not claim a native editor');
+    equal(page.api.editorState().unsaved_changes, true, 'Dirty main forms are included in execution context even without a native editor');
+    equal(page.api.runtimeContext().unsaved_changes, true, 'Attached context retains ordinary form dirty protection');
+    const operation = page.api.continueRun(); await until(() => idle(page), page); await operation;
+    equal(page.api.state.pausedForEditor, true, 'A dirty ordinary form pauses a prepared write before execution');
+    equal(count(page, '/execute', 'POST'), 0, 'A dirty ordinary form never reaches the execute endpoint');
+    equal(field.value, 'Preserve the human’s exact native setting', 'A dirty pause cannot modify or discard the native form text');
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Dirty protection never submits a native save or replay');
+    check(!frame.hasAttribute('inert'), 'Human editing remains available during a dirty pause');
+  } finally { page.close(); }
+  const focused = fixture({ siteFrame: 'admin', session: session('complete') });
+  try {
+    const doc = focused.w.document, field = doc.getElementById('native-field'); field.focus(); focused.api.state.session = siteTask(); focused.api.render();
+    assertSiteReleased(focused, 'Focused native main-form typing'); equal(doc.activeElement, field, 'Deferred general control never steals native typing focus');
+    const iframe = doc.createElement('iframe'); mainFrame(focused).appendChild(iframe); iframe.focus(); focused.api.render(); assertSiteReleased(focused, 'Active native frame interaction');
+    doc.getElementById('bhranti-composer').focus(); focused.api.render(); assertSiteControlled(focused, 'Typing returned to Bhranti');
+    const modal = doc.createElement('div'); modal.className = 'media-modal'; modal.getClientRects = () => [{ width: 100, height: 100 }]; doc.body.appendChild(modal); focused.api.render(); assertSiteReleased(focused, 'A visible native media dialog');
+    modal.hidden = true; focused.api.render(); assertSiteControlled(focused, 'A closed native media dialog');
+    equal(focused.requests.length, 0, 'Focus and dialog safety checks never dispatch a task');
+  } finally { focused.close(); }
+}
+
+async function testClassicProductControlAndPriceProtection() {
+  for (const [postType, url, eventName] of [
+    ['product', 'https://bhranti.wp.local/wp-admin/post.php?post=99&action=edit', 'input'],
+    ['product', 'https://bhranti.wp.local/wp-admin/post-new.php?post_type=product', 'change'],
+    ['fixture_catalog_item', 'https://bhranti.wp.local/wp-admin/post.php?post=99&action=edit', 'change'],
+  ]) {
+    const page = fixture({ siteFrame: 'admin', url, context: { screen: postType, post_id: 99, post_type: postType }, session: siteTask() });
+    try {
+      const doc = page.w.document, price = doc.getElementById('native-field');
+      price.id = '_regular_price'; price.name = '_regular_price'; price.value = '19.95';
+      page.w.wp.autosave = { server: { postChanged: () => false } };
+      assertSiteControlled(page, 'A clean Classic ' + postType + ' form');
+      equal(page.api.editorState().unsaved_changes, false, 'Clean Classic autosave and fields do not falsely pause the task');
+      price.value = '23.50'; price.dispatchEvent(new page.w.Event(eventName, { bubbles: true }));
+      assertSiteReleased(page, 'A Classic ' + postType + ' price ' + eventName);
+      equal(page.api.editorState().unsaved_changes, true, 'Classic metadata edits stay protected even when native content autosave reports clean');
+      equal(page.api.runtimeContext().unsaved_changes, true, 'Classic product/CPT price edits reach the server execution guard');
+      const operation = page.api.continueRun(); await until(() => idle(page), page); await operation;
+      equal(page.api.state.pausedForEditor, true, 'Classic price edits pause the prepared action before dispatch');
+      equal(count(page, '/execute', 'POST'), 0, 'No prepared write executes over unsaved Classic product/CPT metadata');
+      equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Classic dirty protection neither saves the product nor replays a POST');
+      equal(price.value, '23.50', 'Pause preserves the exact human price');
+      equal(page.api.navigation.length, 0, 'Classic product protection never refreshes or navigates the editor');
+    } finally { page.close(); }
+  }
+  for (const postType of ['post', 'page']) {
+    const page = fixture({ siteFrame: 'admin', url: 'https://bhranti.wp.local/wp-admin/post.php?post=99&action=edit', context: { screen: postType, post_id: 99, post_type: postType }, session: siteTask() });
+    try { assertSiteReleased(page, 'Existing Classic ' + postType + ' exact-post policy'); equal(page.requests.length, 0, 'Generic product takeover does not introduce reads or writes into Classic post/page editors'); } finally { page.close(); }
+  }
+  const block = fixture({ siteFrame: 'admin', url: 'https://bhranti.wp.local/wp-admin/post.php?post=99&action=edit', context: { screen: 'page', post_id: 99, post_type: 'page' }, editor: true, session: session('complete') });
+  try {
+    const doc = block.w.document, native = doc.createElement('div'); native.id = 'editor'; native.className = 'block-editor__container'; mainFrame(block).appendChild(native);
+    const field = doc.getElementById('native-field'); native.appendChild(doc.getElementById('native-form'));
+    field.dispatchEvent(new block.w.Event('input', { bubbles: true }));
+    equal(block.api.editorState().unsaved_changes, false, 'Native block editors continue to use their selectors rather than the Classic metadata latch');
+    block.setDirty(true); equal(block.api.editorState().unsaved_changes, true, 'The native block-editor dirty selector remains authoritative');
+    equal(block.requests.length, 0, 'Classic protection adds no native block-editor dispatch or request');
+  } finally { block.close(); }
+}
+
+async function testSettingsStateControlAndHeartbeat() {
+  for (const background of [false, true]) {
+    const page = fixture({ siteFrame: 'admin', settingsForm: 'unknown', background, url: 'https://bhranti.wp.local/wp-admin/admin.php?page=bhranti', context: { screen: 'toplevel_page_bhranti' }, session: siteTask() });
+    try {
+      const doc = page.w.document, mount = doc.getElementById('bhranti-settings-app');
+      assertSiteReleased(page, 'Unknown native React Settings state'); equal(page.api.editorState().unsaved_changes, true, 'Unknown/loading Settings fail closed before execution');
+      const publish = (dirty, busy) => { mount.dataset.bhrantiDirty = String(dirty); mount.dataset.bhrantiBusy = String(busy); page.w.dispatchEvent(new page.w.CustomEvent('bhranti:settings-state')); };
+      publish(false, false); await page.advance(); assertSiteControlled(page, 'Acknowledged clean native React Settings');
+      const acknowledgedField = doc.getElementById('settings-field');
+      acknowledgedField.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+      acknowledgedField.dispatchEvent(new page.w.Event('change', { bubbles: true })); await page.advance();
+      equal(page.api.editorState().unsaved_changes, false, 'Bubbling Settings input cannot override the authoritative clean React mount state');
+      assertSiteControlled(page, 'Known-clean React state after native bubbling input');
+      publish(true, false); await page.advance(); assertSiteReleased(page, 'React configuration edit without a bubbling native input');
+      equal(page.api.runtimeContext().unsaved_changes, true, 'React card changes protect execution context independently of bubbling DOM events');
+      if (background) { const last = page.requests.filter((request) => request.path.endsWith('/editor-state')).at(-1); check(last && last.data.editor_active === false && last.data.unsaved_changes === true, 'Dirty ordinary Settings publishes the current tab lease without claiming an editor'); check(!('release_stale' in last.data), 'Dirty state never clears another tab’s sticky lease'); }
+      const field = doc.getElementById('settings-field'); field.value = 'Exact unsaved Markdown 日本語'; field.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+      publish(false, false); await page.advance(); assertSiteControlled(page, 'Authoritative React clean acknowledgement or revert'); equal(page.api.editorState().unsaved_changes, false, 'Authoritative clean state clears only the mount’s prior dirty protection'); equal(field.value, 'Exact unsaved Markdown 日本語', 'Publishing state never rewrites native input values');
+      publish(false, true); await page.advance(); assertSiteReleased(page, 'An in-flight native Settings save'); equal(page.api.editorState().unsaved_changes, true, 'Saving Settings is protected as uncertain local work');
+      publish(false, false); await page.advance(); assertSiteControlled(page, 'Successful Settings save handover');
+      if (background) { const clean = page.requests.filter((request) => request.path.endsWith('/editor-state')).at(-1); check(clean && clean.data.unsaved_changes === false && clean.data.token, 'Acknowledged Settings save publishes only a clean current-token heartbeat'); check(!('release_stale' in clean.data), 'Acknowledged save preserves unrelated dirty tabs'); }
+      equal(count(page, '/execute', 'POST'), 0, 'Settings dirty/saving/clean notifications never execute a tool');
+      equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/editor-state')).length, 0, 'Settings state communication uses only its owned heartbeat and no native save/action');
+    } finally { page.close(); }
+  }
+}
+
+async function testGenericNativeNavigationAndGeometry() {
+  const page = fixture({ siteFrame: 'admin', session: siteTask() });
+  try {
+    const doc = page.w.document, overlay = siteOverlay(page), frame = mainFrame(page);
+    equal(overlay.style.top, '32px', 'General control begins below the native admin bar'); equal(overlay.style.left, '160px', 'General control leaves the native admin navigation untouched');
+    equal(overlay.style.width, '784px', 'General control stops at the open Bhranti sidebar'); equal(overlay.style.height, '768px', 'General control stays within the native viewport');
+    const search = doc.getElementById('adminbar-search'); search.focus(); search.value = 'A harmless site search'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
+    equal(page.api.editorState().unsaved_changes, false, 'Admin-bar search text is outside protected page forms and cannot mark the task dirty');
+    equal(siteOverlay(page), overlay, 'Native admin-bar search remains available without dropping owned main-frame control');
+    equal(doc.activeElement, search, 'General control preserves native admin-bar focus');
+    const undo = new page.w.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }); search.dispatchEvent(undo);
+    equal(undo.defaultPrevented, false, 'Browser undo remains available in the native admin-bar search outside the controlled frame');
+    const original = page.rectangles.get(frame); page.rectangles.set(frame, { ...original, left: 200, right: 1100, width: 900 }); page.w.dispatchEvent(new page.w.Event('resize'));
+    equal(overlay.style.left, '200px', 'Responsive main-frame geometry is remeasured without a task action'); equal(overlay.style.width, '744px', 'Responsive control still stops before the chat panel');
+    equal(page.api.navigation.length, 0, 'Control geometry and protected navigation never redirect WordPress'); equal(page.requests.length, 0, 'Local generic control never generates transport requests');
+  } finally { page.close(); }
+  const frontend = fixture({ siteFrame: 'frontend', isAdmin: false, url: 'https://bhranti.wp.local/fixture-page/', context: { screen: '' }, session: siteTask({ next_action: { tool: 'site_search', method: 'GET', summary: 'Inspect the requested site.' } }) });
+  try { assertSiteControlled(frontend, 'A proven frontend task'); check(!frontend.w.document.getElementById('native-site-header').hasAttribute('inert'), 'Frontend takeover preserves its native header'); frontend.api.state.session.run.status = 'complete'; frontend.api.render(); assertSiteReleased(frontend, 'Frontend task completion'); equal(frontend.requests.length, 0, 'Frontend control does not load or mutate site data'); } finally { frontend.close(); }
+}
+
+async function testGeneralFseControlSafety() {
+  const page = fixture({ siteFrame: 'fse', url: 'https://bhranti.wp.local/wp-admin/site-editor.php', context: { screen: 'site-editor' }, session: siteTask() });
+  try {
+    assertSiteControlled(page, 'Clean native Site Editor'); equal(page.api.editorState().editor_active, true, 'Site Editor retains native active-editor heartbeat semantics');
+    page.setDirty(true); page.api.render(); assertSiteReleased(page, 'Native Site Editor unsaved template changes'); equal(page.api.runtimeContext().unsaved_changes, true, 'Native template edits preserve the server execution dirty flag');
+    page.setDirty(false); page.setSaving(true); page.api.render(); assertSiteReleased(page, 'Native Site Editor save in flight');
+    page.setSaving(false); page.api.render(); assertSiteControlled(page, 'Native template save completion');
+    page.setGesture(true); page.api.render(); assertSiteReleased(page, 'Native template block-drag gesture'); page.setGesture(false); page.api.render(); assertSiteControlled(page, 'Finished native template gesture');
+    page.w._wpCollaborationEnabled = true; page.api.render(); assertSiteReleased(page, 'Native collaborative editing'); page.w._wpCollaborationEnabled = false; page.api.render(); assertSiteControlled(page, 'Noncollaborative native template editing');
+    equal(page.w.document.querySelectorAll('.bhranti-editor-control').length, 0, 'General Site Editor control never claims a native post/page identity'); equal(page.requests.length, 0, 'Site Editor control never edits, saves or fetches a template');
+  } finally { page.close(); }
+}
+
+async function testGeneralControlWithoutExternalOpener() {
+  const page = fixture({ siteFrame: 'fse', url: 'https://bhranti.wp.local/wp-admin/site-editor.php', context: { screen: 'site-editor' }, session: siteTask({ phase: 'action' }) });
+  try {
+    const doc = page.w.document; equal(doc.getElementById('bhranti-close').disabled, false, 'An in-flight task can close while its native outside opener is reachable'); doc.getElementById('wpadminbar').remove(); page.api.render();
+    const overlay = siteOverlay(page); check(overlay, 'A fullscreen/no-bar Site Editor retains its bound native action protection');
+    equal(doc.getElementById('bhranti-close').disabled, true, 'An in-flight task with no reachable outside opener cannot hide its only chat/Stop controls');
+    page.api.closePanel(); equal(page.api.state.open, true, 'Direct close cannot trap a running action behind an inert native frame'); equal(siteOverlay(page), overlay, 'Unavailable close retains the same exact action protection');
+    doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await page.advance();
+    equal(page.api.state.open, true, 'Escape applies the same no-opener in-flight safety guard');
+    check(!doc.getElementById('bhranti-stop').disabled, 'Stop remains usable in the only visible task controls');
+    doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keyup', { key: 'Escape', bubbles: true })); await page.advance();
+    page.api.state.session.run.phase = 'model'; page.api.state.session.events.push(tool('handover', 'read')); delete page.api.state.session.run.next_action; page.api.render();
+    equal(doc.getElementById('bhranti-close').disabled, false, 'Normal Close becomes available after safe server handover');
+    page.api.closePanel(); equal(page.api.state.open, false, 'A handed-over no-bar task may close normally'); assertSiteReleased(page, 'Closed fullscreen task after handover');
+    equal(page.requests.length, 0, 'No-opener safety does not issue a task, cancel or replay request');
+  } finally { page.close(); }
+}
+
+async function testSettingsActionBridgeProof() {
+  const page = fixture({ siteFrame: 'admin', settingsForm: 'clean', url: 'https://bhranti.wp.local/wp-admin/admin.php?page=bhranti', session: session('running', { phase: 'model' }) });
+  try {
+    let changes = 0; page.w.addEventListener('bhranti:settings-changed', () => { changes++; });
+    const savedTarget = { type: 'bhranti_settings', title: 'Bhranti Settings', url: '/wp-admin/admin.php?page=bhranti' };
+    const successful = tool('fresh-settings-write', 'write', { target: savedTarget, task_limit: { max_steps: 129, revision: 'fixture-revision-129' } });
+    for (const event of [tool('settings-read', 'read', { target: savedTarget }), tool('foreign-settings-write', 'write', { target: savedTarget, run_id: 'another-run' }), tool('failed-settings-write', 'write', { target: savedTarget, success: false }), tool('unsafe-settings-target', 'write', { target: { ...savedTarget, url: 'https://outside.invalid/wp-admin/admin.php?page=bhranti' } })]) {
+      page.api.state.session.events.push(event); page.api.render(); equal(changes, 0, 'Only a new owned successful native Settings write can request a saved configuration refresh');
+    }
+    page.api.state.session.events.push(successful); page.api.render(); equal(changes, 1, 'A newly observed successful Settings write emits one local safe-read notification');
+    page.api.state.session = clone(page.api.state.session); page.api.render(); page.api.markExistingEvents(); equal(changes, 1, 'Cloned polling and existing-history marking never repeat the Settings notification');
+    page.api.state.session.events.push(tool('fresh-settings-undo', 'rollback', { target: savedTarget, task_limit: { max_steps: 128, revision: 'fixture-revision-undo' } })); page.api.render(); equal(changes, 2, 'A new successful owned Undo also requests the latest saved Settings');
+    equal(page.requests.length, 0, 'The event bridge never replaces settings or dispatches a POST itself');
+    const historical = fixture({ siteFrame: 'admin', settingsForm: 'clean', session: { ...session('complete'), events: [successful] } });
+    try { let replays = 0; historical.w.addEventListener('bhranti:settings-changed', () => { replays++; }); historical.api.render(); historical.api.markExistingEvents(); equal(replays, 0, 'Opening a completed historical Settings chat never requests a synchronization replay'); } finally { historical.close(); }
+  } finally { page.close(); }
+}
+
 async function main() {
   await testTransportBoundaries();
   await testPollingOutage();
@@ -941,6 +1292,7 @@ async function main() {
   await testCompositionPreservation();
   await testResolvedErrorsAndControls();
   await testActionTargetLinks();
+  await testCommerceTargetLinks();
   await testSubmissionAcknowledgement();
   await testUncertainActionRecovery();
   await testCompletedTargetRefresh();
@@ -957,6 +1309,15 @@ async function main() {
   await testComposerKeyboardNewlines();
   await testComposerKeyboardImeAndRepeat();
   await testComposerKeyboardSubmissionGuards();
+  await testGeneralSiteControlLifecycle();
+  await testGeneralSiteControlProofAndRestoration();
+  await testGeneralSiteControlDirtyAndDialogs();
+  await testClassicProductControlAndPriceProtection();
+  await testSettingsStateControlAndHeartbeat();
+  await testGenericNativeNavigationAndGeometry();
+  await testGeneralFseControlSafety();
+  await testGeneralControlWithoutExternalOpener();
+  await testSettingsActionBridgeProof();
   console.log('PASS ' + checks + ' isolated product UX checks; no HTTP, AI, WordPress load or DB access');
 }
 const watchdog = setTimeout(() => { console.error('FAIL: unresolved isolated UI operation exceeded the 20-second test deadline'); process.exit(1); }, 20000);

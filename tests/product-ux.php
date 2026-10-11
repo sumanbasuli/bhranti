@@ -181,6 +181,10 @@ $cases = array(
     array( 'wp_request', array( 'method' => 'DELETE' ), 'write' ),
     array( 'plugin_request', array( 'method' => 'POST' ), 'write' ),
     array( 'plugin_request', array( 'method' => 'GET' ), 'read' ),
+    array( 'commerce_request', array( 'method' => 'POST' ), 'write' ),
+    array( 'commerce_request', array( 'method' => 'GET' ), 'read' ),
+    array( 'bhranti_task_limit', array( 'method' => 'POST' ), 'write' ),
+    array( 'bhranti_task_limit', array( 'method' => 'GET' ), 'read' ),
     array( 'plugin_search', array(), 'read' ),
     array( 'site_search', array(), 'read' ),
     array( 'open_item', array(), 'read' ),
@@ -204,6 +208,25 @@ $count = count( $events );
 ux_private( 'tool_result', $event_post, ux_run( 'approval-run' ), array( 'confirmation_required' => true, 'summary' => 'Approve deletion.', 'command' => array( 'tool' => 'wp_request', 'args' => array( 'method' => 'DELETE' ) ), 'fingerprint' => 'safe-fingerprint', 'target' => $result['target'] ), array( 'tool' => 'wp_request', 'args' => array( 'method' => 'DELETE' ) ) );
 ux_check( count( get_post_meta( 4, 'bhranti_events', true ) ) === $count, 'Awaiting human approval must not claim a completed write.' );
 ux_check( 'awaiting_confirmation' === get_post_meta( 4, 'bhranti_run', true )['status'], 'Human-only deletion gate changed.' );
+
+// A possible native write followed by an error cannot trigger another model plan.
+$uncertain_post = ux_session( 6 );
+$uncertain_run = ux_run( 'uncertain-run' );
+$uncertain_run['phase'] = 'action';
+$uncertain_run['resume_checkpoint'] = array( 'kind' => 'model_request', 'step' => 4 );
+$uncertain_result = ux_private( 'tool_result', $uncertain_post, $uncertain_run, new WP_Error( 'bhranti_commerce_storage', 'Inspect the saved product.', array( 'status' => 500, 'uncertain_action' => true ) ), array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST' ) ) );
+$uncertain_saved = get_post_meta( 6, 'bhranti_run', true );
+ux_check( ! is_wp_error( $uncertain_result ) && 'failed' === $uncertain_saved['status'], 'Uncertain commerce write continued planning.' );
+ux_check( ! isset( $uncertain_saved['resume_checkpoint'], $uncertain_saved['next_action'] ) && ! $uncertain_result['run']['can_resume'], 'Uncertain commerce write acquired a replay/Resume path.' );
+ux_check( $uncertain_saved['history'][0] === $uncertain_run['history'][0] && 2 === count( $uncertain_saved['history'] ), 'Stopping discarded prior successful actions or its failed feedback.' );
+$uncertain_events = get_post_meta( 6, 'bhranti_events', true );
+ux_check( false === end( $uncertain_events )['success'] && ! isset( end( $uncertain_events )['operation'] ), 'Uncertain write claimed verified success.' );
+$uncertain_messages = get_post_meta( 6, 'bhranti_messages', true );
+Bhranti_Agent::step( array( 'id' => 6, 'run_id' => 'uncertain-run', 'defer_tool' => true ) );
+ux_check( get_post_meta( 6, 'bhranti_run', true ) === $uncertain_saved && get_post_meta( 6, 'bhranti_messages', true ) === $uncertain_messages, 'A later step replanned a possibly completed mutation.' );
+$preflight_post = ux_session( 7 );
+ux_private( 'tool_result', $preflight_post, ux_run( 'preflight-run' ), new WP_Error( 'bhranti_commerce_invalid', 'Use a valid native field.', array( 'status' => 400 ) ), array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST' ) ) );
+ux_check( 'running' === get_post_meta( 7, 'bhranti_run', true )['status'], 'A safe rejected preflight must still allow the model to correct its fields.' );
 
 // Resolution lists stay bounded even after repeated proven failures.
 $bounded = ux_session( 5 );

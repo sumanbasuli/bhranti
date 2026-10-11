@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.15
+Stable tag: 0.4.16
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,12 +20,17 @@ Bhranti searches and inspects the site and performs real reviewed WordPress API 
 
 Routine actions default on, including directory plugin installation and activation; plugin deletion defaults off. Every operation enforces the current switches even if instructions or an older run say otherwise. Supported rollback remains available after switching off new actions.
 
-Supported operations include posts, pages, registered content using core REST controllers, comments, navigation/menu items, template customizations, global styles, media metadata, native AI image generation, installed-theme discovery, existing terms/menus, selected site settings, and reviewed plugin listing, WordPress.org installation, activation/deactivation and explicitly approved inactive-plugin uninstallation. Bhranti and its native AI/connector dependencies are protected from disruption. Unsupported operations include arbitrary source code, core/plugin/theme files, account/role/credential/security changes, unreviewed third-party routes, arbitrary media upload or file replacement, irreversible content deletion, arbitrary plugin ZIP/URL uploads, deletion of existing templates, and new taxonomy terms/classic menus without a supported Trash rollback.
+The WooCommerce integration searches, creates and edits simple products and product categories, assigns existing Media Library images, and manages selected currency, catalog, inventory and store-page settings. New products default to draft; moving a product to Trash requires the human approval button. Supported changes retain conflict-safe Undo. For a requested store, Bhranti can use the existing native installer to add WooCommerce and ask for product facts, prices, shipping and payment choices. Payment account connections stay in native human setup. Orders, customer data and financial transactions are outside this integration.
+
+Built-in WordPress guidance covers blocks, templates, shared template parts, homepages, media and store workflows. It guides every connected model to discover existing state, make a focused change and verify the saved result. Bhranti handles supported technical setup and asks for business decisions in plain language. Model capabilities still vary.
+
+Supported operations include posts, pages, registered content using core REST controllers, comments, navigation/menu items, template customizations, global styles, media metadata, native AI image generation, installed-theme discovery, existing terms/menus, selected site settings, and reviewed plugin listing, WordPress.org installation, activation/deactivation and explicitly approved inactive-plugin uninstallation. Bhranti and its native AI/connector dependencies are protected from disruption. Unsupported operations include arbitrary source code, core/plugin/theme files, account/role/credential/security changes, unreviewed third-party routes, arbitrary media upload or file replacement, irreversible content deletion, arbitrary plugin ZIP/URL uploads, deletion of existing templates, and new taxonomy terms/classic menus outside the reviewed product-category integration.
 
 * Private conversations owned by the requesting administrator.
 * Native WordPress AI Client and Settings > Connectors, with no Bhranti provider settings or credentials.
 * Prepared action details, real operation results and item links in the chat; navigation preserves active editors and unsaved work.
 * Persisted WordPress-scheduled continuation after closing the browser, with a configurable 12–1,000 step limit (128 by default) and Stop between steps.
+* Read or change the task step limit from chat, with revision checks and Undo. New tasks use the saved value; an active task keeps its starting limit. Permission switches and instructions remain human configuration.
 * A concrete Approve/Deny card before every Trash operation or opted-in permanent plugin uninstall. The server binds approvals to their requester, session and reviewed item state; approvals expire after ten minutes and cannot be reused.
 * Seven-day snapshots for supported rollback. Later edits block restoration instead of being overwritten.
 * Durable paginated logs with requester and actor usernames/IDs, action/route/target references and outcomes.
@@ -98,13 +103,19 @@ Yes. New successful actions on the open post or page update its native block edi
 
 = Can I edit while Bhranti works? =
 
-As soon as a task is ready to fetch or change the current clean post or page, a dark WordPress overlay protects the native block editor from accidental clicks and shortcuts. Saved updates continue to appear beneath it, and Bhranti and the admin bar remain accessible. Control returns when the task finishes, pauses for approval or stops. Existing typing, unsaved work and save requests remain protected; unrelated reads and edits to other items do not take control.
+As soon as a task is ready to fetch or change the current clean post or page, a dark WordPress overlay protects the native block editor from accidental clicks and shortcuts. Saved updates continue to appear beneath it. Other prepared site actions similarly protect the clean main WordPress area, including Settings and classic product forms. Bhranti and the admin bar remain accessible. Control returns when the task finishes, pauses for approval or stops, after any known in-flight operation returns. Existing typing, unsaved work and save requests remain protected. Bhranti Settings refreshes its saved task limit in place without overwriting local edits.
 
 = Can it roll back everything? =
 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.16 =
+* Add a reviewed WooCommerce integration for simple products, product categories and selected store settings, with native permissions, approval and supported Undo.
+* Add provider-neutral WordPress and store workflow guidance, including business questions and saved-state verification.
+* Allow task step limit changes from chat with revision checks, logs and Undo; refresh clean Settings in place.
+* Extend visible Bhranti control to clean site administration and frontend content, preserving chat, navigation and unsaved work.
 
 = 0.4.15 =
 * Remove the visible composer keyboard hint while retaining keyboard shortcuts and accessible instructions.

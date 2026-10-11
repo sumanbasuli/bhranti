@@ -3,7 +3,7 @@
 	const mount = document.getElementById('bhranti-settings-app');
 	const wp = window.wp || {};
 	if (!mount || !wp.element || !wp.components || !wp.apiFetch) return;
-	const { createElement: h, useEffect, useState } = wp.element;
+	const { createElement: h, useEffect, useLayoutEffect, useRef, useState } = wp.element;
 	const { Card, CardHeader, CardBody, TextControl, TextareaControl, ToggleControl, Button, Notice, Spinner, PanelBody } = wp.components;
 	const __ = wp.i18n ? wp.i18n.__ : (value) => value;
 	const settingsPage = window.bhrantiSettingsPage || {};
@@ -66,9 +66,38 @@
 		const [config, setConfig] = useState(null), [revision, setRevision] = useState('initial'), [baseline, setBaseline] = useState('');
 		const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [notice, setNotice] = useState(null), [removal, setRemoval] = useState(null), [reloadConfirm, setReloadConfirm] = useState(false);
 		const dirty = config && JSON.stringify(config) !== baseline;
+		const current = useRef(null), sync = useRef({ pending: false, generation: 0, running: false, alive: true });
+		current.current = { config, dirty, saving, loading };
+		useLayoutEffect(() => {
+			mount.dataset.bhrantiDirty = String(!!dirty); mount.dataset.bhrantiBusy = String(loading || saving || !config);
+			window.dispatchEvent(new CustomEvent('bhranti:settings-state'));
+		}, [!!dirty, loading, saving, !!config]);
+		async function refreshSaved() {
+			const before = current.current;
+			if (!sync.current.alive || !sync.current.pending || sync.current.running || before.dirty || before.loading || before.saving) return;
+			const generation = sync.current.generation;
+			sync.current.running = true; let retry = false;
+			try {
+				const result = validResult(await readSettings()), latest = current.current;
+				if (!sync.current.alive) return;
+				if (latest.config !== before.config || latest.dirty || latest.loading || latest.saving) { retry = !latest.dirty && !latest.loading && !latest.saving; return; }
+				if (generation !== sync.current.generation) { retry = true; return; }
+				sync.current.pending = false; setConfig(result.config); setRevision(result.revision); setBaseline(JSON.stringify(result.config));
+			} catch (error) {
+				if (sync.current.alive) setNotice({ status: 'warning', text: __('Bhranti saved a settings change. Reload saved settings to see it here.', 'bhranti'), conflict: true });
+			} finally { sync.current.running = false; if (retry) refreshSaved(); }
+		}
+		useEffect(() => {
+			sync.current.alive = true;
+			const changed = () => { sync.current.pending = true; sync.current.generation++; refreshSaved(); };
+			window.addEventListener('bhranti:settings-changed', changed);
+			return () => { sync.current.alive = false; window.removeEventListener('bhranti:settings-changed', changed); };
+		}, []);
+		useEffect(() => { refreshSaved(); }, [!!dirty, saving, loading]);
 		async function load() {
+			const generation = sync.current.generation;
 			setLoading(true); setNotice(null); setReloadConfirm(false);
-			try { const result = validResult(await readSettings()); setConfig(result.config); setRevision(result.revision); setBaseline(JSON.stringify(result.config)); setRemoval(null); }
+			try { const result = validResult(await readSettings()); sync.current.pending = generation !== sync.current.generation; setConfig(result.config); setRevision(result.revision); setBaseline(JSON.stringify(result.config)); setRemoval(null); }
 			catch (error) { setNotice({ status: 'error', text: error.message || __('Settings could not load. Please try again.', 'bhranti'), retry: true }); }
 			finally { setLoading(false); }
 		}
