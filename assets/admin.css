@@ -145,8 +145,6 @@
 .bhranti-app .bhranti-composer-form:focus-within { border-color: #72aee6; }
 .bhranti-app .bhranti-composer::placeholder { color: #a7aaad; opacity: 1; }
 .bhranti-app .bhranti-composer-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-.bhranti-app .bhranti-composer-hint { flex: 1; min-width: 0; padding: 0 8px; color: #a7aaad; font-size: 10px; line-height: 1.5; text-align: center; }
-.bhranti-app .bhranti-composer-hint > span { display: block; }
 .bhranti-app .bhranti-send-button { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; padding: 6px; background: var(--wp-admin-theme-color, #2271b1); color: #fff; border: 0; border-radius: 50%; }
 .bhranti-app .bhranti-send-button svg { width: 18px; height: 18px; }
 .bhranti-app .bhranti-send-button:disabled { background: #2f2f2f; color: #a7aaad; opacity: 1; }

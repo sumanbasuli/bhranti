@@ -820,7 +820,7 @@
 		const attach = iconButton(__('Attach current page context', 'bhranti'), 'bhranti-icon-button', () => { state.attachPage = true; state.attachBlock = true; render(); }, 'plus', 'bhranti-attach');
 		if (state.screenshot) { const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached tab screenshot', 'bhranti'); form.appendChild(element('div', 'bhranti-screenshot', image, iconButton(__('Remove screenshot', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close', 'bhranti-remove-screenshot'))); }
 		const screenshot = iconButton(state.capturing ? __('Choosing screenshot…', 'bhranti') : __('Attach tab screenshot', 'bhranti'), 'bhranti-icon-button', attachScreenshot, 'camera', 'bhranti-screenshot'); screenshot.disabled = state.busy || state.loading || state.capturing || !!activeRun();
-		const hint = element('span', 'bhranti-composer-hint', element('span', '', __('Enter to send', 'bhranti')), ' ', element('span', '', __('Shift+Enter for new line', 'bhranti'))); hint.id = 'bhranti-composer-hint';
+		const hint = element('span', 'screen-reader-text', __('Enter to send. Shift+Enter for new line.', 'bhranti')); hint.id = 'bhranti-composer-hint';
 		form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, screenshot), hint, send)); return form;
 	}
 	function sizeComposer(input) { input.style.height = 'auto'; input.style.height = Math.max(48, Math.min(150, input.scrollHeight)) + 'px'; }
