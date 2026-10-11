@@ -1,0 +1,844 @@
+(function () {
+	'use strict';
+	const root = document.getElementById('bhranti-app');
+	if (!root) return;
+	const settings = window.bhrantiSettings || {}, wp = window.wp || {};
+	const __ = wp.i18n ? wp.i18n.__ : (value) => value;
+	const sprintf = wp.i18n && wp.i18n.sprintf ? wp.i18n.sprintf : (value, ...args) => value.replace(/%[ds]/g, () => String(args.shift()));
+	const apiPath = (settings.apiPath || '/bhranti/v1').replace(/\/+$/, '');
+	const state = { open: false, initialized: false, loading: false, busy: false, stepping: false, stopRequested: false, pausedForEditor: false, editor: null, editorError: '', progress: null, menu: false, workspace: { sessions: [], ai: {} }, session: null, draft: '', drafts: new Map(), screenshots: new Map(), screenshot: null, capturing: false, error: '', reconnecting: 0, connectionError: '', results: new Map(), notices: [], seen: new Set(), width: 350, attachPage: true, attachBlock: true, agentId: 'bhranti' };
+	let noticeSequence = 0, lastTrigger = null, contextFingerprint = '', progressTimer = null, heartbeatTimer = null, backgroundTimer = null, heartbeatRequest = null, heartbeatQueued = false, heartbeatFingerprint = '', backgroundReading = false, pageSuspended = false, interacting = false, composing = false, renderPending = false, interactionTimer = null, pageFormDirty = false, streamSession = null;
+	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
+	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
+	const scrollPositions = new Map();
+	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
+	let editorControl = null;
+	let triggerFingerprint = '';
+	function rememberOpen(open) { if (settings.isAdmin) { try { if (open) window.sessionStorage.setItem(openStorageKey, '1'); else window.sessionStorage.removeItem(openStorageKey); } catch (error) { /* Storage can be unavailable in private browsing. */ } } }
+	if (settings.isAdmin) { try { settings.autoOpen = settings.autoOpen || window.sessionStorage.getItem(openStorageKey) === '1'; } catch (error) { /* The explicit URL flag still works without storage. */ } }
+
+	function element(tag, className, ...children) {
+		const node = document.createElement(tag);
+		if (className) node.className = className;
+		children.flat().forEach((child) => { if (child !== null && child !== undefined && child !== false) node.appendChild(child instanceof Node ? child : document.createTextNode(String(child))); });
+		return node;
+	}
+	function button(label, className, action, id) {
+		const node = element('button', className, label); node.type = 'button'; if (id) node.id = id;
+		node.addEventListener('click', action); return node;
+	}
+	// Bootstrap Icons (MIT); original paths and license are bundled locally.
+	function icon(name) {
+		const paths = {"history":[{"d":"M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"},{"d":"M3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5M3 6a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 6m0 2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"}],"plus":[{"fill-rule":"evenodd","d":"M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"}],"settings":[{"d":"M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"},{"d":"M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"}],"close":[{"d":"M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"}],"send":[{"fill-rule":"evenodd","d":"M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"}],"context":[{"d":"M0 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm5-1v12h9a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zM4 2H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h2z"}],"block":[{"d":"M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"}],"copy":[{"fill-rule":"evenodd","d":"M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"}],"camera":[{"d":"M15 12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1.172a3 3 0 0 0 2.12-.879l.83-.828A1 1 0 0 1 6.827 3h2.344a1 1 0 0 1 .707.293l.828.828A3 3 0 0 0 12.828 5H14a1 1 0 0 1 1 1zM2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4z"},{"d":"M8 11a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5m0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M3 6.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"}]};
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		Object.entries({ viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true', focusable: 'false' }).forEach(([key, value]) => svg.setAttribute(key, value));
+		(paths[name] || paths.context).forEach((attributes) => { const path = document.createElementNS(svg.namespaceURI, 'path'); Object.entries(attributes).forEach(([key, value]) => path.setAttribute(key, value)); svg.appendChild(path); });
+		return svg;
+	}
+	function iconButton(label, className, action, name, id) {
+		const node = button('', className, action, id); node.appendChild(icon(name)); node.setAttribute('aria-label', label); node.title = label; return node;
+	}
+	async function request(path, method = 'GET', data) {
+		if (!wp.apiFetch) return Promise.reject(new Error(__('WordPress could not load the request tools. Reload this page to try again.', 'bhranti')));
+		const options = { path: apiPath + path, method, ...(data === undefined ? {} : { data }) };
+		if (method !== 'GET') return wp.apiFetch(options);
+		let reconnecting = false;
+		try {
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const controller = new AbortController(), timer = window.setTimeout(() => controller.abort(), 20000);
+				try { const result = await wp.apiFetch({ ...options, signal: controller.signal }); state.connectionError = ''; return result; }
+				catch (error) {
+					const status = Number(error && error.data && error.data.status);
+					if (status >= 400 && status < 500 || pageSuspended) throw error;
+					if (attempt === 2) { state.connectionError = __('Connection interrupted. Your conversation and saved work are safe.', 'bhranti'); throw new Error(state.connectionError); }
+					if (!reconnecting) { reconnecting = true; state.reconnecting++; if (state.open) render(); }
+				} finally { window.clearTimeout(timer); }
+				await wait((attempt + 1) * 1500);
+				if (pageSuspended) throw new Error(__('This page is no longer active.', 'bhranti'));
+			}
+		} finally { if (reconnecting) { state.reconnecting--; if (state.open) render(); } }
+	}
+	function updateElapsed() {
+		const node = root.querySelector('.bhranti-elapsed');
+		if (node && state.progress) { const seconds = Math.floor((Date.now() - state.progress.started) / 1000); node.textContent = sprintf(__('%ds', 'bhranti'), seconds); node.setAttribute('aria-label', sprintf(__('Elapsed request time: %d seconds', 'bhranti'), seconds)); }
+	}
+	async function runRequest(path, data, label) {
+		state.progress = { label, started: Date.now() }; render(); progressTimer = window.setInterval(updateElapsed, 1000);
+		try { return await request(path, 'POST', data); }
+		finally { window.clearInterval(progressTimer); progressTimer = null; state.progress = null; }
+	}
+	const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+	function errorMessage(error) { return error && typeof error.message === 'string' ? error.message : __('Something went wrong. Please try again.', 'bhranti'); }
+	function notify(message, type = 'error') {
+		if (state.notices.some((notice) => notice.message === message && notice.type === type)) return;
+		const id = 'bhranti-' + (++noticeSequence); state.notices.push({ id, message, type });
+		if (state.notices.length > 3) dismissNotice(state.notices[0].id);
+		if (wp.data && wp.notices) wp.data.dispatch(wp.notices.store || 'core/notices').createNotice(type, message, { id, context: 'bhranti', isDismissible: true });
+	}
+	function dismissNotice(id) {
+		state.notices = state.notices.filter((notice) => notice.id !== id);
+		if (wp.data && wp.notices) wp.data.dispatch(wp.notices.store || 'core/notices').removeNotice(id, 'bhranti');
+	}
+	function rememberSession(id) {
+		try { if (id) window.sessionStorage.setItem(storageKey, String(id)); else window.sessionStorage.removeItem(storageKey); } catch (error) { /* Private browsing may disable session storage. */ }
+		const url = new URL(window.location.href);
+		if (url.searchParams.has('bhranti_session') || url.searchParams.has('session')) { url.searchParams.delete('session'); if (id) url.searchParams.set('bhranti_session', id); else url.searchParams.delete('bhranti_session'); if (url.href !== window.location.href) window.history.replaceState(null, '', url); }
+	}
+	function savedSession() { try { return window.sessionStorage.getItem(storageKey); } catch (error) { return null; } }
+	function draftKey(id) { return openStorageKey + ':draft:' + (id || 'new'); }
+	function rememberDraft() {
+		const key = draftKey(state.session && state.session.id); state.drafts.set(key, state.draft); if (state.screenshot) state.screenshots.set(key, state.screenshot); else state.screenshots.delete(key);
+		try { if (state.draft) window.sessionStorage.setItem(key, state.draft); else window.sessionStorage.removeItem(key); } catch (error) { /* In-memory drafts still survive chat switches. */ }
+	}
+	function restoreDraft(id) {
+		const key = draftKey(id); if (state.drafts.has(key)) return state.drafts.get(key);
+		try { return (window.sessionStorage.getItem(key) || '').slice(0, 12000); } catch (error) { return ''; }
+	}
+	function currentRun() { return state.session && state.session.run; }
+	function activeRun() { const run = currentRun(); return run && ['running', 'awaiting_confirmation'].includes(run.status); }
+	function editorIsOpen() {
+		if (/\/(?:post|post-new|site-editor)\.php$/.test(window.location.pathname) || ['post', 'page', 'site-editor'].includes((settings.context || {}).screen)) return true;
+		try {
+			const editor = wp.data && wp.data.select('core/editor'); if (editor && editor.getCurrentPostId && editor.getCurrentPostId()) return true;
+			const site = wp.data && wp.data.select('core/edit-site'); return !!(site && site.getEditedPostId && site.getEditedPostId());
+		} catch (error) { return false; }
+	}
+	function editorState() {
+		const active = editorIsOpen(); let dirty = false, native = false;
+		if (active) {
+			try {
+				const editor = wp.data && wp.data.select('core/editor');
+				dirty = !!(editor && editor.isEditedPostDirty && editor.isEditedPostDirty());
+				const site = wp.data && wp.data.select('core/edit-site'), core = wp.data && wp.data.select('core');
+				const id = editor && editor.getCurrentPostId ? editor.getCurrentPostId() : site && site.getEditedPostId && site.getEditedPostId();
+				const type = editor && editor.getCurrentPostType ? editor.getCurrentPostType() : site && site.getEditedPostType && site.getEditedPostType();
+				if (core && core.hasEditsForEntityRecord && id && type) { native = true; dirty = dirty || core.hasEditsForEntityRecord('postType', type, id); }
+				if (core && typeof core.__experimentalGetDirtyEntityRecords === 'function') dirty = dirty || core.__experimentalGetDirtyEntityRecords().length > 0;
+			} catch (error) { /* Classic editors use the native autosave change detector below. */ }
+			try { if (!native && wp.autosave && wp.autosave.server && wp.autosave.server.postChanged) dirty = dirty || wp.autosave.server.postChanged(); } catch (error) { /* The autosave module may not be initialized yet. */ }
+		}
+		return { editor_active: active, unsaved_changes: !!dirty };
+	}
+	function nativeEditorSnapshot() {
+		try {
+			if (!wp.data || !wp.apiFetch || window._wpCollaborationEnabled) return null;
+			const editor = wp.data.select('core/editor'), core = wp.data.select('core'), blocks = wp.data.select('core/block-editor'), dispatch = wp.data.dispatch('core');
+			if (!editor || !core || !dispatch || !['getCurrentPostId', 'getCurrentPostType', 'isEditedPostDirty', 'isSavingPost', 'isAutosavingPost'].every((key) => typeof editor[key] === 'function') || !['getRawEntityRecord', 'getEntityRecordEdits', 'hasEditsForEntityRecord', 'isSavingEntityRecord'].every((key) => typeof core[key] === 'function') || typeof dispatch.receiveEntityRecords !== 'function') return null;
+			const id = Number(editor.getCurrentPostId()), type = editor.getCurrentPostType();
+			if (!Number.isSafeInteger(id) || id < 1 || !['post', 'page'].includes(type)) return null;
+			const record = core.getRawEntityRecord('postType', type, id), edits = core.getEntityRecordEdits('postType', type, id);
+			if (!record) return null;
+			const focused = document.activeElement;
+			const editing = !!(blocks && (typeof blocks.isDraggingBlocks === 'function' && blocks.isDraggingBlocks() || typeof blocks.isMultiSelecting === 'function' && blocks.isMultiSelecting()) || focused && !root.contains(focused) && (focused.tagName === 'IFRAME' || focused.closest && focused.closest('[contenteditable="true"], textarea, input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"])')));
+			return { id, type, record, edits, dirty: !!(editor.isEditedPostDirty() || core.hasEditsForEntityRecord('postType', type, id) || editorState().unsaved_changes), saving: !!(editor.isSavingPost() || editor.isAutosavingPost() || core.isSavingEntityRecord('postType', type, id)), editing };
+		} catch (error) { return null; }
+	}
+	function releaseEditorControl() {
+		if (!editorControl) return;
+		const control = editorControl; editorControl = null;
+		if (control.observer) control.observer.disconnect();
+		window.removeEventListener('resize', positionEditorControl);
+		['inert', 'aria-busy'].forEach((name) => { if (control.attributes[name] === null) control.editor.removeAttribute(name); else control.editor.setAttribute(name, control.attributes[name]); });
+		control.overlay.remove();
+		syncTrigger();
+	}
+	function positionEditorControl() {
+		if (!editorControl) return;
+		const rect = editorControl.frame.getBoundingClientRect();
+		Object.assign(editorControl.overlay.style, { top: rect.top + 'px', left: rect.left + 'px', width: rect.width + 'px', height: rect.height + 'px' });
+		document.dispatchEvent(new CustomEvent('bhranti:editor-launcher-position'));
+	}
+	function syncEditorControl() {
+		const run = currentRun(), snapshot = nativeEditorSnapshot(), editor = document.querySelector('#editor.block-editor__container'), frame = editor && editor.querySelector('.interface-interface-skeleton');
+		const key = snapshot && resultKey() + ':' + snapshot.type + ':' + snapshot.id;
+		const inFlight = run && run.phase === 'action' && editorControl && editorControl.key === key;
+		if (pageSuspended || !run || run.status !== 'running' || run.interrupted || (state.error || state.editorError) && !inFlight || state.pausedForEditor || !state.open && run.phase !== 'action' || !snapshot || snapshot.dirty || snapshot.saving || !editor || !frame) { releaseEditorControl(); return; }
+		const focused = document.activeElement, blocks = wp.data.select('core/block-editor');
+		const gesturing = blocks && (typeof blocks.isDraggingBlocks === 'function' && blocks.isDraggingBlocks() || typeof blocks.isMultiSelecting === 'function' && blocks.isMultiSelecting());
+		if (gesturing || snapshot.editing && (!focused || focused.tagName !== 'IFRAME' || !editor.contains(focused))) { releaseEditorControl(); return; }
+		const matches = (target) => target && Number(target.id) === snapshot.id && target.type === snapshot.type && safeTarget(target);
+		const action = run.next_action, path = '/wp/v2/' + (snapshot.type === 'page' ? 'pages' : 'posts') + '/' + snapshot.id;
+		const prepared = action && (action.tool === 'wp_request' && (action.write === true || action.method === 'GET') || action.tool === 'open_item' && action.method === 'GET') && action.path === path && matches(action.target);
+		const committed = (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id && ['read', 'write', 'rollback'].includes(event.operation) && matches(event.target));
+		if (!prepared && !committed) { releaseEditorControl(); return; }
+		// Native dialogs can be portalled outside the editor; leave their human interaction intact.
+		if (Array.from(document.querySelectorAll('.components-modal__screen-overlay, .media-modal, .components-popover [role="dialog"]')).some((node) => !root.contains(node) && !node.hidden && node.getClientRects().length)) { releaseEditorControl(); return; }
+		if (editorControl && editorControl.key === key && editorControl.editor === editor && editorControl.frame === frame) { positionEditorControl(); return; }
+		releaseEditorControl();
+		const heading = element('h2', '', snapshot.type === 'page' ? __('Page is under Bhranti’s control', 'bhranti') : __('Post is under Bhranti’s control', 'bhranti'));
+		const overlay = element('div', 'bhranti-editor-control', heading);
+		overlay.setAttribute('role', 'status'); overlay.setAttribute('aria-live', 'polite'); overlay.tabIndex = -1;
+		editorControl = { key, editor, frame, overlay, attributes: { inert: editor.getAttribute('inert'), 'aria-busy': editor.getAttribute('aria-busy') }, observer: null };
+		document.body.appendChild(overlay);
+		// Move clean canvas focus out before inert; otherwise its iframe can defer saved updates.
+		if (editor.contains(document.activeElement)) overlay.focus({ preventScroll: true });
+		editor.setAttribute('inert', ''); editor.setAttribute('aria-busy', 'true');
+		if (window.ResizeObserver) { editorControl.observer = new window.ResizeObserver(positionEditorControl); editorControl.observer.observe(frame); }
+		window.addEventListener('resize', positionEditorControl); positionEditorControl();
+		syncTrigger();
+	}
+	function nativeEditorChanged(schedule = true) {
+		syncEditorControl();
+		const next = nativeEditorSnapshot(), previous = editorSync.snapshot;
+		if (next && previous && ['id', 'type', 'record', 'edits', 'dirty', 'saving', 'editing'].every((key) => next[key] === previous[key]) || !next && !previous) return;
+		editorSync.snapshot = next; editorSync.generation++;
+		if (editorSync.pending) { editorSync.pending.attempts = 0; if (schedule) scheduleEditorChanges(); }
+	}
+	function scheduleEditorChanges(delay = 0) {
+		if (pageSuspended || editorSync.fetching || editorSync.timer !== null || !editorSync.pending || editorSync.pending.attempts >= 2) return;
+		editorSync.timer = window.setTimeout(() => { editorSync.timer = null; flushEditorChanges(); }, delay);
+	}
+	function observeEditorChanges() {
+		const run = currentRun(), key = resultKey(), snapshot = nativeEditorSnapshot();
+		if (editorSync.pending && (!snapshot || editorSync.pending.session !== String(state.session && state.session.id || '') || editorSync.pending.id !== snapshot.id || editorSync.pending.type !== snapshot.type)) { editorSync.pending = null; editorSync.message = ''; }
+		if (editorSync.pending && editorSync.pending.observedRun !== key) { editorSync.pending.observedRun = key; editorSync.pending.attempts = 0; scheduleEditorChanges(); }
+		if (!run || !key) return;
+		const events = state.session.events || [], seen = editorSync.baselines.get(key);
+		if (!seen) { editorSync.baselines.set(key, new Set(events.map((event) => String(event.id)))); return; }
+		events.forEach((event) => {
+			const id = String(event.id || ''); if (!id || seen.has(id)) return; seen.add(id);
+			if (!snapshot || event.type !== 'action' || event.success !== true || event.run_id !== run.id || !['write', 'rollback'].includes(event.operation) || !event.target || event.target.type !== snapshot.type || Number(event.target.id) !== snapshot.id || !safeTarget(event.target)) return;
+			editorSync.pending = { key, observedRun: key, session: String(state.session.id), id: snapshot.id, type: snapshot.type, event: id, attempts: 0 }; editorSync.message = ''; scheduleEditorChanges();
+		});
+	}
+	function flushEditorChanges() {
+		if (editorSync.request) return editorSync.request;
+		if (editorSync.timer !== null) { window.clearTimeout(editorSync.timer); editorSync.timer = null; }
+		const request = (async () => {
+			let pending, generation, key;
+			do {
+				nativeEditorChanged(false);
+				pending = editorSync.pending; generation = editorSync.generation; key = resultKey();
+				await performEditorChanges();
+			} while (!pageSuspended && editorSync.pending && editorSync.pending.attempts < 2 && (editorSync.pending !== pending || editorSync.generation !== generation || resultKey() !== key));
+		})().finally(() => { if (editorSync.request === request) editorSync.request = null; });
+		editorSync.request = request; return request;
+	}
+	async function performEditorChanges() {
+		const pending = editorSync.pending;
+		if (!pending || pending.attempts >= 2 || editorSync.fetching || pageSuspended) return;
+		nativeEditorChanged(false);
+		const snapshot = nativeEditorSnapshot(), generation = editorSync.generation, runKey = resultKey();
+		if (!snapshot || pending.session !== String(state.session && state.session.id || '') || pending.id !== snapshot.id || pending.type !== snapshot.type) { editorSync.pending = null; editorSync.message = ''; return; }
+		if (snapshot.dirty || snapshot.saving || snapshot.editing) { editorSync.message = __('Saved updates will appear after you finish editing and save or discard your local changes.', 'bhranti'); if (state.open) render(); return; }
+		editorSync.fetching = true; pending.attempts++;
+		let retry = false, controller = null, timer = null;
+		const stillCurrent = () => {
+			const current = nativeEditorSnapshot();
+			return !pageSuspended && editorSync.pending === pending && runKey === resultKey() && generation === editorSync.generation && current && ['id', 'type', 'record', 'edits', 'dirty', 'saving', 'editing'].every((key) => current[key] === snapshot[key]);
+		};
+		try {
+			// Receiving saved data changes only this clean editor; other tabs keep their own edits.
+			controller = new AbortController(); timer = window.setTimeout(() => controller.abort(), 20000);
+			const record = await wp.apiFetch({ path: '/wp/v2/' + (pending.type === 'page' ? 'pages' : 'posts') + '/' + pending.id + '?context=edit', method: 'GET', signal: controller.signal });
+			if (!stillCurrent()) return;
+			if (!record || Number(record.id) !== pending.id || record.type !== pending.type || !record.content || typeof record.content.raw !== 'string' || !record.title || typeof record.title.raw !== 'string' || record.status === 'trash') throw new Error('Saved editor record is unavailable.');
+			// Receive persisted data, clearing only the unchanged edits from this clean snapshot.
+			// Native core-data then reparses saved blocks without creating an unsaved edit.
+			wp.data.dispatch('core').receiveEntityRecords('postType', pending.type, record, undefined, true, snapshot.edits);
+			editorSync.pending = null; editorSync.message = '';
+		} catch (error) { if (stillCurrent()) { retry = !error.data || ![401, 403, 404].includes(Number(error.data.status)); editorSync.message = __('The editor could not load the latest saved version yet.', 'bhranti'); if (!retry) pending.attempts = 2; } }
+		finally {
+			if (timer !== null) window.clearTimeout(timer);
+			editorSync.fetching = false;
+			if (state.open) render();
+			if (editorSync.pending && (editorSync.pending !== pending || editorSync.generation !== generation || resultKey() !== runKey || retry)) scheduleEditorChanges(retry ? 2000 : 0);
+		}
+	}
+	function editorToken() {
+		const key = openStorageKey + ':editor-token';
+		try { const saved = window.sessionStorage.getItem(key); if (saved && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(saved)) return saved; } catch (error) { /* A memory-only token still protects this tab. */ }
+		const token = window.crypto.randomUUID ? window.crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (value) => (Number(value) ^ window.crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> Number(value) / 4).toString(16));
+		try { window.sessionStorage.setItem(key, token); } catch (error) { /* Storage can be unavailable. */ }
+		return token;
+	}
+	const heartbeatToken = settings.isAdmin && settings.backgroundEnabled ? editorToken() : null;
+	function editorSummary() { return state.editor || currentRun() && currentRun().editor || {}; }
+	async function reportEditor(releaseStale = false, fresh = false) {
+		if (!heartbeatToken || pageSuspended) return editorSummary();
+		const local = editorState();
+		if (releaseStale && local.unsaved_changes) return editorSummary();
+		if (heartbeatRequest) {
+			if (fresh || releaseStale) { await heartbeatRequest; return reportEditor(releaseStale, true); }
+			if (heartbeatFingerprint !== JSON.stringify(local)) heartbeatQueued = true;
+			return heartbeatRequest;
+		}
+		heartbeatFingerprint = JSON.stringify(local);
+		heartbeatRequest = (async () => {
+			const controller = new AbortController(), timer = window.setTimeout(() => controller.abort(), 20000);
+			try {
+				const result = await wp.apiFetch({ path: apiPath + '/editor-state', method: 'POST', data: { token: heartbeatToken, ...local, ...(releaseStale ? { release_stale: true } : {}) }, signal: controller.signal });
+				const previous = JSON.stringify(editorSummary()), previousDirty = !!editorSummary().dirty, previousError = state.editorError; state.editor = { write_blocked: !!result.write_blocked, active: !!result.active, dirty: !!result.dirty, stale_dirty: !!result.stale_dirty }; state.editorError = '';
+				if (previousError || previousDirty !== state.editor.dirty) editorSync.generation++;
+				if ((previousError || previous !== JSON.stringify(state.editor)) && !state.editor.dirty && editorSync.pending) { editorSync.pending.attempts = 0; scheduleEditorChanges(); }
+				if (state.open && previous !== JSON.stringify(state.editor)) render(); else syncTrigger();
+				return state.editor;
+			} catch (error) { if (!state.editorError) editorSync.generation++; state.editorError = __('Editor safety could not be checked. Try Resume before continuing a site change.', 'bhranti'); if (state.open) render(); throw error; }
+			finally { window.clearTimeout(timer); heartbeatRequest = null; if (heartbeatQueued && !pageSuspended) { heartbeatQueued = false; reportEditor().catch(() => {}); } }
+		})();
+		return heartbeatRequest;
+	}
+	function startHeartbeat() {
+		if (!heartbeatToken || heartbeatTimer || pageSuspended) return;
+		reportEditor().catch(() => {}); heartbeatTimer = window.setInterval(() => reportEditor().catch(() => {}), 15000);
+	}
+	function scheduleBackgroundObservation(initial = false) {
+		window.clearTimeout(backgroundTimer); backgroundTimer = null;
+		if (!settings.backgroundEnabled || pageSuspended || state.open || !initial && (!currentRun() || currentRun().status !== 'running' || !currentRun().background)) return;
+		backgroundTimer = window.setTimeout(observeBackground, initial ? 0 : 4000);
+	}
+	async function observeBackground() {
+		backgroundTimer = null;
+		const id = state.session && state.session.id || savedSession();
+		if (state.open || pageSuspended || backgroundReading || !id || !/^[1-9]\d*$/.test(String(id))) return;
+		if (state.busy || state.stepping) { scheduleBackgroundObservation(); return; }
+		backgroundReading = true;
+		try {
+			const session = await request('/sessions/' + encodeURIComponent(id));
+			if (!state.open && !pageSuspended && String(state.session && state.session.id || savedSession()) === String(id)) { state.session = session; markExistingEvents(); syncTrigger(); }
+		} catch (error) { state.connectionError = __('Latest task status is unavailable. Reopen Bhranti to reconnect.', 'bhranti'); syncTrigger(); }
+		finally { backgroundReading = false; scheduleBackgroundObservation(); }
+	}
+	async function resumeRun() {
+		if (state.busy || state.stepping) return;
+		if (editorState().unsaved_changes) { state.pausedForEditor = true; render(); return; }
+		state.busy = true; render();
+		try { await reportEditor(true, true); if (editorSummary().dirty) { state.pausedForEditor = true; return; } state.pausedForEditor = false; }
+		catch (error) { state.pausedForEditor = true; notify(state.editorError || errorMessage(error)); }
+		finally { state.busy = false; render(); }
+		if (!state.pausedForEditor) continueRun();
+	}
+	function runtimeContext() {
+		const context = { ...(settings.context || {}), unsaved_changes: editorState().unsaved_changes };
+		try {
+			const editor = wp.data && wp.data.select('core/editor');
+			let id, postType;
+			if (editor && editor.getCurrentPostId) {
+				id = editor.getCurrentPostId();
+				postType = editor.getCurrentPostType && editor.getCurrentPostType();
+				const title = editor.getEditedPostAttribute && editor.getEditedPostAttribute('title');
+				context.title = typeof title === 'string' ? title : context.title;
+			}
+			if ((id === undefined || id === null || id === '') && wp.data) {
+				const site = wp.data.select('core/edit-site');
+				if (site && site.getEditedPostId) { id = site.getEditedPostId(); postType = site.getEditedPostType && site.getEditedPostType(); }
+			}
+			if (id !== undefined && id !== null && id !== '') {
+				context.entity_id = String(id).slice(0, 200);
+				context.post_id = Number.isInteger(Number(id)) && Number(id) > 0 ? Number(id) : 0;
+			}
+			if (postType) context.post_type = postType;
+			const blocks = wp.data && wp.data.select('core/block-editor');
+			const block = blocks && blocks.getSelectedBlock && blocks.getSelectedBlock();
+			if (block) {
+				const content = wp.blocks && wp.blocks.serialize ? wp.blocks.serialize([block]) : (block.attributes && typeof block.attributes.content === 'string' ? block.attributes.content : '');
+				context.selected_block = { client_id: block.clientId, name: block.name, path: (blocks.getBlockParents ? blocks.getBlockParents(block.clientId) : []).concat(block.clientId).slice(-20), content: content.slice(0, 8000) };
+			}
+		} catch (error) { /* Core editor stores are absent on ordinary site screens. */ }
+		return context;
+	}
+	function renderedPage() {
+		try {
+			const frame = document.querySelector('iframe[name="editor-canvas"], iframe.editor-canvas');
+			const region = frame && frame.contentDocument ? frame.contentDocument.body : document.querySelector('#wpbody-content, main, [role="main"]') || document.body;
+			const copy = region.cloneNode(true);
+			const originals = region.querySelectorAll('*'), copies = copy.querySelectorAll('*'), hasLayout = region.getClientRects().length > 0;
+			originals.forEach((node, index) => {
+				const style = node.ownerDocument.defaultView.getComputedStyle(node);
+				if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0' || node.classList.contains('screen-reader-text') || node.closest('[inert]') || (hasLayout && style.display !== 'contents' && !Array.from(node.getClientRects()).some((rect) => rect.width > 0 && rect.height > 0))) copies[index].remove();
+			});
+			copy.querySelectorAll('#bhranti-app, #wpadminbar, #adminmenuwrap, script, style, noscript, form, input, textarea, select, button, iframe, link, meta, [hidden], [aria-hidden="true"]').forEach((node) => node.remove());
+			copy.querySelectorAll('*').forEach((node) => {
+				Array.from(node.attributes).forEach((attribute) => { if (!['class', 'href', 'src', 'alt'].includes(attribute.name)) node.removeAttribute(attribute.name); });
+				['href', 'src'].forEach((name) => { if (node.hasAttribute(name)) { try { const url = new URL(node.getAttribute(name), window.location.href); if (!['https:', 'http:'].includes(url.protocol)) node.removeAttribute(name); else { url.search = ''; url.hash = ''; node.setAttribute(name, url.href); } } catch (error) { node.removeAttribute(name); } } });
+			});
+			return { html: copy.innerHTML.slice(0, 12000), text: (copy.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8000), viewport: { width: window.innerWidth, height: window.innerHeight } };
+		} catch (error) { return null; }
+	}
+	async function attachScreenshot() {
+		if (state.capturing || state.busy || activeRun()) return;
+		if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { notify(__('This browser cannot capture a tab screenshot. Page HTML and editor context are still available.', 'bhranti')); render(); return; }
+		state.capturing = true; render(); let stream;
+		try {
+			stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'browser' }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include', monitorTypeSurfaces: 'exclude', surfaceSwitching: 'exclude' });
+			const track = stream.getVideoTracks()[0]; if (!track || track.getSettings().displaySurface && track.getSettings().displaySurface !== 'browser') throw new Error(__('Choose a browser tab to capture its screenshot.', 'bhranti'));
+			const video = document.createElement('video'); video.srcObject = stream; video.muted = true; await video.play();
+			if (!video.videoWidth || !video.videoHeight) throw new Error(__('The browser did not return a screenshot frame.', 'bhranti'));
+			const scale = Math.min(1, 1600 / video.videoWidth, 1600 / video.videoHeight), canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale)); canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+			const data = canvas.toDataURL('image/jpeg', .8).split(',')[1]; if (!data || data.length > 2796204) throw new Error(__('The screenshot is too large. Choose a smaller browser window.', 'bhranti'));
+			state.screenshot = { mime_type: 'image/jpeg', data }; rememberDraft();
+		} catch (error) { if (error.name !== 'NotAllowedError') notify(errorMessage(error)); }
+		finally { if (stream) stream.getTracks().forEach((track) => track.stop()); state.capturing = false; render(); }
+	}
+
+	function attachedContext() {
+		const context = runtimeContext();
+		if (state.screenshot) context.screenshot = state.screenshot;
+		if (!state.attachPage) return { unsaved_changes: !!context.unsaved_changes, ...(state.screenshot ? { screenshot: state.screenshot } : {}) };
+		context.rendered_page = renderedPage();
+		if (!state.attachBlock) delete context.selected_block;
+		return context;
+	}
+	function resultKey() { const run = currentRun(); return state.session && run ? state.session.id + ':' + run.id : ''; }
+	function collectResults() {
+		const run = currentRun(), key = resultKey(); if (!run || !key) return;
+		if (run.status === 'running' && !state.results.has(key)) state.results.set(key, new Map());
+		const results = state.results.get(key); if (!results) return;
+		(state.session.events || []).forEach((event) => { if (event.type === 'action' && event.success === true && event.run_id === run.id && ['write', 'image', 'rollback'].includes(event.operation) && safeTarget(event.target)) results.set(String(event.id), event); });
+	}
+	function markExistingEvents() { syncEditorControl(); observeEditorChanges(); collectResults(); (state.session && state.session.events || []).forEach((event) => state.seen.add(String(event.id))); }
+	function safeTarget(target) {
+		if (!target || typeof target.url !== 'string' || !target.url.trim()) return null;
+		try {
+			const url = new URL(target.url, window.location.href);
+			if (url.origin !== window.location.origin || !['http:', 'https:'].includes(url.protocol)) return null;
+			const admin = new URL(settings.connectorsUrl || '/wp-admin/options-connectors.php', window.location.origin).pathname.replace(/[^/]+$/, '');
+			if (url.pathname.startsWith(admin) && !['post.php', 'edit.php', 'revision.php', 'site-editor.php', 'upload.php', 'edit-tags.php', 'term.php', 'edit-comments.php', 'options-general.php', 'options-reading.php', 'nav-menus.php', 'comment.php', 'plugins.php'].includes(url.pathname.slice(admin.length))) return null;
+			if (url.searchParams.has('_wpnonce') || url.searchParams.get('action') && !['edit', 'view'].includes(url.searchParams.get('action')) && !(url.pathname.endsWith('/comment.php') && url.searchParams.get('action') === 'editcomment')) return null;
+			url.searchParams.set('bhranti', '1'); if (state.session) url.searchParams.set('bhranti_session', state.session.id);
+			return url;
+		} catch (error) { return null; }
+	}
+	function contentTarget(target, url) { return target && target.type !== 'attachment' && /\/(?:post|site-editor)\.php$/.test(url.pathname); }
+	function viewMatches(event) {
+		const current = new URL(window.location.href), type = event.target && event.target.type, context = runtimeContext();
+		if (/\/edit\.php$/.test(current.pathname)) return type === (current.searchParams.get('post_type') || 'post');
+		if (/\/upload\.php$/.test(current.pathname)) return type === 'attachment';
+		if (/\/plugins\.php$/.test(current.pathname)) return type === 'plugin';
+		if (/\/edit-comments\.php$/.test(current.pathname)) return type === 'comment';
+		if (/\/edit-tags\.php$/.test(current.pathname)) return type === current.searchParams.get('taxonomy');
+		return !settings.isAdmin && !!context.post_id && String(context.post_id) === String(event.target && event.target.id);
+	}
+	function rememberView(event) {
+		try {
+			const key = storageKey + ':view-update', value = resultKey() + ':' + event.id;
+			if (window.sessionStorage.getItem(key) === value) return false;
+			window.sessionStorage.setItem(key, value); return true;
+		} catch (error) { return false; }
+	}
+	function revealNewTarget(previousEvents, runId) {
+		if (!previousEvents || !runId || !currentRun() || currentRun().id !== runId) return false;
+		collectResults();
+		const results = Array.from((state.results.get(resultKey()) || new Map()).values());
+		if (!results.length || currentRun().status !== 'complete' || !state.open || editorIsOpen() || pageFormDirty || runtimeContext().unsaved_changes || editorSummary().dirty) return false;
+		const matching = results.filter(viewMatches), contents = results.filter((event) => ['write', 'rollback'].includes(event.operation) && contentTarget(event.target, safeTarget(event.target)));
+		const dashboard = settings.isAdmin && /\/wp-admin\/(?:index\.php)?$/.test(window.location.pathname);
+		const latest = matching.length ? matching[matching.length - 1] : dashboard ? contents[contents.length - 1] : null; if (!latest || !rememberView(latest)) return false;
+		const target = matching.length ? new URL(window.location.href) : safeTarget(latest.target);
+		rememberDraft(); rememberSession(state.session.id); window.location.assign(target.href); return true;
+	}
+	async function refreshWorkspace() {
+		const workspace = await request('/workspace'); state.workspace = { ...workspace, sessions: Array.isArray(workspace.sessions) ? workspace.sessions : [], agents: Array.isArray(workspace.agents) ? workspace.agents : [{ id: 'bhranti', name: 'Bhranti' }] };
+	}
+	async function refreshWorkspaceQuietly() {
+		try { await refreshWorkspace(); } catch (error) { state.connectionError = __('The chat list will update when the connection returns.', 'bhranti'); }
+	}
+	function sessionUnavailable(error) { return error && ['bhranti_session_missing', 'bhranti_session_owner', 'bhranti_session_not_found'].includes(error.code) || error && error.data && Number(error.data.status) === 404; }
+	async function loadSession(id) {
+		try { return await request('/sessions/' + encodeURIComponent(id)); }
+		catch (error) { if (!sessionUnavailable(error)) throw error; rememberSession(null); state.agentId = 'bhranti'; state.connectionError = ''; return null; }
+	}
+	async function openSession(id, preserveDraft = false) {
+		if (state.busy || state.loading || state.capturing || state.stepping) return;
+		rememberDraft(); state.busy = true; state.error = ''; state.menu = false; render();
+		try { state.session = await loadSession(id); if (!preserveDraft) { state.draft = restoreDraft(state.session && state.session.id); state.screenshot = state.screenshots.get(draftKey(state.session && state.session.id)) || null; } state.agentId = state.session && state.session.agent_id || 'bhranti'; rememberSession(state.session && state.session.id); markExistingEvents(); }
+		catch (error) { state.error = errorMessage(error); }
+		finally { state.busy = false; render(); }
+		if (!state.error) continueRun();
+	}
+	async function openPanel(trigger) {
+		if (trigger) lastTrigger = trigger;
+		window.clearTimeout(backgroundTimer); backgroundTimer = null;
+		rememberOpen(true);
+		state.open = true; root.hidden = false; document.body.classList.add('bhranti-panel-open'); syncTrigger(); render();
+		if (!state.initialized) {
+			state.loading = true; state.error = ''; render();
+			try {
+				await refreshWorkspace();
+				const query = new URL(window.location.href).searchParams;
+				const id = query.get('bhranti_session') || query.get('session') || String(settings.initialSessionId || '') || savedSession();
+				if (id && /^[1-9]\d*$/.test(id)) { state.session = await loadSession(id); state.agentId = state.session && state.session.agent_id || 'bhranti'; rememberSession(state.session && state.session.id); markExistingEvents(); }
+				if (!state.draft) state.draft = restoreDraft(state.session && state.session.id); state.initialized = true;
+			} catch (error) { state.error = errorMessage(error); }
+			finally { state.loading = false; render(); }
+		} else if (!state.busy && !state.stepping) {
+			state.busy = true; state.error = ''; render();
+			try { await refreshWorkspaceQuietly(); if (state.session) { state.session = await loadSession(state.session.id); state.agentId = state.session && state.session.agent_id || 'bhranti'; markExistingEvents(); } }
+			catch (error) { state.error = errorMessage(error); }
+			finally { state.busy = false; render(); }
+		}
+		if (state.open) { const control = root.querySelector('#bhranti-composer'); if (control && !control.disabled) control.focus(); else root.querySelector('#bhranti-close').focus(); continueRun(); }
+	}
+	function closePanel() {
+		rememberOpen(false);
+		const url = new URL(window.location.href); if (url.searchParams.has('bhranti')) { url.searchParams.delete('bhranti'); window.history.replaceState(null, '', url); }
+		state.open = false; state.menu = false; root.hidden = true; document.body.classList.remove('bhranti-panel-open'); syncTrigger();
+		syncEditorControl();
+		scheduleBackgroundObservation();
+		const trigger = triggerAvailable(lastTrigger) ? lastTrigger : Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (trigger) trigger.focus();
+		// The native launcher can change portal parents when editor control ends.
+		window.requestAnimationFrame(() => { if (document.activeElement === document.body) { const opener = Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (opener) opener.focus(); } });
+	}
+	function triggerAvailable(trigger) {
+		if (!trigger || !trigger.isConnected || trigger.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+		const style = window.getComputedStyle(trigger);
+		return !trigger.disabled && style.display !== 'none' && style.visibility !== 'hidden' && trigger.getClientRects().length > 0;
+	}
+	function syncTrigger() {
+		const trigger = document.querySelector('#wp-admin-bar-bhranti > a'), bar = document.getElementById('wpadminbar');
+		const adminBarAvailable = triggerAvailable(trigger);
+		const top = bar && triggerAvailable(bar) ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+		root.style.top = top + 'px';
+		document.querySelectorAll('#wp-admin-bar-bhranti > a, [data-bhranti-editor-open]').forEach((opener) => {
+			opener.setAttribute('aria-controls', 'bhranti-app'); opener.setAttribute('aria-expanded', String(state.open)); opener.setAttribute('aria-haspopup', 'dialog');
+			if (opener.hasAttribute('data-bhranti-editor-open')) opener.setAttribute('aria-pressed', String(state.open));
+		});
+		const detail = { open: state.open, adminBarAvailable, controlled: !!editorControl };
+		const fingerprint = JSON.stringify(detail);
+		if (fingerprint !== triggerFingerprint) { triggerFingerprint = fingerprint; document.dispatchEvent(new CustomEvent('bhranti:panel-state', { detail })); }
+		if (!trigger) return;
+		let marker = trigger.querySelector('.bhranti-background-status'); const run = currentRun();
+		const background = !state.open && run && run.background && ['running', 'awaiting_confirmation'].includes(run.status);
+		if (!background) { if (marker) marker.remove(); trigger.removeAttribute('title'); return; }
+		const label = run.background_error || state.editorError ? __('Background unavailable', 'bhranti') : run.status === 'awaiting_confirmation' ? __('Approval required', 'bhranti') : __('Continuing in background', 'bhranti');
+		if (!marker) { marker = element('span', 'bhranti-background-status'); marker.setAttribute('role', 'status'); trigger.appendChild(marker); }
+		marker.textContent = label; trigger.title = label;
+	}
+	function newChat() {
+		if (state.busy || activeRun()) return;
+		rememberDraft(); state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; state.error = ''; state.menu = false; state.seen.clear(); rememberSession(null); render(); root.querySelector('#bhranti-composer').focus();
+	}
+	async function reloadAfterError(content, previousCount) {
+		if (!state.session) { if (content) state.draft = content; return; }
+		try {
+			state.session = await request('/sessions/' + encodeURIComponent(state.session.id));
+			if (content && !(state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) state.draft = content;
+			markExistingEvents();
+			return true;
+		} catch (error) { if (content) state.draft = content; state.error = __('Connection interrupted. Reconnect to check the saved task before continuing.', 'bhranti'); return false; }
+	}
+	async function reconnectChat() {
+		if (state.busy || state.loading || state.stepping) return;
+		state.error = '';
+		if (state.session) await openSession(state.session.id, true);
+		else { state.initialized = false; await openPanel(); }
+	}
+	async function sendMessage() {
+		const content = state.draft.trim();
+		if (!content || state.busy || state.loading || state.capturing || state.error || activeRun()) return;
+		state.busy = true; state.draft = ''; rememberDraft(); state.stopRequested = false; state.pausedForEditor = false; render(); let previousCount = 0;
+		try {
+			if (!state.session) state.session = await request('/sessions', 'POST', {});
+			rememberSession(state.session.id); previousCount = (state.session.messages || []).length;
+			state.session.messages = (state.session.messages || []).concat({ role: 'user', content, created: new Date().toISOString() }); render();
+			state.session = await request('/sessions/' + encodeURIComponent(state.session.id) + '/messages', 'POST', { content, context: attachedContext(), agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null));
+		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount) && (state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) state.error = ''; }
+		finally { await refreshWorkspaceQuietly(); state.busy = false; rememberDraft(); render(); }
+		markExistingEvents(); continueRun(); focusComposer();
+	}
+	async function continueRun() {
+		if (pageSuspended || state.stepping || state.busy || state.error && !state.stopRequested || !state.open || !currentRun() || currentRun().status !== 'running') return;
+		state.stepping = true; state.busy = true; collectResults(); render();
+		let waitingSince = null, observedRetryAt = null;
+		try {
+			while (!pageSuspended && state.open && currentRun() && (currentRun().status === 'running' || state.stopRequested && currentRun().status === 'awaiting_confirmation')) {
+				// Let the saved canvas update before another model request occupies the server.
+				await flushEditorChanges(); if (pageSuspended || !state.open) break;
+				const id = state.session.id, runId = currentRun().id;
+				if (currentRun().interrupted && !state.stopRequested) { state.error = __('The previous request was interrupted. Stop this run and check Logs before starting again.', 'bhranti'); render(); break; }
+				if (state.stopRequested && (currentRun().interrupted || !['model', 'action', 'tool'].includes(currentRun().phase))) { state.error = ''; state.session = await request('/sessions/' + encodeURIComponent(id) + '/cancel', 'POST', { run_id: runId }); state.stopRequested = false; state.pausedForEditor = false; render(); break; }
+				const retryAt = Number(currentRun().retry_at) * 1000;
+				if (Number.isFinite(retryAt) && retryAt > 0 && (retryAt > Date.now() || observedRetryAt !== retryAt)) {
+					if (retryAt > Date.now()) { await wait(Math.min(1000, retryAt - Date.now())); if (!state.open || pageSuspended) break; render(); if (state.stopRequested || retryAt > Date.now()) continue; }
+					state.session = await request('/sessions/' + encodeURIComponent(id)); markExistingEvents(); render(); observedRetryAt = retryAt;
+					if (!currentRun() || currentRun().id !== runId || revealNewTarget(new Set(), runId)) break; continue;
+				}
+				if (['model', 'action', 'tool'].includes(currentRun().phase)) {
+					if (waitingSince === null) waitingSince = Date.now();
+					if (Date.now() - waitingSince >= 600000) throw new Error(__('WordPress is still busy. Stop this run and check Logs before retrying.', 'bhranti'));
+					await wait(1500); if (!state.open) break;
+					state.session = await request('/sessions/' + encodeURIComponent(id)); markExistingEvents(); render();
+					if (!currentRun() || currentRun().id !== runId || revealNewTarget(new Set(), runId)) break; continue;
+				}
+				const previousEvents = new Set((state.session.events || []).map((event) => String(event.id)));
+				const prepared = currentRun().phase === 'prepared', action = currentRun().next_action;
+				if (prepared) {
+					if (!action) throw new Error(__('The prepared action could not load. Reload this conversation before continuing.', 'bhranti'));
+					if (String(action.method || 'GET').toUpperCase() !== 'GET') {
+						if (editorState().unsaved_changes) { state.pausedForEditor = true; render(); break; }
+						try { await reportEditor(false, true); } catch (error) { state.pausedForEditor = true; render(); break; }
+						if (editorState().unsaved_changes || editorSummary().dirty) { state.pausedForEditor = true; render(); break; }
+					}
+					state.pausedForEditor = false; render(); await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+					if (!state.open || pageSuspended) break; if (state.stopRequested) continue;
+				}
+				try {
+					state.session = await runRequest('/sessions/' + encodeURIComponent(id) + (prepared ? '/execute' : '/step'), prepared ? { run_id: runId, prepared_step: currentRun().step, unsaved_changes: !!runtimeContext().unsaved_changes } : { run_id: runId, defer_tool: true }, prepared ? action.summary || __('Executing prepared action…', 'bhranti') : __('Planning next step…', 'bhranti'));
+				} catch (error) {
+					if (['bhranti_unsaved_changes', 'bhranti_editor_busy'].includes(error.code)) { state.pausedForEditor = true; await reloadAfterError(); render(); break; }
+					if (error.code !== 'bhranti_busy' || !error.data || error.data.status !== 409) throw error;
+					if (waitingSince === null) waitingSince = Date.now();
+					if (Date.now() - waitingSince >= 600000) throw new Error(__('WordPress is still busy. Stop this run and check Logs before retrying.', 'bhranti'));
+					await wait(1500); if (!state.open) break;
+					state.session = await request('/sessions/' + encodeURIComponent(id)); markExistingEvents(); render();
+					if (!currentRun() || currentRun().id !== runId) break; continue;
+				}
+				waitingSince = null;
+				if (prepared && currentRun() && currentRun().id === runId && currentRun().phase === 'prepared') throw new Error(__('WordPress has not finished this action. Reload this conversation before retrying.', 'bhranti'));
+				render();
+				if (state.stopRequested) continue;
+				if (revealNewTarget(previousEvents, runId)) break;
+			}
+		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError() && currentRun() && currentRun().status !== 'running') state.error = ''; }
+		finally { state.busy = false; state.stepping = false; if (!activeRun()) { state.stopRequested = false; state.pausedForEditor = false; } render(); focusComposer(); if (!state.open) scheduleBackgroundObservation(); }
+	}
+	async function resumeTask() {
+		const run = currentRun();
+		if (state.busy || state.stepping || !state.session || !run || run.status !== 'failed' || !run.can_resume) return;
+		state.busy = true; state.error = ''; state.stopRequested = false; state.pausedForEditor = false; render(); let resumed = false;
+		try { state.session = await runRequest('/sessions/' + encodeURIComponent(state.session.id) + '/resume', { run_id: run.id }, __('Resuming task…', 'bhranti')); markExistingEvents(); resumed = true; }
+		catch (error) { state.error = errorMessage(error); if (await reloadAfterError() && currentRun() && currentRun().id === run.id && currentRun().status === 'running') { state.error = ''; resumed = true; } }
+		finally { state.busy = false; render(); }
+		if (resumed) continueRun();
+	}
+	async function confirmAction(approved) {
+		if (state.busy || !state.session || !state.session.confirmation) return;
+		const id = state.session.id, confirmationId = state.session.confirmation.id, runId = currentRun() && currentRun().id, previousEvents = new Set((state.session.events || []).map((event) => String(event.id))); let completed = false; state.busy = true; render();
+		try { state.session = await runRequest('/sessions/' + encodeURIComponent(id) + '/confirm', { confirmation_id: confirmationId, approved }, approved ? __('Applying approved action…', 'bhranti') : __('Cancelling action…', 'bhranti')); completed = true; }
+		catch (error) { notify(errorMessage(error)); await reloadAfterError(); }
+		finally { state.busy = false; render(); }
+		if (!completed || !approved || !revealNewTarget(previousEvents, runId)) continueRun();
+	}
+	async function rollback(actionId) {
+		if (state.busy || activeRun()) return;
+		if (!window.confirm(__('Roll back this change? Newly created items will move to Trash; updates restore their previous values. Later edits are protected.', 'bhranti'))) return;
+		state.busy = true; render();
+		try { await request('/sessions/' + encodeURIComponent(state.session.id) + '/rollback', 'POST', { action_id: actionId }); state.session = await request('/sessions/' + encodeURIComponent(state.session.id)); notify(__('Rollback completed.', 'bhranti'), 'success'); }
+		catch (error) { notify(errorMessage(error)); await reloadAfterError(); }
+		finally { state.busy = false; render(); }
+		markExistingEvents();
+	}
+	async function deleteChat() {
+		if (state.busy || activeRun() || !state.session) return;
+		if (!window.confirm(__('Delete this conversation permanently? Site actions and their audit records are not undone by deleting a chat.', 'bhranti'))) return;
+		state.busy = true; render();
+		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); state.drafts.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
+		catch (error) { notify(errorMessage(error)); }
+		finally { state.busy = false; render(); }
+	}
+	function focusComposer() {
+		const input = root.querySelector('#bhranti-composer'), focused = document.activeElement;
+		if (state.open && !interacting && !composing && input && !input.disabled && (!focused || focused === document.body || focused === input || focused.id === 'bhranti-send')) input.focus();
+	}
+	function displayTime(value) {
+		if (!value) return ''; const date = new Date(value); if (Number.isNaN(date.getTime())) return '';
+		return wp.date && wp.date.dateI18n ? wp.date.dateI18n(settings.dateFormat || 'M j, Y g:i a', value) : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+	}
+	function targetLink(target) {
+		const url = safeTarget(target); if (!url) return null;
+		const link = element('a', 'bhranti-target-link', target.title || __('Open target', 'bhranti')); link.href = url.href;
+		link.addEventListener('click', (event) => { if (runtimeContext().unsaved_changes) { event.preventDefault(); notify(__('Save or discard your editor changes before opening another item.', 'bhranti'), 'warning'); render(); } else rememberDraft(); }); return link;
+	}
+	function notices() {
+		const wrap = element('div', 'bhranti-notices');
+		state.notices.forEach((notice) => { const node = element('div', 'bhranti-notice is-' + notice.type, element('span', '', notice.message), iconButton(__('Dismiss notice', 'bhranti'), 'bhranti-icon-button', () => { dismissNotice(notice.id); render(); }, 'close')); node.setAttribute('role', notice.type === 'error' ? 'alert' : 'status'); wrap.appendChild(node); }); return wrap;
+	}
+	function menu() {
+		const wrap = element('section', 'bhranti-menu'); wrap.id = 'bhranti-menu'; wrap.setAttribute('aria-label', __('Chats', 'bhranti'));
+		wrap.appendChild(element('h3', '', __('Chats', 'bhranti')));
+		const list = element('ul', 'bhranti-chat-list');
+		state.workspace.sessions.forEach((session) => {
+			const item = button('', 'bhranti-menu-item bhranti-chat-item', () => openSession(session.id));
+			item.appendChild(element('span', 'bhranti-chat-title', session.title || __('Untitled conversation', 'bhranti')));
+			if (session.updated) item.appendChild(element('span', 'bhranti-chat-date', displayTime(session.updated)));
+			if (state.session && String(state.session.id) === String(session.id)) item.setAttribute('aria-current', 'page');
+			item.disabled = state.busy || state.loading || state.capturing || !!activeRun(); list.appendChild(element('li', '', item));
+		});
+		wrap.appendChild(list);
+		if (!state.workspace.sessions.length) wrap.appendChild(element('p', 'bhranti-chat-empty', __('No conversations yet.', 'bhranti')));
+		if ((state.workspace.agents || []).length > 1) {
+			const label = element('label', '', __('Agent', 'bhranti')); label.htmlFor = 'bhranti-agent'; const select = element('select', 'bhranti-history'); select.id = 'bhranti-agent';
+			state.workspace.agents.forEach((agent) => { const option = element('option', '', agent.name); option.value = agent.id; select.appendChild(option); });
+			select.value = state.agentId; select.disabled = state.busy || state.loading || !!activeRun(); select.addEventListener('change', () => { state.agentId = select.value; }); wrap.appendChild(label); wrap.appendChild(select);
+		}
+		if (state.session) { const remove = button(__('Delete this chat', 'bhranti'), 'bhranti-menu-item', deleteChat); remove.disabled = state.busy || !!activeRun(); wrap.appendChild(remove); }
+		return wrap;
+	}
+	function runStatus() {
+		const run = currentRun(); if (!run) return null;
+		const labels = { running: ['action', 'tool'].includes(run.phase) ? __('Applying your changes…', 'bhranti') : run.phase === 'prepared' ? __('Ready to apply changes', 'bhranti') : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
+		const retrySeconds = Math.max(0, Math.ceil(Number(run.retry_at) - Date.now() / 1000));
+		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(__('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
+		const status = element('div', 'bhranti-run-status', element('span', 'bhranti-status-label', label)); status.setAttribute('role', 'status');
+		if (state.progress) { const elapsed = element('span', 'bhranti-elapsed', sprintf(__('%ds', 'bhranti'), Math.floor((Date.now() - state.progress.started) / 1000))); elapsed.setAttribute('aria-live', 'off'); status.appendChild(elapsed); }
+		if (run.status === 'running') {
+			const actions = element('div', 'bhranti-run-controls');
+			if (state.pausedForEditor) { const resume = button(__('Resume', 'bhranti'), 'bhranti-inline-button', resumeRun); resume.disabled = state.busy || state.stepping; actions.appendChild(resume); }
+			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
+		}
+		return status;
+	}
+	function actionPreview() {
+		const run = currentRun(), action = run && run.next_action;
+		if (!run || run.status !== 'running' || !['prepared', 'action', 'tool'].includes(run.phase) || !action) return null;
+		const preview = element('section', 'bhranti-action-preview', element('h3', '', action.summary || __('Prepared WordPress action', 'bhranti')));
+		const meta = [action.tool, action.method, action.path].filter((value) => typeof value === 'string' && value).map((value) => value.slice(0, 200)).join(' · ');
+		if (meta) { const details = element('details', 'bhranti-action-meta', element('summary', '', __('Action details', 'bhranti')), element('p', '', meta)); if (Array.isArray(action.details) && action.details.length) details.appendChild(element('p', '', sprintf(__('Fields: %s', 'bhranti'), action.details.filter((value) => typeof value === 'string').slice(0, 20).map((value) => value.slice(0, 100)).join(', ')))); preview.appendChild(details); }
+		const link = targetLink(action.target); if (link) { link.textContent = sprintf(__('Open %s', 'bhranti'), action.target.title || __('item', 'bhranti')); preview.appendChild(link); }
+		return preview;
+	}
+	function recoveryCard(title, text, label, action) {
+		const card = element('section', 'bhranti-recovery-card', element('h3', '', title), element('p', '', text)); card.setAttribute('role', 'status');
+		const control = button(label, 'bhranti-small-button', action); control.disabled = state.busy || state.loading || state.stepping;
+		card.appendChild(element('div', 'bhranti-confirmation-actions', control)); return card;
+	}
+	function conversation() {
+		const stream = element('div', 'bhranti-stream'); stream.setAttribute('role', 'log'); stream.setAttribute('aria-label', __('Bhranti conversation', 'bhranti')); stream.setAttribute('aria-live', 'polite');
+		const run = currentRun(), messages = state.session && state.session.messages || [], lastMessage = messages[messages.length - 1];
+		const pausedMessage = run && run.status === 'failed' && run.can_resume === true && lastMessage && lastMessage.role === 'error' && (!lastMessage.run_id || lastMessage.run_id === run.id) ? lastMessage : null;
+		if (!state.session || !messages.length) stream.appendChild(element('div', 'bhranti-empty', element('p', '', __('What would you like to work on?', 'bhranti'))));
+		else {
+			const timeline = (state.session.messages || []).map((value) => ({ kind: 'message', value })).concat((state.session.events || []).map((value) => ({ kind: 'event', value })));
+			const rank = (item) => item.kind === 'event' ? 1 : item.value.role === 'user' ? 0 : 2;
+			timeline.sort((a, b) => (Date.parse(a.value.created) || 0) - (Date.parse(b.value.created) || 0) || rank(a) - rank(b));
+			timeline.forEach(({ kind, value }) => {
+				if (kind === 'event') {
+					const row = element('div', 'bhranti-tool-event', element('div', 'bhranti-event-meta', __('Bhranti', 'bhranti'), element('span', '', value.type || '')), element('p', '', value.summary || ''), targetLink(value.target));
+					if (value.rollback_available && value.action_id) { const undo = button(__('Roll back', 'bhranti'), 'bhranti-inline-button', () => rollback(value.action_id)); undo.disabled = state.busy || !!activeRun(); row.appendChild(undo); }
+					stream.appendChild(row); return;
+				}
+				const role = ['user', 'assistant', 'error'].includes(value.role) ? value.role : 'assistant';
+				if (value === pausedMessage) return;
+				if (role === 'error' && value.resolved === true) { stream.appendChild(element('details', 'bhranti-resolved-error', element('summary', '', __('Earlier connection issue · resumed', 'bhranti')), element('p', '', value.content || ''))); return; }
+				const requester = (state.workspace.user || {}).name || __('You', 'bhranti');
+				const title = role === 'user' ? requester : role === 'error' ? __('Request issue', 'bhranti') : __('Bhranti', 'bhranti');
+				const content = element('div', 'bhranti-message-content', value.content || '');
+				if (role === 'assistant' && typeof value.rendered === 'string') {
+					// Only this server-produced field passes native WordPress chat HTML sanitization.
+					content.innerHTML = value.rendered; content.classList.add('is-rendered');
+				}
+				const article = element('article', 'bhranti-message is-' + role, element('div', 'bhranti-message-meta screen-reader-text', element('span', '', title), element('span', '', displayTime(value.created))), content);
+				if (role === 'assistant' && window.navigator.clipboard && window.navigator.clipboard.writeText) article.appendChild(iconButton(__('Copy response', 'bhranti'), 'bhranti-copy-button', async () => { try { await window.navigator.clipboard.writeText(value.content || ''); notify(__('Response copied.', 'bhranti'), 'success'); } catch (error) { notify(__('The response could not be copied.', 'bhranti')); } render(); }, 'copy'));
+				stream.appendChild(article);
+			});
+		}
+		if (state.error) stream.appendChild(recoveryCard(__('Reconnect to continue', 'bhranti'), state.error, __('Reconnect', 'bhranti'), reconnectChat));
+		else if (run && run.status === 'failed' && run.can_resume === true) stream.appendChild(recoveryCard(__('Connection paused', 'bhranti'), pausedMessage && pausedMessage.content || __('Your completed work is saved. Resume from the last checkpoint when you’re ready.', 'bhranti'), __('Resume task', 'bhranti'), resumeTask));
+		if (state.reconnecting || state.connectionError && !state.error) { const connection = element('p', 'bhranti-connection-status', state.reconnecting ? __('Reconnecting… Your conversation is safe.', 'bhranti') : state.connectionError); connection.setAttribute('role', 'status'); stream.appendChild(connection); }
+		if (editorSync.message) { const pending = element('p', 'bhranti-connection-status', editorSync.message); pending.setAttribute('role', 'status'); stream.appendChild(pending); }
+		const preview = actionPreview(); if (preview) stream.appendChild(preview);
+		const status = runStatus(); if (status) stream.appendChild(status);
+		const confirmation = state.session && state.session.confirmation;
+		if (confirmation) {
+			const card = element('section', 'bhranti-confirmation', element('h3', '', __('Approval required', 'bhranti')), element('p', '', confirmation.summary || ''), targetLink(confirmation.target));
+			const yes = button(__('Approve', 'bhranti'), 'bhranti-small-button is-primary', () => confirmAction(true), 'bhranti-confirm'), no = button(__('Deny', 'bhranti'), 'bhranti-small-button', () => confirmAction(false), 'bhranti-cancel'); yes.disabled = no.disabled = state.busy;
+			card.appendChild(element('div', 'bhranti-confirmation-actions', yes, no)); stream.appendChild(card);
+		}
+		if ((state.loading || state.busy) && !activeRun()) { const status = element('div', 'bhranti-progress', state.loading ? __('Loading…', 'bhranti') : __('Working…', 'bhranti')); status.setAttribute('role', 'status'); stream.appendChild(status); }
+		return stream;
+	}
+	function contextChip(label, name, remove, id) {
+		return element('span', 'bhranti-context-chip', icon(name), element('span', '', label), iconButton(__('Remove context', 'bhranti'), 'bhranti-chip-remove', remove, 'close', id));
+	}
+	function composer() {
+		const form = element('form', 'bhranti-composer-form'); form.addEventListener('submit', (event) => { event.preventDefault(); sendMessage(); });
+		const context = runtimeContext(), chips = element('div', 'bhranti-context-chips');
+		const labels = { page: __('Page', 'bhranti'), post: __('Post', 'bhranti'), wp_template: __('Template', 'bhranti'), wp_template_part: __('Template Part', 'bhranti') };
+		if (state.attachPage) { const label = labels[context.post_type] || (context.title ? context.title : __('Current page', 'bhranti')); const chip = contextChip(label, 'context', () => { state.attachPage = false; render(); }, 'bhranti-remove-context'); chip.title = context.title || context.url || ''; chips.appendChild(chip); }
+		if (state.attachPage && state.attachBlock && context.selected_block) { let label = context.selected_block.name; if (wp.blocks && wp.blocks.getBlockType) { const type = wp.blocks.getBlockType(label); if (type) label = type.title; } chips.appendChild(contextChip(label, 'block', () => { state.attachBlock = false; render(); }, 'bhranti-remove-block')); }
+		const input = element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun();
+		const sendingBlocked = () => state.busy || state.loading || state.capturing || !!state.error || !!activeRun() || !state.draft.trim();
+		const send = iconButton(__('Send message', 'bhranti'), 'bhranti-send-button', sendMessage, 'send', 'bhranti-send'); send.disabled = sendingBlocked();
+		input.addEventListener('input', () => { state.draft = input.value; rememberDraft(); send.disabled = sendingBlocked(); }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) { event.preventDefault(); sendMessage(); } });
+		const attach = iconButton(__('Attach current page context', 'bhranti'), 'bhranti-icon-button', () => { state.attachPage = true; state.attachBlock = true; render(); }, 'plus', 'bhranti-attach');
+		if (state.screenshot) { const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached tab screenshot', 'bhranti'); form.appendChild(element('div', 'bhranti-screenshot', image, iconButton(__('Remove screenshot', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close'))); }
+		const screenshot = iconButton(state.capturing ? __('Choosing screenshot…', 'bhranti') : __('Attach tab screenshot', 'bhranti'), 'bhranti-icon-button', attachScreenshot, 'camera', 'bhranti-screenshot'); screenshot.disabled = state.busy || state.loading || state.capturing || !!activeRun();
+		form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, screenshot), send)); return form;
+	}
+	function resizeHandle() {
+		const handle = element('div', 'bhranti-resize'); handle.tabIndex = 0; handle.setAttribute('role', 'separator'); handle.setAttribute('aria-label', __('Resize Bhranti sidebar', 'bhranti')); handle.setAttribute('aria-orientation', 'vertical');
+		function setWidth(width) { state.width = Math.max(300, Math.min(width, Math.min(650, window.innerWidth - 320))); document.documentElement.style.setProperty('--bhranti-panel-width', state.width + 'px'); handle.setAttribute('aria-valuenow', state.width); }
+		handle.setAttribute('aria-valuemin', '300'); handle.setAttribute('aria-valuemax', String(Math.min(650, window.innerWidth - 320))); handle.setAttribute('aria-valuenow', state.width);
+		handle.addEventListener('keydown', (event) => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); setWidth(state.width + (event.key === 'ArrowLeft' ? 24 : -24)); } });
+		handle.addEventListener('pointerdown', (event) => { event.preventDefault(); handle.setPointerCapture(event.pointerId); const start = event.clientX, width = state.width; const move = (pointer) => setWidth(width + start - pointer.clientX); const end = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end); }; handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end); }); return handle;
+	}
+	function render() {
+		syncEditorControl();
+		observeEditorChanges();
+		// Native editor focus updates can otherwise replace a button before its click fires.
+		if (interacting) { renderPending = true; return; }
+		renderPending = false;
+		if (!state.busy && !state.stepping && !activeRun() && state.workspace.agents && !state.workspace.agents.some((agent) => agent.id === state.agentId)) state.agentId = 'bhranti';
+		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = focusId === 'bhranti-composer' ? [focused.selectionStart, focused.selectionEnd] : null;
+		const previousStream = root.querySelector('.bhranti-stream'), session = String(state.session && state.session.id || 'new');
+		if (previousStream && streamSession !== null) scrollPositions.set(streamSession, { top: previousStream.scrollTop, bottom: previousStream.scrollHeight - previousStream.clientHeight - previousStream.scrollTop <= 48 });
+		const position = scrollPositions.get(session); streamSession = session;
+		root.className = 'bhranti-app'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'false'); root.setAttribute('aria-labelledby', 'bhranti-panel-title'); root.hidden = !state.open;
+		document.documentElement.style.setProperty('--bhranti-panel-width', state.width + 'px');
+		const chats = iconButton(__('Chats', 'bhranti'), 'bhranti-icon-button', () => { state.menu = !state.menu; render(); if (state.menu) { const first = root.querySelector('.bhranti-chat-item'); if (first && !first.disabled) first.focus(); } }, 'history', 'bhranti-chats'); chats.setAttribute('aria-expanded', String(state.menu)); chats.setAttribute('aria-controls', 'bhranti-menu');
+		const start = iconButton(__('New chat', 'bhranti'), 'bhranti-icon-button', newChat, 'plus', 'bhranti-new-chat'); start.disabled = state.busy || state.loading || state.capturing || !!activeRun();
+		const controls = element('div', 'bhranti-header-controls', chats, start);
+		if (settings.settingsUrl) { const link = element('a', 'bhranti-icon-button', icon('settings')); link.href = settings.settingsUrl; link.setAttribute('aria-label', __('Bhranti Settings', 'bhranti')); link.title = __('Bhranti Settings', 'bhranti'); controls.appendChild(link); }
+		const header = element('header', 'bhranti-header', element('h2', 'screen-reader-text', __('Bhranti', 'bhranti')), controls, iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close')); header.querySelector('h2').id = 'bhranti-panel-title';
+		const details = element('details', 'bhranti-disclosure'); details.id = 'bhranti-disclosure'; details.appendChild(element('summary', '', __('You’re chatting with AI. Details.', 'bhranti'))); details.appendChild(element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, attached rendered-page HTML/text, editor context and any screenshot you choose with your configured WordPress AI provider. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti')));
+		if (!(state.workspace.ai || {}).available && state.initialized) details.appendChild(element('p', '', __('No AI provider is configured. Use WordPress connectors in the Bhranti menu.', 'bhranti')));
+		root.replaceChildren(...[resizeHandle(), header, state.menu ? menu() : null, notices(), conversation(), composer(), details].filter(Boolean));
+		syncTrigger();
+		if (focusId) { const node = document.getElementById(focusId); if (node && !node.disabled) { node.focus(); if (selection) node.setSelectionRange(...selection); } }
+		const stream = root.querySelector('.bhranti-stream');
+		if (stream) stream.scrollTop = !position || position.bottom ? stream.scrollHeight : position.top;
+		requestAnimationFrame(() => { if (stream && stream.isConnected) stream.scrollTop = !position || position.bottom ? stream.scrollHeight : position.top; });
+	}
+
+	window.addEventListener('bhranti:settings-saved', async () => {
+		pageFormDirty = false; await refreshWorkspaceQuietly();
+		render();
+	});
+	['input', 'change'].forEach((name) => document.addEventListener(name, (event) => {
+		if (!editorIsOpen() && !root.contains(event.target) && event.target.closest && event.target.closest('#wpbody-content form, #bhranti-settings-app')) pageFormDirty = true;
+	}));
+	['focusin', 'focusout'].forEach((name) => document.addEventListener(name, () => window.setTimeout(nativeEditorChanged, 0), true));
+	function finishInteraction(event) {
+		if (composing) return;
+		if (!event || !['pointerup', 'keyup'].includes(event.type)) interacting = false;
+		window.clearTimeout(interactionTimer);
+		interactionTimer = window.setTimeout(() => { interactionTimer = null; interacting = false; if (renderPending && !pageSuspended) render(); }, 0);
+	}
+	function beginInteraction(event) {
+		if (event.target.closest && event.target.closest('#bhranti-app, #wp-admin-bar-bhranti, [data-bhranti-editor-open]')) { interacting = true; window.clearTimeout(interactionTimer); interactionTimer = null; }
+	}
+	document.addEventListener('pointerdown', beginInteraction, true);
+	document.addEventListener('keydown', beginInteraction, true);
+	root.addEventListener('compositionstart', () => { composing = true; interacting = true; window.clearTimeout(interactionTimer); interactionTimer = null; });
+	root.addEventListener('compositionend', () => { composing = false; finishInteraction(); });
+	['pointerup', 'pointercancel', 'keyup', 'click'].forEach((name) => document.addEventListener(name, finishInteraction, true));
+	window.addEventListener('blur', () => { composing = false; finishInteraction(); });
+	document.addEventListener('click', (event) => { const trigger = event.target.closest && event.target.closest('#wp-admin-bar-bhranti > a, [data-bhranti-open]'); if (trigger) { event.preventDefault(); if (state.open) closePanel(); else openPanel(trigger); } });
+	document.addEventListener('bhranti:editor-launcher-ready', syncTrigger);
+	document.addEventListener('bhranti:editor-launcher-toggle', (event) => { if (state.open) closePanel(); else openPanel(event.detail.trigger); });
+	window.addEventListener('resize', syncTrigger);
+	root.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); if (state.menu) { state.menu = false; render(); root.querySelector('#bhranti-chats').focus(); } else closePanel(); } });
+	window.addEventListener('keydown', (event) => {
+		if (!editorControl || !(event.ctrlKey || event.metaKey) || !['z', 'y', 's'].includes(event.key.toLowerCase())) return;
+		// Core undo/save shortcuts listen on document even while its editor is inert.
+		event.stopImmediatePropagation();
+		const composerUndo = event.key.toLowerCase() !== 's' && root.contains(event.target) && event.target.closest && event.target.closest('textarea, input, [contenteditable="true"]');
+		if (!composerUndo) event.preventDefault();
+	}, true);
+	if (wp.data && wp.data.subscribe) wp.data.subscribe(() => {
+		nativeEditorChanged();
+		if (heartbeatToken && !pageSuspended && heartbeatFingerprint !== JSON.stringify(editorState())) reportEditor().catch(() => {});
+		let fingerprint = '';
+		try {
+			const editor = wp.data.select('core/editor'), blocks = wp.data.select('core/block-editor');
+			let id = editor && editor.getCurrentPostId && editor.getCurrentPostId();
+			if (id === undefined || id === null || id === '') { const site = wp.data.select('core/edit-site'); if (site && site.getEditedPostId) id = site.getEditedPostId(); }
+			fingerprint = JSON.stringify([id, blocks && blocks.getSelectedBlockClientId && blocks.getSelectedBlockClientId()]);
+		} catch (error) { return; }
+		if (fingerprint !== contextFingerprint) { contextFingerprint = fingerprint; if (state.open) render(); }
+	});
+	window.addEventListener('pagehide', () => { pageSuspended = true; releaseEditorControl(); composing = false; interacting = false; renderPending = false; window.clearTimeout(interactionTimer); interactionTimer = null; window.clearInterval(heartbeatTimer); heartbeatTimer = null; window.clearTimeout(backgroundTimer); backgroundTimer = null; window.clearInterval(progressTimer); progressTimer = null; window.clearTimeout(editorSync.timer); editorSync.timer = null; });
+	window.addEventListener('pageshow', (event) => { if (!event.persisted) return; pageSuspended = false; startHeartbeat(); if (editorSync.pending) { editorSync.pending.attempts = 0; scheduleEditorChanges(); } if (state.open) openPanel(); else scheduleBackgroundObservation(true); });
+	startHeartbeat(); if (!settings.autoOpen) scheduleBackgroundObservation(true);
+	syncTrigger(); if (settings.autoOpen) openPanel();
+})();
