@@ -798,6 +798,140 @@ async function testDirectChatNavigation() {
   } finally { page.close(); }
 }
 
+function composerKey(page, init = {}) {
+  const input = page.w.document.getElementById('bhranti-composer');
+  const event = new page.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init });
+  input.dispatchEvent(event);
+  return event;
+}
+function typeDraft(page, value) {
+  const input = page.w.document.getElementById('bhranti-composer');
+  input.value = value; input.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+  return input;
+}
+function keyboardFixture(held) {
+  return fixture({ handler: async (request) => {
+    if (request.path.endsWith('/workspace') && request.method === 'GET') return { sessions: [{ id: 17, title: 'Keyboard fixture' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
+    if (request.path.endsWith('/messages') && request.method === 'POST') {
+      if (held) return held.promise;
+      const finished = session('complete'); finished.messages.push({ id: 'keyboard-accepted', role: 'user', content: request.data.content, created: '2026-10-09T00:00:10Z' }); return finished;
+    }
+    throw new Error('Keyboard tests may submit only one synthetic message, with no planning or action request.');
+  } });
+}
+
+async function testComposerKeyboardSubmit() {
+  for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) {
+    const page = keyboardFixture();
+    try {
+      const draft = 'Exact keyboard message 猫 ' + JSON.stringify(modifiers);
+      const input = typeDraft(page, draft); input.focus(); input.setSelectionRange(2, 5);
+      const hint = page.w.document.getElementById('bhranti-composer-hint');
+      check(hint && hint.textContent.includes('Enter to send') && hint.textContent.includes('Shift+Enter'), 'The composer explains the actual send and native newline shortcuts');
+      check(input.getAttribute('aria-describedby').split(/\s+/).includes(hint.id), 'The keyboard instructions are associated with the native textarea');
+      const event = composerKey(page, modifiers);
+      equal(event.defaultPrevented, true, 'Enter submission prevents an accidental textarea newline with plain/Ctrl/Cmd compatibility');
+      await until(() => count(page, '/messages', 'POST') === 1 && idle(page), page);
+      const request = page.requests.find((entry) => entry.path.endsWith('/messages'));
+      equal(request.data.content, draft, 'Enter submits the exact existing Unicode draft');
+      equal(request.data.agent_id, 'bhranti', 'Keyboard submission retains the selected native Bhranti agent');
+      equal(count(page, '/messages', 'POST'), 1, 'A single Enter sends one message through the normal submission path');
+      equal(page.api.state.draft, '', 'An acknowledged Enter submission clears only the submitted draft');
+      equal(page.requests.filter((entry) => entry.method !== 'GET' && !entry.path.endsWith('/messages')).length, 0, 'Keyboard submission cannot bypass the normal path to planning, action or confirmation');
+      equal(page.w.document.getElementById('bhranti-composer'), input, 'Keyboard acknowledgement retains the native textarea identity');
+    } finally { page.close(); }
+  }
+}
+
+async function testComposerKeyboardNewlines() {
+  for (const modifiers of [{ shiftKey: true }, { shiftKey: true, ctrlKey: true }, { shiftKey: true, metaKey: true }]) {
+    const page = keyboardFixture();
+    try {
+      const input = typeDraft(page, 'First line'); input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+      const event = composerKey(page, modifiers);
+      equal(event.defaultPrevented, false, 'Shift+Enter preserves the browser’s native newline behavior, including modifier combinations');
+      await flush(); equal(page.requests.length, 0, 'Shift+Enter makes no submission or read request');
+      equal(page.api.state.draft, 'First line', 'The key handler does not synthesize or replace the native textarea text');
+      // JSDOM does not implement keyboard default editing; deliver the native input
+      // result separately to verify that a real newline remains in the draft.
+      input.value += '\nSecond line 猫'; input.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+      page.api.rememberDraft(); page.api.state.workspace = clone(page.api.state.workspace); page.api.render(); await page.advance(20);
+      equal(page.api.state.draft, 'First line\nSecond line 猫', 'A native newline input persists unchanged in the per-chat draft');
+      equal(page.w.document.getElementById('bhranti-composer').value, 'First line\nSecond line 猫', 'Polling cannot remove or submit the native multiline draft');
+      equal(page.requests.length, 0, 'Multiline typing and visual polling never invoke AI or submit a task');
+    } finally { page.close(); }
+  }
+}
+
+async function testComposerKeyboardImeAndRepeat() {
+  for (const variant of [
+    { isComposing: true }, { ctrlKey: true, isComposing: true }, { metaKey: true, isComposing: true },
+    { keyCode: 229 }, { ctrlKey: true, keyCode: 229 }, { metaKey: true, keyCode: 229 },
+    { repeat: true }, { ctrlKey: true, repeat: true }, { metaKey: true, repeat: true },
+  ]) {
+    const page = keyboardFixture();
+    try {
+      const input = typeDraft(page, 'Unsubmitted composing text 日本語'); input.focus();
+      const event = composerKey(page, variant);
+      equal(event.defaultPrevented, variant.repeat === true, 'IME remains native while repeated Enter suppresses duplicate-send newlines');
+      await page.advance(); equal(count(page, '/messages', 'POST'), 0, 'IME or repeated Enter cannot send a task');
+      equal(page.api.state.draft, 'Unsubmitted composing text 日本語', 'IME or repeated Enter preserves the exact unsubmitted draft');
+      equal(page.api.state.busy, false, 'IME or repeated Enter cannot start a false busy state');
+    } finally { page.close(); }
+  }
+  const composing = keyboardFixture();
+  try {
+    const input = typeDraft(composing, 'A live composition 猫'); input.focus();
+    input.dispatchEvent(new composing.w.CompositionEvent('compositionstart', { bubbles: true }));
+    for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) {
+      const event = composerKey(composing, modifiers);
+      equal(event.defaultPrevented, false, 'The live composition guard works even when the browser omits isComposing on Enter');
+      equal(count(composing, '/messages', 'POST'), 0, 'A live composition Enter never reaches the message endpoint');
+    }
+    input.dispatchEvent(new composing.w.CompositionEvent('compositionend', { bubbles: true })); await composing.advance();
+    equal(composing.api.state.draft, 'A live composition 猫', 'Composition completion itself cannot submit or lose the draft');
+    const confirmationKey = composerKey(composing, { keyCode: 229, isComposing: false });
+    equal(confirmationKey.defaultPrevented, false, 'A browser IME confirmation key remains native after compositionend');
+    input.dispatchEvent(new composing.w.KeyboardEvent('keyup', { key: 'Enter', keyCode: 229, isComposing: false, bubbles: true })); await composing.advance();
+    equal(count(composing, '/messages', 'POST'), 0, 'The compositionend/229/keyup sequence never submits an accidental message');
+    equal(composing.api.state.draft, 'A live composition 猫', 'The final IME confirmation sequence preserves the exact composed draft');
+    composerKey(composing); await until(() => count(composing, '/messages', 'POST') === 1 && idle(composing), composing);
+    equal(count(composing, '/messages', 'POST'), 1, 'A new ordinary Enter after composition completion works normally');
+  } finally { composing.close(); }
+
+  const held = deferred(); const page = keyboardFixture(held);
+  try {
+    typeDraft(page, 'Only one held-key message'); composerKey(page);
+    await until(() => count(page, '/messages', 'POST') === 1, page);
+    for (let index = 0; index < 4; index++) equal(composerKey(page, { repeat: true }).defaultPrevented, true, 'A held submission key prevents native newline input while its message is pending');
+    equal(count(page, '/messages', 'POST'), 1, 'Held Enter cannot duplicate a still-pending message submission');
+    const finished = session('complete'); finished.messages.push({ role: 'user', content: 'Only one held-key message' }); held.resolve(finished);
+    await until(() => idle(page), page);
+    typeDraft(page, 'A new unsent follow-up while Enter remains held');
+    for (let index = 0; index < 4; index++) composerKey(page, { repeat: true }); await page.advance();
+    equal(count(page, '/messages', 'POST'), 1, 'Held-key repeats remain blocked after the previous message acknowledgement');
+    equal(page.api.state.draft, 'A new unsent follow-up while Enter remains held', 'Held-key repeats cannot clear a newly typed follow-up draft');
+  } finally { held.resolve(session('complete')); await flush(); page.close(); }
+}
+
+async function testComposerKeyboardSubmissionGuards() {
+  for (const guard of ['blank', 'whitespace', 'busy', 'active']) {
+    const page = keyboardFixture();
+    try {
+      const text = guard === 'blank' ? '' : guard === 'whitespace' ? ' \n\t ' : 'Draft protected by ' + guard;
+      typeDraft(page, text);
+      if (guard === 'busy') page.api.state.busy = true;
+      if (guard === 'active') page.api.state.session.run = { ...page.api.state.session.run, status: 'running', phase: 'model' };
+      page.api.render();
+      for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) composerKey(page, modifiers);
+      await page.advance();
+      equal(page.requests.filter((entry) => entry.method !== 'GET').length, 0, 'Blank, busy or active tasks block every Enter submission variant');
+      equal(page.api.state.draft, text, 'The keyboard shortcut preserves the draft when submission is guarded');
+      equal(page.w.document.getElementById('bhranti-send').disabled, true, 'Keyboard guards agree with the normal Send control');
+    } finally { page.close(); }
+  }
+}
+
 async function main() {
   await testTransportBoundaries();
   await testPollingOutage();
@@ -819,6 +953,10 @@ async function main() {
   await testExactApprovalControls();
   await testChatMenuJumpAndCopy();
   await testDirectChatNavigation();
+  await testComposerKeyboardSubmit();
+  await testComposerKeyboardNewlines();
+  await testComposerKeyboardImeAndRepeat();
+  await testComposerKeyboardSubmissionGuards();
   console.log('PASS ' + checks + ' isolated product UX checks; no HTTP, AI, WordPress load or DB access');
 }
 const watchdog = setTimeout(() => { console.error('FAIL: unresolved isolated UI operation exceeded the 20-second test deadline'); process.exit(1); }, 20000);
