@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.11
+Stable tag: 0.4.13
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -105,6 +105,12 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.13 =
+* Compact, expandable tool history with operation icons and clear outcomes. Keep Stop and real task status above the composer.
+* Search conversations, preserve expanded details and native focus, and grow the composer with typed text.
+* Avoid unchanged poll redraws and retain the conversation log and unchanged rows during updates.
+* Use smaller, solid Bootstrap icons and keep the Jump to latest arrow inline with its label.
 
 = 0.4.11 =
 * Add a right-side native post/page editor toolbar opener when the admin bar is unavailable or the control overlay is active, preserving Back navigation and the inspector. Keep the opener accessible during editor control and retain chat drafts and focus.

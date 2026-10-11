@@ -10,7 +10,8 @@
 	let noticeSequence = 0, lastTrigger = null, contextFingerprint = '', progressTimer = null, heartbeatTimer = null, backgroundTimer = null, heartbeatRequest = null, heartbeatQueued = false, heartbeatFingerprint = '', backgroundReading = false, pageSuspended = false, interacting = false, composing = false, renderPending = false, interactionTimer = null, pageFormDirty = false, streamSession = null;
 	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
 	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
-	const scrollPositions = new Map();
+	const scrollPositions = new Map(), disclosureStates = new Map();
+	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null;
 	let triggerFingerprint = '';
@@ -29,7 +30,7 @@
 	}
 	// Bootstrap Icons (MIT); original paths and license are bundled locally.
 	function icon(name) {
-		const paths = {"history":[{"d":"M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"},{"d":"M3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5M3 6a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 6m0 2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5"}],"plus":[{"fill-rule":"evenodd","d":"M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"}],"settings":[{"d":"M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"},{"d":"M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"}],"close":[{"d":"M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"}],"send":[{"fill-rule":"evenodd","d":"M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"}],"context":[{"d":"M0 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm5-1v12h9a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zM4 2H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h2z"}],"block":[{"d":"M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"}],"copy":[{"fill-rule":"evenodd","d":"M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"}],"camera":[{"d":"M15 12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1.172a3 3 0 0 0 2.12-.879l.83-.828A1 1 0 0 1 6.827 3h2.344a1 1 0 0 1 .707.293l.828.828A3 3 0 0 0 12.828 5H14a1 1 0 0 1 1 1zM2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4z"},{"d":"M8 11a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5m0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M3 6.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"}]};
+		const paths = {"history":[{"d":"M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4.414a1 1 0 0 0-.707.293L.854 15.146A.5.5 0 0 1 0 14.793zm3.5 1a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1zm0 2.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1zm0 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z"}],"plus":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.5 4.5a.5.5 0 0 0-1 0v3h-3a.5.5 0 0 0 0 1h3v3a.5.5 0 0 0 1 0v-3h3a.5.5 0 0 0 0-1h-3z"}],"settings":[{"d":"M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"}],"close":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293z"}],"send":[{"d":"M15.964.686a.5.5 0 0 0-.65-.65L.767 5.855H.766l-.452.18a.5.5 0 0 0-.082.887l.41.26.001.002 4.995 3.178 3.178 4.995.002.002.26.41a.5.5 0 0 0 .886-.083zm-1.833 1.89L6.637 10.07l-.215-.338a.5.5 0 0 0-.154-.154l-.338-.215 7.494-7.494 1.178-.471z"}],"context":[{"d":"M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m5.5 1.5v2a1 1 0 0 0 1 1h2z"}],"block":[{"fill-rule":"evenodd","d":"M15.528 2.973a.75.75 0 0 1 .472.696v8.662a.75.75 0 0 1-.472.696l-7.25 2.9a.75.75 0 0 1-.557 0l-7.25-2.9A.75.75 0 0 1 0 12.331V3.669a.75.75 0 0 1 .471-.696L7.443.184l.004-.001.274-.11a.75.75 0 0 1 .558 0l.274.11.004.001zm-1.374.527L8 5.962 1.846 3.5 1 3.839v.4l6.5 2.6v7.922l.5.2.5-.2V6.84l6.5-2.6v-.4l-.846-.339Z"}],"copy":[{"fill-rule":"evenodd","d":"M10 1.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5zm-5 0A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5v1A1.5 1.5 0 0 1 9.5 4h-3A1.5 1.5 0 0 1 5 2.5zm-2 0h1v1A2.5 2.5 0 0 0 6.5 5h3A2.5 2.5 0 0 0 12 2.5v-1h1a2 2 0 0 1 2 2V14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V3.5a2 2 0 0 1 2-2"}],"camera":[{"d":"M10.5 8.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"},{"d":"M2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4zm.5 2a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m9 2.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0"}],"check":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"}],"error":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2"}],"search":[{"d":"M4.5 1A1.5 1.5 0 0 0 3 2.5V3h4v-.5A1.5 1.5 0 0 0 5.5 1zM7 4v1h2V4h4v.882a.5.5 0 0 0 .276.447l.895.447A1.5 1.5 0 0 1 15 7.118V13H9v-1.5a.5.5 0 0 1 .146-.354l.854-.853V9.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5v.793l.854.853A.5.5 0 0 1 7 11.5V13H1V7.118a1.5 1.5 0 0 1 .83-1.342l.894-.447A.5.5 0 0 0 3 4.882V4zM1 14v.5A1.5 1.5 0 0 0 2.5 16h3A1.5 1.5 0 0 0 7 14.5V14zm8 0v.5a1.5 1.5 0 0 0 1.5 1.5h3a1.5 1.5 0 0 0 1.5-1.5V14zm4-11H9v-.5A1.5 1.5 0 0 1 10.5 1h1A1.5 1.5 0 0 1 13 2.5z"}],"image":[{"d":"M.002 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2zm1 9v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062zm5-6.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0"}],"write":[{"d":"M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.5.5 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11z"}],"rollback":[{"d":"M5.921 11.9 1.353 8.62a.72.72 0 0 1 0-1.238L5.921 4.1A.716.716 0 0 1 7 4.719V6c1.5 0 6 0 7 8-2.5-4.5-7-4-7-4v1.281c0 .56-.606.898-1.079.62z"}],"chevron":[{"fill-rule":"evenodd","d":"M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"}],"stop":[{"d":"M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5"}],"sparkle":[{"d":"M7.657 6.247c.11-.33.576-.33.686 0l.645 1.937a2.89 2.89 0 0 0 1.829 1.828l1.936.645c.33.11.33.576 0 .686l-1.937.645a2.89 2.89 0 0 0-1.828 1.829l-.645 1.936a.361.361 0 0 1-.686 0l-.645-1.937a2.89 2.89 0 0 0-1.828-1.828l-1.937-.645a.361.361 0 0 1 0-.686l1.937-.645a2.89 2.89 0 0 0 1.828-1.828zM3.794 1.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387A1.73 1.73 0 0 0 4.593 5.69l-.387 1.162a.217.217 0 0 1-.412 0L3.407 5.69A1.73 1.73 0 0 0 2.31 4.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387A1.73 1.73 0 0 0 3.407 2.31zM10.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.16 1.16 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.16 1.16 0 0 0-.732-.732L9.1 2.137a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732z"}],"down":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.5 4.5a.5.5 0 0 0-1 0v5.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293z"}],"document":[{"d":"M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0M9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1M4.5 9a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1zM4 10.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 1 0-1h4a.5.5 0 0 1 0 1z"}],"plugin":[{"d":"M3.112 3.645A1.5 1.5 0 0 1 4.605 2H7a.5.5 0 0 1 .5.5v.382c0 .696-.497 1.182-.872 1.469a.5.5 0 0 0-.115.118l-.012.025L6.5 4.5v.003l.003.01q.005.015.036.053a.9.9 0 0 0 .27.194C7.09 4.9 7.51 5 8 5c.492 0 .912-.1 1.19-.24a.9.9 0 0 0 .271-.194.2.2 0 0 0 .036-.054l.003-.01v-.008l-.012-.025a.5.5 0 0 0-.115-.118c-.375-.287-.872-.773-.872-1.469V2.5A.5.5 0 0 1 9 2h2.395a1.5 1.5 0 0 1 1.493 1.645L12.645 6.5h.237c.195 0 .42-.147.675-.48.21-.274.528-.52.943-.52.568 0 .947.447 1.154.862C15.877 6.807 16 7.387 16 8s-.123 1.193-.346 1.638c-.207.415-.586.862-1.154.862-.415 0-.733-.246-.943-.52-.255-.333-.48-.48-.675-.48h-.237l.243 2.855A1.5 1.5 0 0 1 11.395 14H9a.5.5 0 0 1-.5-.5v-.382c0-.696.497-1.182.872-1.469a.5.5 0 0 0 .115-.118l.012-.025.001-.006v-.003l-.003-.01a.2.2 0 0 0-.036-.053.9.9 0 0 0-.27-.194C8.91 11.1 8.49 11 8 11s-.912.1-1.19.24a.9.9 0 0 0-.271.194.2.2 0 0 0-.036.054l-.003.01v.002l.001.006.012.025c.016.027.05.068.115.118.375.287.872.773.872 1.469v.382a.5.5 0 0 1-.5.5H4.605a1.5 1.5 0 0 1-1.493-1.645L3.356 9.5h-.238c-.195 0-.42.147-.675.48-.21.274-.528.52-.943.52-.568 0-.947-.447-1.154-.862C.123 9.193 0 8.613 0 8s.123-1.193.346-1.638C.553 5.947.932 5.5 1.5 5.5c.415 0 .733.246.943.52.255.333.48.48.675.48h.238z"}],"clock":[{"d":"M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"}]};
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		Object.entries({ viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true', focusable: 'false' }).forEach(([key, value]) => svg.setAttribute(key, value));
 		(paths[name] || paths.context).forEach((attributes) => { const path = document.createElementNS(svg.namespaceURI, 'path'); Object.entries(attributes).forEach(([key, value]) => path.setAttribute(key, value)); svg.appendChild(path); });
@@ -37,6 +38,25 @@
 	}
 	function iconButton(label, className, action, name, id) {
 		const node = button('', className, action, id); node.appendChild(icon(name)); node.setAttribute('aria-label', label); node.title = label; return node;
+	}
+	function viewId(key) { return 'bhranti-view-' + encodeURIComponent((state.session && state.session.id || 'new') + ':' + key).replace(/%/g, '-'); }
+	function disclosure(key, className, summary, children, defaultOpen = false) {
+		const id = viewId(key), node = element('details', className); node.id = id; summary.id = id + '-summary';
+		node.open = disclosureStates.has(id) ? disclosureStates.get(id) : defaultOpen; node.dataset.bhrantiDisclosure = id; node.dataset.openAtRender = String(node.open);
+		let previous = node.open;
+		node.addEventListener('toggle', () => { if (node.open !== previous) { disclosureStates.set(id, node.open); previous = node.open; node.dataset.openAtRender = String(node.open); } });
+		node.appendChild(summary); children.forEach((child) => { if (child) node.appendChild(child); }); return node;
+	}
+	function syncChildren(parent, children) {
+		const existing = new Map(Array.from(parent.children).filter((node) => node.id).map((node) => [node.id, node]));
+		children.forEach((next, index) => {
+			const current = existing.get(next.id), node = current && current.isEqualNode(next) ? current : next;
+			if (parent.children[index] !== node) parent.insertBefore(node, parent.children[index] || null);
+		});
+		while (parent.children.length > children.length) parent.lastElementChild.remove();
+	}
+	function statusIcon(name, label, className = '') {
+		const node = element('span', className, icon(name)); node.setAttribute('role', 'img'); node.setAttribute('aria-label', label); return node;
 	}
 	async function request(path, method = 'GET', data) {
 		if (!wp.apiFetch) return Promise.reject(new Error(__('WordPress could not load the request tools. Reload this page to try again.', 'bhranti')));
@@ -641,75 +661,108 @@
 	}
 	function notices() {
 		const wrap = element('div', 'bhranti-notices');
-		state.notices.forEach((notice) => { const node = element('div', 'bhranti-notice is-' + notice.type, element('span', '', notice.message), iconButton(__('Dismiss notice', 'bhranti'), 'bhranti-icon-button', () => { dismissNotice(notice.id); render(); }, 'close')); node.setAttribute('role', notice.type === 'error' ? 'alert' : 'status'); wrap.appendChild(node); }); return wrap;
+		state.notices.forEach((notice) => { const node = element('div', 'bhranti-notice is-' + notice.type, element('span', '', notice.message), iconButton(__('Dismiss notice', 'bhranti'), 'bhranti-icon-button', () => { dismissNotice(notice.id); render(); }, 'close', viewId('notice:' + notice.id + ':dismiss'))); node.setAttribute('role', notice.type === 'error' ? 'alert' : 'status'); wrap.appendChild(node); }); return wrap;
 	}
 	function menu() {
 		const wrap = element('section', 'bhranti-menu'); wrap.id = 'bhranti-menu'; wrap.setAttribute('aria-label', __('Chats', 'bhranti'));
 		wrap.appendChild(element('h3', '', __('Chats', 'bhranti')));
-		const list = element('ul', 'bhranti-chat-list');
-		state.workspace.sessions.forEach((session) => {
-			const item = button('', 'bhranti-menu-item bhranti-chat-item', () => openSession(session.id));
-			item.appendChild(element('span', 'bhranti-chat-title', session.title || __('Untitled conversation', 'bhranti')));
-			if (session.updated) item.appendChild(element('span', 'bhranti-chat-date', displayTime(session.updated)));
+		const label = element('label', 'screen-reader-text', __('Search chats', 'bhranti')); label.htmlFor = 'bhranti-chat-search';
+		const search = root.querySelector('#bhranti-chat-search') || element('input', 'bhranti-chat-search'); search.id = 'bhranti-chat-search'; search.type = 'search'; search.placeholder = __('Search chats…', 'bhranti'); search.maxLength = 150; if (search.value !== chatSearch) search.value = chatSearch;
+		if (!search.dataset.bound) { search.dataset.bound = '1'; search.addEventListener('input', () => { chatSearch = search.value; render(); }); }
+		wrap.appendChild(label); wrap.appendChild(search);
+		const list = element('ul', 'bhranti-chat-list'), query = chatSearch.trim().toLocaleLowerCase();
+		state.workspace.sessions.filter((session) => !query || (session.title || '').toLocaleLowerCase().includes(query)).forEach((session) => {
+			const item = button('', 'bhranti-menu-item bhranti-chat-item', () => openSession(session.id), 'bhranti-chat-' + session.id);
+			item.appendChild(icon('history')); item.appendChild(element('span', 'bhranti-chat-info', element('span', 'bhranti-chat-title', session.title || __('Untitled conversation', 'bhranti')), session.updated ? element('span', 'bhranti-chat-date', displayTime(session.updated)) : null));
 			if (state.session && String(state.session.id) === String(session.id)) item.setAttribute('aria-current', 'page');
 			item.disabled = state.busy || state.loading || state.capturing || !!activeRun(); list.appendChild(element('li', '', item));
 		});
 		wrap.appendChild(list);
-		if (!state.workspace.sessions.length) wrap.appendChild(element('p', 'bhranti-chat-empty', __('No conversations yet.', 'bhranti')));
+		if (!list.children.length) wrap.appendChild(element('p', 'bhranti-chat-empty', query ? __('No matching chats.', 'bhranti') : __('No conversations yet.', 'bhranti')));
 		if ((state.workspace.agents || []).length > 1) {
 			const label = element('label', '', __('Agent', 'bhranti')); label.htmlFor = 'bhranti-agent'; const select = element('select', 'bhranti-history'); select.id = 'bhranti-agent';
 			state.workspace.agents.forEach((agent) => { const option = element('option', '', agent.name); option.value = agent.id; select.appendChild(option); });
 			select.value = state.agentId; select.disabled = state.busy || state.loading || !!activeRun(); select.addEventListener('change', () => { state.agentId = select.value; }); wrap.appendChild(label); wrap.appendChild(select);
 		}
-		if (state.session) { const remove = button(__('Delete this chat', 'bhranti'), 'bhranti-menu-item', deleteChat); remove.disabled = state.busy || !!activeRun(); wrap.appendChild(remove); }
+		if (state.session) { const remove = button(__('Delete this chat', 'bhranti'), 'bhranti-menu-item', deleteChat, 'bhranti-delete-chat'); remove.disabled = state.busy || !!activeRun(); wrap.appendChild(remove); }
 		return wrap;
 	}
 	function runStatus() {
 		const run = currentRun(); if (!run) return null;
-		const labels = { running: ['action', 'tool'].includes(run.phase) ? __('Applying your changes…', 'bhranti') : run.phase === 'prepared' ? __('Ready to apply changes', 'bhranti') : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
+		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
 		const retrySeconds = Math.max(0, Math.ceil(Number(run.retry_at) - Date.now() / 1000));
 		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(__('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
-		const status = element('div', 'bhranti-run-status', element('span', 'bhranti-status-label', label)); status.setAttribute('role', 'status');
+		const pending = run.status === 'running' && !state.stopRequested && !state.pausedForEditor && !state.error && !retrySeconds;
+		const name = pending ? 'sparkle' : run.status === 'complete' ? 'check' : run.status === 'failed' ? 'error' : 'clock';
+		const status = element('div', 'bhranti-run-status', element('span', 'bhranti-status-icon' + (pending ? ' is-running' : ''), icon(name)), element('span', 'bhranti-status-label', label)); status.id = 'bhranti-run-status'; status.setAttribute('role', 'status');
+		if (['running', 'awaiting_confirmation'].includes(run.status) && Number.isInteger(run.step) && run.step > 0) status.appendChild(element('span', 'bhranti-step', sprintf(__('Step %d', 'bhranti'), run.step)));
 		if (state.progress) { const elapsed = element('span', 'bhranti-elapsed', sprintf(__('%ds', 'bhranti'), Math.floor((Date.now() - state.progress.started) / 1000))); elapsed.setAttribute('aria-live', 'off'); status.appendChild(elapsed); }
 		if (run.status === 'running') {
 			const actions = element('div', 'bhranti-run-controls');
-			if (state.pausedForEditor) { const resume = button(__('Resume', 'bhranti'), 'bhranti-inline-button', resumeRun); resume.disabled = state.busy || state.stepping; actions.appendChild(resume); }
-			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
+			if (state.pausedForEditor) { const resume = button(__('Resume', 'bhranti'), 'bhranti-inline-button', resumeRun, 'bhranti-resume-run'); resume.disabled = state.busy || state.stepping; actions.appendChild(resume); }
+			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }, 'bhranti-stop'); stop.prepend(icon('stop')); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
 		}
 		return status;
 	}
 	function actionPreview() {
 		const run = currentRun(), action = run && run.next_action;
 		if (!run || run.status !== 'running' || !['prepared', 'action', 'tool'].includes(run.phase) || !action) return null;
-		const preview = element('section', 'bhranti-action-preview', element('h3', '', action.summary || __('Prepared WordPress action', 'bhranti')));
+		const name = action.tool === 'generate_image' ? 'image' : action.tool === 'plugin_request' ? 'plugin' : action.write ? 'write' : 'search';
+		const preview = element('section', 'bhranti-action-preview', element('h3', '', icon(name), action.summary || __('Prepared WordPress action', 'bhranti'))); preview.id = 'bhranti-action-preview';
 		const meta = [action.tool, action.method, action.path].filter((value) => typeof value === 'string' && value).map((value) => value.slice(0, 200)).join(' · ');
-		if (meta) { const details = element('details', 'bhranti-action-meta', element('summary', '', __('Action details', 'bhranti')), element('p', '', meta)); if (Array.isArray(action.details) && action.details.length) details.appendChild(element('p', '', sprintf(__('Fields: %s', 'bhranti'), action.details.filter((value) => typeof value === 'string').slice(0, 20).map((value) => value.slice(0, 100)).join(', ')))); preview.appendChild(details); }
+		if (meta) {
+			const children = [element('p', '', meta)];
+			if (Array.isArray(action.details) && action.details.length) children.push(element('p', '', sprintf(__('Fields: %s', 'bhranti'), action.details.filter((value) => typeof value === 'string').slice(0, 20).map((value) => value.slice(0, 100)).join(', '))));
+			preview.appendChild(disclosure('action:' + run.id + ':' + run.step + ':' + meta, 'bhranti-action-meta', element('summary', '', __('Action details', 'bhranti')), children));
+		}
 		const link = targetLink(action.target); if (link) { link.textContent = sprintf(__('Open %s', 'bhranti'), action.target.title || __('item', 'bhranti')); preview.appendChild(link); }
 		return preview;
 	}
+	function toolEvent(value) {
+		const failed = value.type === 'error' || value.success === false, success = value.type === 'action' && value.success === true;
+		const types = { post: __('post', 'bhranti'), page: __('page', 'bhranti'), attachment: __('media', 'bhranti'), wp_template: __('template', 'bhranti'), wp_template_part: __('template part', 'bhranti'), plugin: __('plugin', 'bhranti') };
+		const type = value.target && types[value.target.type];
+		const labels = { image: __('Generated image', 'bhranti'), rollback: __('Restored changes', 'bhranti'), write: value.summary || __('WordPress action completed', 'bhranti'), read: type ? sprintf(__('Read %s', 'bhranti'), type) : value.summary || __('Read site information', 'bhranti') };
+		const name = failed ? 'error' : { image: 'image', rollback: 'rollback', write: 'write', read: type ? 'document' : 'search' }[value.operation] || 'context';
+		const title = element('span', 'bhranti-tool-title', element('span', 'bhranti-tool-label', failed ? __('Action issue', 'bhranti') : labels[value.operation] || value.summary || __('WordPress action', 'bhranti')), value.target && value.target.title ? element('span', 'bhranti-tool-target', value.target.title) : null);
+		const summary = element('summary', 'bhranti-tool-summary', element('span', 'bhranti-tool-icon', icon(name)), title, statusIcon(failed ? 'error' : success ? 'check' : 'clock', failed ? __('Failed', 'bhranti') : success ? __('Completed', 'bhranti') : __('Recorded', 'bhranti'), 'bhranti-tool-state'), element('span', 'bhranti-chevron', icon('chevron')));
+		const key = 'event:' + (value.id || [value.run_id, value.created, value.summary].join(':')), date = element('time', 'bhranti-event-date', displayTime(value.created)); if (value.created) date.dateTime = value.created;
+		const link = targetLink(value.target); if (link) link.id = viewId(key + ':target');
+		const body = element('div', 'bhranti-tool-body', element('p', '', value.summary || ''), date, link);
+		if (value.rollback_available && value.action_id) { const undo = button(__('Roll back', 'bhranti'), 'bhranti-inline-button', () => rollback(value.action_id), viewId(key + ':rollback')); undo.disabled = state.busy || !!activeRun(); body.appendChild(undo); }
+		return disclosure(key, 'bhranti-tool-event ' + (failed ? 'is-error' : success ? 'is-success' : 'is-note'), summary, [body], failed);
+	}
+	function toolGroup(values) {
+		if (values.length === 1) return toolEvent(values[0]);
+		const run = currentRun(), open = run && run.status === 'running' && values[0].run_id === run.id;
+		return disclosure('group:' + (values[0].run_id || '') + ':' + values[0].id, 'bhranti-tool-group', element('summary', 'bhranti-tool-group-summary', icon('check'), element('span', '', sprintf(__('%d completed actions', 'bhranti'), values.length)), element('span', 'bhranti-chevron', icon('chevron'))), values.map(toolEvent), !!open);
+	}
 	function recoveryCard(title, text, label, action) {
 		const card = element('section', 'bhranti-recovery-card', element('h3', '', title), element('p', '', text)); card.setAttribute('role', 'status');
-		const control = button(label, 'bhranti-small-button', action); control.disabled = state.busy || state.loading || state.stepping;
+		card.id = viewId('recovery:' + label); const control = button(label, 'bhranti-small-button', action, card.id + '-control'); control.disabled = state.busy || state.loading || state.stepping;
 		card.appendChild(element('div', 'bhranti-confirmation-actions', control)); return card;
 	}
 	function conversation() {
-		const stream = element('div', 'bhranti-stream'); stream.setAttribute('role', 'log'); stream.setAttribute('aria-label', __('Bhranti conversation', 'bhranti')); stream.setAttribute('aria-live', 'polite');
+		const stream = element('div', 'bhranti-stream'); stream.id = 'bhranti-stream'; stream.dataset.session = String(state.session && state.session.id || 'new'); stream.setAttribute('role', 'log'); stream.setAttribute('aria-label', __('Bhranti conversation', 'bhranti')); stream.setAttribute('aria-live', 'polite');
 		const run = currentRun(), messages = state.session && state.session.messages || [], lastMessage = messages[messages.length - 1];
 		const pausedMessage = run && run.status === 'failed' && run.can_resume === true && lastMessage && lastMessage.role === 'error' && (!lastMessage.run_id || lastMessage.run_id === run.id) ? lastMessage : null;
-		if (!state.session || !messages.length) stream.appendChild(element('div', 'bhranti-empty', element('p', '', __('What would you like to work on?', 'bhranti'))));
+		if (state.session && state.session.title) { const title = element('p', 'bhranti-thread-label', state.session.title); title.id = 'bhranti-thread-label'; title.title = state.session.title; stream.appendChild(title); }
+		if (!state.session || !messages.length) { const empty = element('div', 'bhranti-empty', element('span', 'bhranti-empty-icon', icon('sparkle')), element('h3', '', __('What would you like to work on?', 'bhranti')), element('p', '', __('Create, edit, or explore your WordPress site.', 'bhranti'))); empty.id = 'bhranti-empty'; stream.appendChild(empty); }
 		else {
 			const timeline = (state.session.messages || []).map((value) => ({ kind: 'message', value })).concat((state.session.events || []).map((value) => ({ kind: 'event', value })));
 			const rank = (item) => item.kind === 'event' ? 1 : item.value.role === 'user' ? 0 : 2;
 			timeline.sort((a, b) => (Date.parse(a.value.created) || 0) - (Date.parse(b.value.created) || 0) || rank(a) - rank(b));
+			let actions = [];
+			const flushActions = () => { if (actions.length) stream.appendChild(toolGroup(actions)); actions = []; };
 			timeline.forEach(({ kind, value }) => {
 				if (kind === 'event') {
-					const row = element('div', 'bhranti-tool-event', element('div', 'bhranti-event-meta', __('Bhranti', 'bhranti'), element('span', '', value.type || '')), element('p', '', value.summary || ''), targetLink(value.target));
-					if (value.rollback_available && value.action_id) { const undo = button(__('Roll back', 'bhranti'), 'bhranti-inline-button', () => rollback(value.action_id)); undo.disabled = state.busy || !!activeRun(); row.appendChild(undo); }
-					stream.appendChild(row); return;
+					if (value.type === 'action' && value.success === true) { if (actions.length && actions[0].run_id !== value.run_id) flushActions(); actions.push(value); }
+					else { flushActions(); stream.appendChild(toolEvent(value)); } return;
 				}
+				flushActions();
 				const role = ['user', 'assistant', 'error'].includes(value.role) ? value.role : 'assistant';
 				if (value === pausedMessage) return;
-				if (role === 'error' && value.resolved === true) { stream.appendChild(element('details', 'bhranti-resolved-error', element('summary', '', __('Earlier connection issue · resumed', 'bhranti')), element('p', '', value.content || ''))); return; }
+				if (role === 'error' && value.resolved === true) { stream.appendChild(disclosure('resolved:' + (value.id || value.created), 'bhranti-resolved-error', element('summary', '', __('Earlier connection issue · resumed', 'bhranti')), [element('p', '', value.content || '')])); return; }
 				const requester = (state.workspace.user || {}).name || __('You', 'bhranti');
 				const title = role === 'user' ? requester : role === 'error' ? __('Request issue', 'bhranti') : __('Bhranti', 'bhranti');
 				const content = element('div', 'bhranti-message-content', value.content || '');
@@ -718,43 +771,54 @@
 					content.innerHTML = value.rendered; content.classList.add('is-rendered');
 				}
 				const article = element('article', 'bhranti-message is-' + role, element('div', 'bhranti-message-meta screen-reader-text', element('span', '', title), element('span', '', displayTime(value.created))), content);
-				if (role === 'assistant' && window.navigator.clipboard && window.navigator.clipboard.writeText) article.appendChild(iconButton(__('Copy response', 'bhranti'), 'bhranti-copy-button', async () => { try { await window.navigator.clipboard.writeText(value.content || ''); notify(__('Response copied.', 'bhranti'), 'success'); } catch (error) { notify(__('The response could not be copied.', 'bhranti')); } render(); }, 'copy'));
+				article.id = viewId('message:' + (value.id || value.created + ':' + role));
+				if (role === 'assistant' && window.navigator.clipboard && window.navigator.clipboard.writeText) article.appendChild(iconButton(__('Copy response', 'bhranti'), 'bhranti-copy-button', async () => { try { await window.navigator.clipboard.writeText(value.content || ''); notify(__('Response copied.', 'bhranti'), 'success'); } catch (error) { notify(__('The response could not be copied.', 'bhranti')); } render(); }, 'copy', article.id + '-copy'));
 				stream.appendChild(article);
 			});
+			flushActions();
 		}
 		if (state.error) stream.appendChild(recoveryCard(__('Reconnect to continue', 'bhranti'), state.error, __('Reconnect', 'bhranti'), reconnectChat));
 		else if (run && run.status === 'failed' && run.can_resume === true) stream.appendChild(recoveryCard(__('Connection paused', 'bhranti'), pausedMessage && pausedMessage.content || __('Your completed work is saved. Resume from the last checkpoint when you’re ready.', 'bhranti'), __('Resume task', 'bhranti'), resumeTask));
 		if (state.reconnecting || state.connectionError && !state.error) { const connection = element('p', 'bhranti-connection-status', state.reconnecting ? __('Reconnecting… Your conversation is safe.', 'bhranti') : state.connectionError); connection.setAttribute('role', 'status'); stream.appendChild(connection); }
 		if (editorSync.message) { const pending = element('p', 'bhranti-connection-status', editorSync.message); pending.setAttribute('role', 'status'); stream.appendChild(pending); }
 		const preview = actionPreview(); if (preview) stream.appendChild(preview);
-		const status = runStatus(); if (status) stream.appendChild(status);
+		const status = !activeRun() && runStatus(); if (status) stream.appendChild(status);
 		const confirmation = state.session && state.session.confirmation;
 		if (confirmation) {
 			const card = element('section', 'bhranti-confirmation', element('h3', '', __('Approval required', 'bhranti')), element('p', '', confirmation.summary || ''), targetLink(confirmation.target));
+			card.id = 'bhranti-confirmation';
 			const yes = button(__('Approve', 'bhranti'), 'bhranti-small-button is-primary', () => confirmAction(true), 'bhranti-confirm'), no = button(__('Deny', 'bhranti'), 'bhranti-small-button', () => confirmAction(false), 'bhranti-cancel'); yes.disabled = no.disabled = state.busy;
 			card.appendChild(element('div', 'bhranti-confirmation-actions', yes, no)); stream.appendChild(card);
 		}
 		if ((state.loading || state.busy) && !activeRun()) { const status = element('div', 'bhranti-progress', state.loading ? __('Loading…', 'bhranti') : __('Working…', 'bhranti')); status.setAttribute('role', 'status'); stream.appendChild(status); }
+		Array.from(stream.children).forEach((node, index) => { if (!node.id) node.id = viewId('notice:' + node.className + ':' + index); });
+		const previous = root.querySelector('#bhranti-stream');
+		if (previous && previous.dataset.session === stream.dataset.session) { syncChildren(previous, Array.from(stream.children)); return previous; }
 		return stream;
 	}
 	function contextChip(label, name, remove, id) {
 		return element('span', 'bhranti-context-chip', icon(name), element('span', '', label), iconButton(__('Remove context', 'bhranti'), 'bhranti-chip-remove', remove, 'close', id));
 	}
 	function composer() {
-		const form = element('form', 'bhranti-composer-form'); form.addEventListener('submit', (event) => { event.preventDefault(); sendMessage(); });
+		const form = element('form', 'bhranti-composer-form'); form.id = 'bhranti-composer-form'; form.addEventListener('submit', (event) => { event.preventDefault(); sendMessage(); });
 		const context = runtimeContext(), chips = element('div', 'bhranti-context-chips');
 		const labels = { page: __('Page', 'bhranti'), post: __('Post', 'bhranti'), wp_template: __('Template', 'bhranti'), wp_template_part: __('Template Part', 'bhranti') };
 		if (state.attachPage) { const label = labels[context.post_type] || (context.title ? context.title : __('Current page', 'bhranti')); const chip = contextChip(label, 'context', () => { state.attachPage = false; render(); }, 'bhranti-remove-context'); chip.title = context.title || context.url || ''; chips.appendChild(chip); }
 		if (state.attachPage && state.attachBlock && context.selected_block) { let label = context.selected_block.name; if (wp.blocks && wp.blocks.getBlockType) { const type = wp.blocks.getBlockType(label); if (type) label = type.title; } chips.appendChild(contextChip(label, 'block', () => { state.attachBlock = false; render(); }, 'bhranti-remove-block')); }
-		const input = element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun();
+		const input = root.querySelector('#bhranti-composer') || element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; if (input.value !== state.draft) input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun();
 		const sendingBlocked = () => state.busy || state.loading || state.capturing || !!state.error || !!activeRun() || !state.draft.trim();
 		const send = iconButton(__('Send message', 'bhranti'), 'bhranti-send-button', sendMessage, 'send', 'bhranti-send'); send.disabled = sendingBlocked();
-		input.addEventListener('input', () => { state.draft = input.value; rememberDraft(); send.disabled = sendingBlocked(); }); input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) { event.preventDefault(); sendMessage(); } });
+		if (!input.dataset.bound) {
+			input.dataset.bound = '1';
+			input.addEventListener('input', () => { state.draft = input.value; rememberDraft(); const control = root.querySelector('#bhranti-send'); if (control) control.disabled = sendingBlocked(); sizeComposer(input); });
+			input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) { event.preventDefault(); sendMessage(); } });
+		}
 		const attach = iconButton(__('Attach current page context', 'bhranti'), 'bhranti-icon-button', () => { state.attachPage = true; state.attachBlock = true; render(); }, 'plus', 'bhranti-attach');
-		if (state.screenshot) { const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached tab screenshot', 'bhranti'); form.appendChild(element('div', 'bhranti-screenshot', image, iconButton(__('Remove screenshot', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close'))); }
+		if (state.screenshot) { const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached tab screenshot', 'bhranti'); form.appendChild(element('div', 'bhranti-screenshot', image, iconButton(__('Remove screenshot', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close', 'bhranti-remove-screenshot'))); }
 		const screenshot = iconButton(state.capturing ? __('Choosing screenshot…', 'bhranti') : __('Attach tab screenshot', 'bhranti'), 'bhranti-icon-button', attachScreenshot, 'camera', 'bhranti-screenshot'); screenshot.disabled = state.busy || state.loading || state.capturing || !!activeRun();
-		form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, screenshot), send)); return form;
+		form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, screenshot), element('span', 'bhranti-composer-hint', /Mac|iPhone|iPad/.test(navigator.platform || '') ? __('⌘ Enter to send', 'bhranti') : __('Ctrl + Enter to send', 'bhranti')), send)); return form;
 	}
+	function sizeComposer(input) { input.style.height = 'auto'; input.style.height = Math.max(48, Math.min(150, input.scrollHeight)) + 'px'; }
 	function resizeHandle() {
 		const handle = element('div', 'bhranti-resize'); handle.tabIndex = 0; handle.setAttribute('role', 'separator'); handle.setAttribute('aria-label', __('Resize Bhranti sidebar', 'bhranti')); handle.setAttribute('aria-orientation', 'vertical');
 		function setWidth(width) { state.width = Math.max(300, Math.min(width, Math.min(650, window.innerWidth - 320))); document.documentElement.style.setProperty('--bhranti-panel-width', state.width + 'px'); handle.setAttribute('aria-valuenow', state.width); }
@@ -768,8 +832,15 @@
 		// Native editor focus updates can otherwise replace a button before its click fires.
 		if (interacting) { renderPending = true; return; }
 		renderPending = false;
+		// Native details toggles can precede their asynchronous toggle event.
+		root.querySelectorAll('details[data-bhranti-disclosure]').forEach((node) => { if (String(node.open) !== node.dataset.openAtRender) { disclosureStates.set(node.dataset.bhrantiDisclosure, node.open); node.dataset.openAtRender = String(node.open); } });
 		if (!state.busy && !state.stepping && !activeRun() && state.workspace.agents && !state.workspace.agents.some((agent) => agent.id === state.agentId)) state.agentId = 'bhranti';
-		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = focusId === 'bhranti-composer' ? [focused.selectionStart, focused.selectionEnd] : null;
+		const context = runtimeContext(), retry = currentRun() && currentRun().status === 'running' ? Math.max(0, Math.ceil(Number(currentRun().retry_at) - Date.now() / 1000)) : 0;
+		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
+		if (fingerprint === renderedFingerprint) { syncTrigger(); return; }
+		renderedFingerprint = fingerprint;
+		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = ['bhranti-composer', 'bhranti-chat-search'].includes(focusId) ? [focused.selectionStart, focused.selectionEnd] : null;
+		const previousMenu = root.querySelector('#bhranti-menu'); if (previousMenu) menuScroll = previousMenu.scrollTop;
 		const previousStream = root.querySelector('.bhranti-stream'), session = String(state.session && state.session.id || 'new');
 		if (previousStream && streamSession !== null) scrollPositions.set(streamSession, { top: previousStream.scrollTop, bottom: previousStream.scrollHeight - previousStream.clientHeight - previousStream.scrollTop <= 48 });
 		const position = scrollPositions.get(session); streamSession = session;
@@ -777,15 +848,24 @@
 		document.documentElement.style.setProperty('--bhranti-panel-width', state.width + 'px');
 		const chats = iconButton(__('Chats', 'bhranti'), 'bhranti-icon-button', () => { state.menu = !state.menu; render(); if (state.menu) { const first = root.querySelector('.bhranti-chat-item'); if (first && !first.disabled) first.focus(); } }, 'history', 'bhranti-chats'); chats.setAttribute('aria-expanded', String(state.menu)); chats.setAttribute('aria-controls', 'bhranti-menu');
 		const start = iconButton(__('New chat', 'bhranti'), 'bhranti-icon-button', newChat, 'plus', 'bhranti-new-chat'); start.disabled = state.busy || state.loading || state.capturing || !!activeRun();
-		const controls = element('div', 'bhranti-header-controls', chats, start);
-		if (settings.settingsUrl) { const link = element('a', 'bhranti-icon-button', icon('settings')); link.href = settings.settingsUrl; link.setAttribute('aria-label', __('Bhranti Settings', 'bhranti')); link.title = __('Bhranti Settings', 'bhranti'); controls.appendChild(link); }
-		const header = element('header', 'bhranti-header', element('h2', 'screen-reader-text', __('Bhranti', 'bhranti')), controls, iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close')); header.querySelector('h2').id = 'bhranti-panel-title';
-		const details = element('details', 'bhranti-disclosure'); details.id = 'bhranti-disclosure'; details.appendChild(element('summary', '', __('You’re chatting with AI. Details.', 'bhranti'))); details.appendChild(element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, attached rendered-page HTML/text, editor context and any screenshot you choose with your configured WordPress AI provider. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti')));
+		const controls = element('div', 'bhranti-header-controls', chats, start), trailing = element('div', 'bhranti-header-controls');
+		if (settings.settingsUrl) { const link = element('a', 'bhranti-icon-button', icon('settings')); link.id = 'bhranti-settings'; link.href = settings.settingsUrl; link.setAttribute('aria-label', __('Bhranti Settings', 'bhranti')); link.title = __('Bhranti Settings', 'bhranti'); trailing.appendChild(link); }
+		trailing.appendChild(iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'));
+		const brand = element('h2', 'bhranti-brand', __('Bhranti', 'bhranti')); brand.id = 'bhranti-panel-title';
+		const header = element('header', 'bhranti-header', controls, brand, trailing); header.id = 'bhranti-header';
+		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, attached rendered-page HTML/text, editor context and any screenshot you choose with your configured WordPress AI provider. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
 		if (!(state.workspace.ai || {}).available && state.initialized) details.appendChild(element('p', '', __('No AI provider is configured. Use WordPress connectors in the Bhranti menu.', 'bhranti')));
-		root.replaceChildren(...[resizeHandle(), header, state.menu ? menu() : null, notices(), conversation(), composer(), details].filter(Boolean));
+		const streamNode = conversation(), dock = activeRun() ? element('div', 'bhranti-task-dock', runStatus()) : null; if (dock) dock.id = 'bhranti-task-dock';
+		const jump = iconButton(__('Jump to latest', 'bhranti'), 'bhranti-jump-latest', (event) => { const stream = root.querySelector('.bhranti-stream'); if (stream) { stream.scrollTop = stream.scrollHeight; scrollPositions.set(String(state.session && state.session.id || 'new'), { top: stream.scrollTop, bottom: true }); } event.currentTarget.hidden = true; const input = root.querySelector('#bhranti-composer'); if (input && !input.disabled) input.focus(); else root.querySelector('#bhranti-close').focus(); }, 'down', 'bhranti-jump-latest'); jump.appendChild(element('span', '', __('Jump to latest', 'bhranti'))); jump.hidden = !position || position.bottom;
+		const region = root.querySelector('#bhranti-conversation-region') || element('div', 'bhranti-conversation-region'); region.id = 'bhranti-conversation-region'; syncChildren(region, [streamNode, jump]);
+		const handle = resizeHandle(); handle.id = 'bhranti-resize'; const noticeNodes = notices(); noticeNodes.id = 'bhranti-notices';
+		syncChildren(root, [handle, header, state.menu ? menu() : null, noticeNodes, region, dock, composer(), details].filter(Boolean));
 		syncTrigger();
 		if (focusId) { const node = document.getElementById(focusId); if (node && !node.disabled) { node.focus(); if (selection) node.setSelectionRange(...selection); } }
+		const menuNode = root.querySelector('#bhranti-menu'); if (menuNode) menuNode.scrollTop = menuScroll;
+		sizeComposer(root.querySelector('#bhranti-composer'));
 		const stream = root.querySelector('.bhranti-stream');
+		if (stream && !stream.dataset.bound) { stream.dataset.bound = '1'; stream.addEventListener('scroll', () => { const bottom = stream.scrollHeight - stream.clientHeight - stream.scrollTop <= 48; scrollPositions.set(stream.dataset.session, { top: stream.scrollTop, bottom }); const jump = root.querySelector('#bhranti-jump-latest'); if (jump) jump.hidden = bottom; }, { passive: true }); }
 		if (stream) stream.scrollTop = !position || position.bottom ? stream.scrollHeight : position.top;
 		requestAnimationFrame(() => { if (stream && stream.isConnected) stream.scrollTop = !position || position.bottom ? stream.scrollHeight : position.top; });
 	}
@@ -814,6 +894,7 @@
 	['pointerup', 'pointercancel', 'keyup', 'click'].forEach((name) => document.addEventListener(name, finishInteraction, true));
 	window.addEventListener('blur', () => { composing = false; finishInteraction(); });
 	document.addEventListener('click', (event) => { const trigger = event.target.closest && event.target.closest('#wp-admin-bar-bhranti > a, [data-bhranti-open]'); if (trigger) { event.preventDefault(); if (state.open) closePanel(); else openPanel(trigger); } });
+	document.addEventListener('click', (event) => { if (state.menu && event.target.closest && !event.target.closest('#bhranti-menu, #bhranti-chats')) { state.menu = false; render(); } });
 	document.addEventListener('bhranti:editor-launcher-ready', syncTrigger);
 	document.addEventListener('bhranti:editor-launcher-toggle', (event) => { if (state.open) closePanel(); else openPanel(event.detail.trigger); });
 	window.addEventListener('resize', syncTrigger);

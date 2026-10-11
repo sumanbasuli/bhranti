@@ -135,7 +135,7 @@ async function testCompositionPreservation() {
     equal(page.w.document.getElementById('bhranti-composer'), input, 'A composing keyup does not release the deferred render');
     equal(page.requests.length, 0, 'IME Enter cannot accidentally submit a message or trigger a request');
     input.dispatchEvent(new page.w.CompositionEvent('compositionend', { bubbles: true, data: '猫' })); await page.advance();
-    check(page.w.document.getElementById('bhranti-composer') !== input, 'Deferred rendering resumes after compositionend');
+    equal(page.w.document.getElementById('bhranti-composer'), input, 'Deferred rendering resumes after compositionend without replacing the native textarea');
     check(page.w.document.body.textContent.includes('A background result during composition.'), 'The deferred result is rendered after compositionend');
     equal(page.w.document.getElementById('bhranti-composer').value, 'A composed draft 猫', 'Completed composition retains the per-chat draft through the deferred render');
     input = page.w.document.getElementById('bhranti-composer');
@@ -418,6 +418,386 @@ async function testCompletedTargetRefresh() {
   equal(typeof historic.api.resultNotice, 'undefined', 'The removed saved-changes-card builder is absent from the runtime');
 }
 
+const clone = (value) => JSON.parse(JSON.stringify(value));
+function tool(id, operation = 'read', extra = {}) {
+  return { id, type: 'action', run_id: runId, success: true, operation, summary: 'Native ' + operation + ' result ' + id + '.', created: '2026-10-09T00:00:02Z', target: { ...historical.target }, ...extra };
+}
+function chooseDisclosure(page, node, open) {
+  check(node && node.tagName === 'DETAILS', 'The chosen action disclosure is a native details element');
+  node.open = open;
+  node.dispatchEvent(new page.w.Event('toggle'));
+}
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+async function testStablePollingAndComposer() {
+  const current = session('running', { phase: 'model', step: 7 });
+  current.events = [tool('one'), tool('two', 'write', { created: '2026-10-09T00:00:03Z' })];
+  const page = fixture({ session: current });
+  try {
+    page.api.state.draft = 'Undo-sensitive unsent draft 猫'; page.api.rememberDraft(); page.api.render(); await page.advance(20);
+    const doc = page.w.document, root = doc.getElementById('bhranti-app'), log = doc.getElementById('bhranti-stream');
+    const header = doc.getElementById('bhranti-header'), textarea = doc.getElementById('bhranti-composer'), form = doc.getElementById('bhranti-composer-form');
+    const group = doc.querySelector('.bhranti-tool-group'), groupSummary = group.querySelector('summary');
+    chooseDisclosure(page, group, false);
+    textarea.focus(); textarea.setSelectionRange(2, 9);
+    log.scrollTop = 137; log.dispatchEvent(new page.w.Event('scroll'));
+    const removedLogs = [];
+    const observer = new page.w.MutationObserver((records) => records.forEach((record) => [...record.removedNodes].forEach((node) => { if (node === log) removedLogs.push(node); })));
+    observer.observe(root, { childList: true });
+    page.api.state.session = clone(page.api.state.session); page.api.state.workspace = clone(page.api.state.workspace); page.api.render(); await page.advance(20);
+    equal(doc.getElementById('bhranti-header'), header, 'An identical cloned poll preserves the header DOM node');
+    equal(doc.getElementById('bhranti-stream'), log, 'An identical cloned poll preserves the connected conversation log');
+    equal(doc.getElementById('bhranti-composer-form'), form, 'An identical cloned poll does not rebuild the composer form');
+    equal(doc.getElementById('bhranti-composer'), textarea, 'An identical cloned poll retains native textarea and undo ownership');
+    equal(doc.querySelector('.bhranti-tool-group summary'), groupSummary, 'An identical cloned poll preserves the native disclosure summary node');
+    equal(doc.querySelector('.bhranti-tool-group').open, false, 'An identical cloned poll preserves a manually collapsed group');
+    equal(doc.activeElement, textarea, 'Identical polling retains the focused textarea');
+    equal(textarea.selectionStart, 2, 'Identical polling preserves the draft caret start'); equal(textarea.selectionEnd, 9, 'Identical polling preserves the draft caret end');
+    equal(log.scrollTop, 137, 'Identical polling preserves the reading position');
+    page.api.state.session.events.push(tool('three', 'image', { created: '2026-10-09T00:00:04Z', target: { ...historical.target, type: 'attachment', title: 'Fresh generated image' } }));
+    page.api.render(); await page.advance(20);
+    equal(doc.getElementById('bhranti-stream'), log, 'A changed action poll reuses the same log rather than replacing its live region');
+    equal(removedLogs.length, 0, 'Changing action history never disconnects the existing conversation log');
+    equal(doc.getElementById('bhranti-composer'), textarea, 'A changed action poll retains the native textarea');
+    equal(textarea.value, 'Undo-sensitive unsent draft 猫', 'A changed action poll preserves exact unsent text');
+    equal(doc.querySelector('.bhranti-tool-group').open, false, 'Adding an action preserves the group disclosure choice');
+    equal(log.scrollTop, 137, 'An additional action does not drag a reader to the bottom');
+    const send = doc.getElementById('bhranti-send');
+    page.api.state.session.run.status = 'complete'; page.api.render();
+    check(doc.getElementById('bhranti-send') !== send, 'A material status change creates the current Send control');
+    textarea.value = ''; textarea.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+    equal(doc.getElementById('bhranti-send').disabled, true, 'The reused textarea listener updates the current Send control for an empty draft');
+    textarea.value = 'Fresh local text'; textarea.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+    equal(doc.getElementById('bhranti-send').disabled, false, 'The reused textarea listener enables the current idle Send control');
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 480 }); page.api.sizeComposer(textarea);
+    equal(textarea.style.height, '150px', 'Long drafts stop growing at the bounded composer height');
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 15 }); page.api.sizeComposer(textarea);
+    equal(textarea.style.height, '48px', 'Short drafts retain the minimum usable composer height');
+    equal(page.requests.length, 0, 'Disclosure choices and visual polling make no server request'); observer.disconnect();
+  } finally { page.close(); }
+}
+
+async function testToolDisclosuresAndGrouping() {
+  const current = session('running', { phase: 'model' });
+  current.events = [tool('read'), tool('write', 'write', { created: '2026-10-09T00:00:03Z', rollback_available: true, action_id: 'snapshot-write', summary: 'Moved this page to Trash.' }),
+    tool('failed', 'write', { type: 'error', success: false, created: '2026-10-09T00:00:04Z', summary: 'The local action was refused.' }),
+    tool('image', 'image', { created: '2026-10-09T00:00:05Z', target: { id: 100, type: 'attachment', title: 'Cat image', url: '/wp-admin/post.php?post=100&action=edit' } })];
+  const page = fixture({ session: current });
+  try {
+    const doc = page.w.document;
+    equal(doc.querySelectorAll('.bhranti-tool-group').length, 1, 'Only two consecutive successful actions form a group');
+    const group = doc.querySelector('.bhranti-tool-group');
+    equal(group.querySelector('summary').textContent, '2 completed actions', 'A group reports its actual number of completed actions');
+    equal(group.open, true, 'The current active run starts its success group open');
+    equal(group.querySelectorAll('.bhranti-tool-event').length, 2, 'The group contains only its two successful actions');
+    const events = [...doc.querySelectorAll('.bhranti-tool-event')];
+    equal(events.length, 4, 'Every success and failure remains independently available');
+    equal(events[0].querySelector('.bhranti-tool-label').textContent, 'Read page', 'A successful native page read is labelled as a read');
+    equal(events[1].querySelector('.bhranti-tool-label').textContent, 'Moved this page to Trash.', 'A write uses the actual native summary rather than incorrectly calling Trash an update');
+    equal(events[3].querySelector('.bhranti-tool-label').textContent, 'Generated image', 'Image generation is truthfully labelled');
+    for (const event of events) {
+      const summary = event.querySelector('summary');
+      equal(summary.id, event.id + '-summary', 'Each disclosure has a stable keyboard-focusable summary identity');
+      check(event.querySelector('.bhranti-tool-target').textContent, 'The compact action header retains its concrete target');
+      check(event.querySelector('.bhranti-tool-body p').textContent, 'Expanded details retain the full native action summary');
+      check(event.querySelector('.bhranti-event-date').textContent, 'Expanded details retain the recorded action time');
+      check(event.querySelector('.bhranti-target-link'), 'Expanded details retain a safe native target link');
+    }
+    equal(events[0].querySelector('[role="img"]').getAttribute('aria-label'), 'Completed', 'Successful action status has an explicit accessible label');
+    equal(events[2].querySelector('[role="img"]').getAttribute('aria-label'), 'Failed', 'Failed action status has an explicit accessible label');
+    check(events[2].open && !events[2].closest('.bhranti-tool-group'), 'A failed action is visible and never hidden inside a success group');
+    check(!events[3].closest('.bhranti-tool-group'), 'A single success following a failure remains an individual action');
+    const rollbackId = events[1].querySelector('button').id;
+    check(rollbackId && events[1].querySelector('button').disabled, 'A rollback control has a durable identity and is disabled while the run is active');
+    chooseDisclosure(page, group, false); chooseDisclosure(page, events[0], true);
+    const summaryId = events[0].querySelector('summary').id; doc.getElementById(summaryId).focus();
+    page.api.state.draft = 'A visible change without another action'; page.api.render(); await page.advance(20);
+    equal(doc.querySelector('.bhranti-tool-group').open, false, 'Changed UI state preserves the manually closed success group');
+    equal(doc.getElementById(events[0].id).open, true, 'Changed UI state preserves an opened individual action');
+    equal(doc.activeElement.id, summaryId, 'A changed render restores native action-summary focus');
+    equal(doc.getElementById(rollbackId).id, rollbackId, 'Rollback identity remains stable across changed renders');
+    const chat17 = clone(page.api.state.session), sameEvents = clone(page.api.state.session.events);
+    page.api.state.session = { ...session('complete'), id: 18, events: sameEvents }; page.api.render();
+    equal(doc.querySelector('.bhranti-tool-group').open, false, 'A historical run defaults to a closed group');
+    equal(doc.querySelector('.bhranti-tool-event').open, false, 'A different chat does not inherit another chat’s action disclosure choice');
+    page.api.state.session = chat17; page.api.render();
+    equal(doc.querySelector('.bhranti-tool-group').open, false, 'Returning to the original chat restores its group choice');
+    equal(doc.querySelector('.bhranti-tool-event').open, true, 'Returning to the original chat restores its action choice');
+    page.api.state.session.run = { ...page.api.state.session.run, status: 'complete' }; page.api.render();
+    equal(doc.getElementById(rollbackId).disabled, false, 'The same rollback control becomes usable only after the run ends');
+    const interrupted = session('complete'); interrupted.events = [tool('first', 'read', { created: '2026-10-09T00:00:02Z' }), tool('second', 'read', { created: '2026-10-09T00:00:04Z' })];
+    interrupted.messages.push({ id: 'between', role: 'assistant', content: 'An intervening reply.', created: '2026-10-09T00:00:03Z' });
+    page.api.state.session = interrupted; page.api.render();
+    equal(doc.querySelectorAll('.bhranti-tool-group').length, 0, 'An intervening human-visible reply prevents unrelated action grouping');
+    equal(page.requests.length, 0, 'Action inspection and grouping do not send, replay or roll back requests');
+  } finally { page.close(); }
+}
+
+async function testActionPreviewDisclosure() {
+  const action = { tool: 'wp_request', method: 'GET', path: '/wp/v2/pages/99', summary: 'Read the saved fixture page.', target: { ...historical.target }, write: false, details: ['context'] };
+  const page = fixture({ session: session('running', { phase: 'prepared', step: 8, next_action: action }) });
+  try {
+    const doc = page.w.document, detail = doc.querySelector('.bhranti-action-meta');
+    check(detail && !detail.open, 'Prepared action technical details start compact');
+    chooseDisclosure(page, detail, true); detail.querySelector('summary').focus(); const summaryId = detail.querySelector('summary').id;
+    page.api.state.session.run.phase = 'action'; page.api.render(); await page.advance(20);
+    equal(doc.querySelector('.bhranti-action-meta').id, detail.id, 'Prepared and executing phases share the exact action disclosure identity');
+    equal(doc.querySelector('.bhranti-action-meta').open, true, 'Polling from prepared to executing retains the chosen action details');
+    equal(doc.activeElement.id, summaryId, 'Polling retains the action-detail summary focus');
+    for (const change of [{ step: 9 }, { id: 'new-run' }, { next_action: { ...action, path: '/wp/v2/pages/100' } }]) {
+      page.api.state.session.run = { ...session('running', { phase: 'prepared', step: 8, next_action: action }).run, ...change }; page.api.render();
+      check(doc.querySelector('.bhranti-action-meta').id !== detail.id, 'A different run, step or canonical path has a separate disclosure identity');
+      equal(doc.querySelector('.bhranti-action-meta').open, false, 'A different prepared action does not inherit an earlier action disclosure choice');
+    }
+    const ai = doc.getElementById('bhranti-disclosure'); chooseDisclosure(page, ai, true);
+    page.api.state.draft = 'A noncritical display change'; page.api.render();
+    equal(doc.getElementById('bhranti-disclosure').open, true, 'The AI-data disclosure preserves its explicit open choice');
+    equal(page.requests.length, 0, 'Preview and AI disclosure inspection dispatch no request');
+  } finally { page.close(); }
+}
+
+async function testNativeDisclosureToggleRace() {
+  const initial = session('running', { phase: 'model' });
+  initial.events = [tool('native-toggle-one'), tool('native-toggle-two', 'write', { created: '2026-10-09T00:00:03Z' })];
+  const page = fixture({ session: initial });
+  try {
+    const doc = page.w.document, event = doc.querySelector('.bhranti-tool-event'), summary = event.querySelector('summary');
+    summary.focus(); summary.click();
+    equal(event.open, true, 'Native summary activation immediately opens its action details');
+    page.api.state.session.events.push(tool('native-toggle-three', 'image', { created: '2026-10-09T00:00:04Z' }));
+    page.api.render();
+    equal(doc.getElementById(event.id).open, true, 'A changed poll before the asynchronous native toggle event preserves the actual open choice');
+    equal(doc.activeElement.id, summary.id, 'A changed poll during a native toggle preserves the focused summary');
+    const group = doc.querySelector('.bhranti-tool-group'), groupSummary = group.querySelector('summary');
+    groupSummary.focus(); groupSummary.click();
+    equal(group.open, false, 'Native group summary activation immediately collapses the group');
+    page.api.state.session.run.status = 'complete'; page.api.render();
+    equal(doc.getElementById(group.id).open, false, 'Task completion cannot reopen a just-collapsed native group before toggle delivery');
+    equal(doc.activeElement.id, groupSummary.id, 'Task completion retains the focused group summary');
+    equal(page.requests.length, 0, 'A native disclosure race never sends or repeats a tool request');
+  } finally { page.close(); }
+}
+
+async function testTruthfulTaskDock() {
+  const page = fixture({ session: session('running', { phase: 'model', step: 8 }) });
+  try {
+    const doc = page.w.document;
+    const verify = (status, label, dock) => {
+      page.api.render(); const node = doc.getElementById('bhranti-run-status');
+      check(node && node.textContent.includes(label), 'Actual task state ' + status + ' displays ' + label);
+      equal(!!node.closest('.bhranti-task-dock'), dock, 'Only active task state ' + status + ' occupies the live dock');
+      equal(!!node.closest('.bhranti-stream'), !dock, 'Terminal status stays in history and active status stays outside the log');
+    };
+    verify('planning', 'Planning next step…', true);
+    equal(doc.querySelector('.bhranti-step').textContent, 'Step 8', 'The live task shows its actual model step');
+    check(!doc.getElementById('bhranti-run-status').textContent.match(/\d+%|\bETA\b/), 'The dock does not fabricate percentages or an estimated completion time');
+    for (const action of [
+      { tool: 'wp_request', method: 'GET', path: '/wp/v2/pages/99', write: false, summary: 'Read the saved fixture page.' },
+      { tool: 'generate_image', method: 'POST', write: true, summary: 'Generate one hand-drawn cat image.' },
+      { tool: 'wp_request', method: 'DELETE', write: true, summary: 'Move the fixture page to Trash.' },
+    ]) {
+      page.api.state.session.run.phase = 'prepared'; page.api.state.session.run.next_action = action; verify(action.tool + ':' + action.method, action.summary, true);
+      check(!doc.getElementById('bhranti-run-status').textContent.includes('Applying changes'), 'Known read/image/Trash actions never receive an invented generic write label');
+    }
+    page.api.state.session.run.phase = 'action'; delete page.api.state.session.run.next_action; verify('unknown-action', 'Running a WordPress action…', true);
+    check(!doc.querySelector('.bhranti-elapsed'), 'A server-side running action without a local request does not invent elapsed time');
+    page.api.state.session.run.retry_at = page.w.Date.now() / 1000 + 15; verify('retry', 'Retrying connection in 15s', true);
+    page.api.state.pausedForEditor = true; verify('dirty-pause', 'Save or discard', true);
+    page.api.state.stopRequested = true; verify('stop-requested', 'Stopping after the current step…', true);
+    equal(doc.getElementById('bhranti-stop').disabled, true, 'Stop is disabled only once its request is already pending');
+    page.api.state.stopRequested = false; page.api.state.pausedForEditor = false; delete page.api.state.session.run.retry_at;
+    page.api.state.session.run.status = 'awaiting_confirmation'; verify('approval', 'Waiting for your approval', true);
+    equal(doc.querySelectorAll('#bhranti-stop').length, 0, 'An approval wait does not imply that an action is currently executing');
+    for (const [status, label] of [['complete', 'Completed'], ['failed', 'Task stopped'], ['cancelled', 'Stopped']]) { page.api.state.session.run.status = status; verify(status, label, false); }
+    page.api.state.session.run.can_resume = true; page.api.state.session.run.status = 'failed'; verify('resumable-failure', 'Connection paused', false);
+    equal(page.requests.length, 0, 'Truthful task labels are pure displays of persisted state');
+  } finally { page.close(); }
+}
+
+async function testLiveRequestElapsed() {
+  for (const outcome of ['complete', 'error', 'pagehide', 'stop']) {
+    const held = deferred(); let operation;
+    const page = fixture({ session: session('running', { step: 7 }), handler: async (request) => {
+      if (request.path.endsWith('/step') && request.method === 'POST') return held.promise;
+      if (request.method === 'GET') return session('failed', { step: 7 });
+      throw new Error('Only the actual held planning request is allowed.');
+    } });
+    try {
+      page.api.state.draft = 'Draft while a native request is pending'; page.api.render();
+      const textarea = page.w.document.getElementById('bhranti-composer'); textarea.focus(); textarea.setSelectionRange(4, 11);
+      const log = page.w.document.getElementById('bhranti-stream'); log.scrollTop = 100; log.dispatchEvent(new page.w.Event('scroll'));
+      operation = page.api.continueRun(); await until(() => count(page, '/step', 'POST') === 1, page);
+      const sent = page.requests.find((request) => request.path.endsWith('/step'));
+      equal(JSON.stringify(sent.data), JSON.stringify({ run_id: runId, defer_tool: true }), 'The real pending request sends one exact prepared-protocol planning payload');
+      check(page.w.document.querySelector('.bhranti-task-dock .bhranti-elapsed'), 'Only an actual unresolved POST starts the live elapsed display');
+      const started = page.api.state.progress.started;
+      await page.advance(2500);
+      equal(page.w.document.querySelector('.bhranti-elapsed').textContent, '2s', 'Actual pending request time advances from its real start');
+      check(page.w.document.querySelector('.bhranti-elapsed').getAttribute('aria-label').includes('2 seconds'), 'Elapsed request duration has an accessible precise label');
+      page.api.state.session = clone(page.api.state.session); page.api.render(); await page.advance(1500);
+      equal(page.api.state.progress.started, started, 'A cloned status poll cannot reset the current request clock');
+      equal(page.w.document.querySelector('.bhranti-elapsed').textContent, '4s', 'A continuing request is measured rather than restarted by renders');
+      equal(page.w.document.getElementById('bhranti-composer'), textarea, 'Actual pending request UI retains the composing textarea');
+      equal(textarea.value, 'Draft while a native request is pending', 'Pending elapsed updates do not alter the unsent draft');
+      equal(log.scrollTop, 100, 'Pending task status stays outside the log and preserves the reader position');
+      equal(page.w.document.getElementById('bhranti-stop').getAttribute('id'), 'bhranti-stop', 'The live Stop control has a stable identity during a request');
+      if (outcome === 'stop') {
+        page.w.document.getElementById('bhranti-stop').focus(); page.w.document.getElementById('bhranti-stop').click(); await page.advance();
+        equal(page.api.state.stopRequested, true, 'The live Stop control records the human request while the current action is pending');
+        equal(page.w.document.getElementById('bhranti-stop').disabled, true, 'The persistent task dock disables the already requested Stop control');
+        check(page.w.document.getElementById('bhranti-run-status').textContent.includes('Stopping after the current step…'), 'Stop truthfully waits for the current native request to finish');
+        equal(page.requests.filter((request) => request.method !== 'GET').length, 1, 'Stop cannot replay or cancel an unresolved native request inline');
+      }
+      if (outcome === 'pagehide') {
+        page.w.dispatchEvent(new page.w.PageTransitionEvent('pagehide'));
+        equal([...page.timers.values()].filter((entry) => entry.interval).length, 0, 'Unloading the page cancels the local elapsed timer');
+        equal(page.api.state.session.run.status, 'running', 'Unloading cannot fabricate task completion'); held.resolve(session('complete'));
+      } else if (outcome === 'error') held.reject(Object.assign(new Error('The local planning response was lost.'), { data: { status: 503 } }));
+      else held.resolve(session('complete', { step: 7 }));
+      await until(() => idle(page), page); await operation;
+      equal(page.api.state.progress, null, 'Resolved, rejected or unloaded requests release their elapsed state');
+      equal([...page.timers.values()].filter((entry) => entry.interval).length, 0, 'The actual elapsed interval is cleaned in every request outcome');
+      equal(count(page, '/step', 'POST'), 1, 'The elapsed lifecycle never replays the planning POST');
+      equal(count(page, '/execute', 'POST'), 0, 'The elapsed lifecycle cannot invent a prepared action');
+      equal(page.api.state.session.run.status, outcome === 'error' ? 'failed' : 'complete', 'The final display follows the returned server checkpoint');
+      equal(count(page, '/cancel', 'POST'), 0, 'An already terminal returned checkpoint requires no additional cancel mutation');
+      check(!page.w.document.querySelector('.bhranti-elapsed'), 'No elapsed badge remains after the request ends');
+    } finally { held.resolve(session('complete')); if (operation) await operation; page.close(); }
+  }
+}
+
+async function testExactApprovalControls() {
+  for (const decision of [true, false, 'lost']) {
+    const pending = session('awaiting_confirmation', { step: 9 });
+    pending.confirmation = { id: 'confirmation-9', summary: 'Move only the identified fixture page to Trash.', target: { ...historical.target } };
+    const held = deferred(); const page = fixture({ session: pending, handler: async (request) => {
+      if (request.path.endsWith('/confirm') && request.method === 'POST') return held.promise;
+      if (request.method === 'GET') return clone(pending);
+      throw new Error('Approval controls must not dispatch a second action or planning request.');
+    } });
+    try {
+      const doc = page.w.document;
+      check(doc.querySelector('.bhranti-confirmation').textContent.includes(pending.confirmation.summary), 'The approval card retains the concrete destructive action summary');
+      check(doc.querySelector('.bhranti-confirmation .bhranti-target-link'), 'Approval exposes the exact affected target');
+      check(doc.querySelector('.bhranti-task-dock').textContent.includes('Waiting for your approval'), 'The persistent task dock truthfully indicates approval wait');
+      doc.getElementById(decision === false ? 'bhranti-cancel' : 'bhranti-confirm').click();
+      await until(() => count(page, '/confirm', 'POST') === 1, page);
+      const request = page.requests.find((entry) => entry.path.endsWith('/confirm'));
+      equal(JSON.stringify(request.data), JSON.stringify({ confirmation_id: 'confirmation-9', approved: decision !== false }), 'Approve/Deny sends only the exact canonical confirmation decision');
+      equal(doc.getElementById('bhranti-confirm').disabled, true, 'Approve cannot be submitted again during the same pending decision');
+      equal(doc.getElementById('bhranti-cancel').disabled, true, 'Deny cannot race a pending approval');
+      doc.getElementById('bhranti-confirm').click(); doc.getElementById('bhranti-cancel').click(); await flush();
+      equal(count(page, '/confirm', 'POST'), 1, 'Repeated UI activation cannot duplicate an approval POST');
+      await page.advance(2200); check(doc.querySelector('.bhranti-elapsed'), 'Approval displays elapsed time only while the actual decision request is pending');
+      if (decision === 'lost') held.reject(Object.assign(new Error('The approval response was lost.'), { data: { status: 503 } }));
+      else held.resolve(session(decision ? 'complete' : 'cancelled', { step: 9 }));
+      await until(() => idle(page), page);
+      equal(count(page, '/confirm', 'POST'), 1, 'A lost or completed confirmation is never automatically replayed');
+      equal(page.requests.filter((entry) => entry.method !== 'GET' && !entry.path.endsWith('/confirm')).length, 0, 'Approval presentation cannot invoke execute, planning, submission, rollback or Resume');
+      equal(page.api.state.session.run.status, decision === 'lost' ? 'awaiting_confirmation' : decision ? 'complete' : 'cancelled', 'Approval outcome is read from the durable returned checkpoint');
+      if (decision === 'lost') { equal(count(page, '/sessions/17', 'GET'), 1, 'An ambiguous approval response is reconciled through one read'); check(doc.querySelector('.bhranti-confirmation'), 'An unproven lost decision remains visible for the real server state'); }
+      equal(page.api.state.progress, null, 'Approval releases its local request clock once the decision settles');
+    } finally { held.resolve(session('cancelled')); await flush(); page.close(); }
+  }
+}
+
+async function testChatMenuJumpAndCopy() {
+  const page = fixture();
+  try {
+    const doc = page.w.document;
+    equal(doc.querySelector('.bhranti-brand').textContent, 'Bhranti', 'The header visibly identifies the Bhranti brand');
+    check(doc.getElementById('bhranti-chats'), 'Chats is a direct header control');
+    doc.getElementById('bhranti-chats').click(); await page.advance();
+    equal(doc.getElementById('bhranti-chats').getAttribute('aria-expanded'), 'true', 'The Chats trigger reflects its open menu state');
+    check(doc.getElementById('bhranti-chat-17') && doc.getElementById('bhranti-chat-18'), 'Chats use stable IDs derived from their real session IDs');
+    equal(doc.getElementById('bhranti-chat-17').getAttribute('aria-current'), 'page', 'The selected chat is explicitly identified to assistive technology');
+    let search = doc.getElementById('bhranti-chat-search'); search.focus(); search.value = 'SECOND'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
+    check(doc.getElementById('bhranti-chat-18') && !doc.getElementById('bhranti-chat-17'), 'Chat filtering is case-insensitive and selects the matching title');
+    equal(page.requests.length, 0, 'Typing a chat filter performs no HTTP request');
+    equal(doc.activeElement, search, 'Filtering retains the native search field and focus');
+    const menu = doc.getElementById('bhranti-menu'); menu.scrollTop = 63;
+    page.api.state.workspace = clone(page.api.state.workspace); page.api.render();
+    equal(doc.getElementById('bhranti-chat-search').value, 'SECOND', 'A cloned workspace poll preserves the current chat query');
+    equal(doc.getElementById('bhranti-menu').scrollTop, 63, 'A cloned workspace poll preserves menu reading position');
+    page.api.state.workspace.sessions.push({ id: 19, title: 'Third independent fixture chat' }); page.api.render();
+    equal(doc.getElementById('bhranti-chat-search'), search, 'A changed workspace poll retains the native search input');
+    equal(doc.getElementById('bhranti-chat-search').value, 'SECOND', 'A changed workspace poll retains the exact query');
+    equal(doc.getElementById('bhranti-menu').scrollTop, 63, 'A changed workspace poll retains menu reading position');
+    equal(doc.activeElement, search, 'A changed workspace poll preserves the chat-search focus');
+    doc.getElementById('bhranti-chat-search').dispatchEvent(new page.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await page.advance();
+    equal(page.api.state.menu, false, 'Escape closes Chats first'); equal(page.api.state.open, true, 'Escape from Chats preserves the conversation panel'); equal(doc.activeElement.id, 'bhranti-chats', 'Escape restores the direct Chats trigger focus');
+    doc.getElementById('bhranti-chats').click(); await page.advance();
+    equal(doc.getElementById('bhranti-chat-search').value, 'SECOND', 'Reopening Chats restores the filter');
+    equal(doc.getElementById('bhranti-menu').scrollTop, 63, 'Reopening Chats restores its prior menu position');
+    search = doc.getElementById('bhranti-chat-search'); search.value = 'no such fixture'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
+    check(doc.getElementById('bhranti-menu').textContent.includes('No matching chats.'), 'An unmatched query gives a clear empty search result');
+    equal(doc.querySelectorAll('.bhranti-chat-item').length, 0, 'An unmatched query cannot leave hidden actionable chat results');
+    search.value = ''; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
+    const native = doc.getElementById('native-field'); native.focus(); native.click(); await page.advance();
+    equal(page.api.state.menu, false, 'An outside native click closes the chat menu'); equal(doc.activeElement, native, 'Outside closing preserves the intended WordPress focus');
+    page.api.state.draft = 'Per-chat menu draft'; page.api.rememberDraft(); page.api.render();
+    const log = doc.getElementById('bhranti-stream'); log.scrollTop = 185; log.dispatchEvent(new page.w.Event('scroll'));
+    equal(doc.getElementById('bhranti-jump-latest').hidden, false, 'Reading above the bottom exposes an explicit Jump to latest control');
+    page.api.state.session.messages.push({ id: 'later', role: 'assistant', content: 'A newer fixture reply.', created: '2026-10-09T00:00:06Z' }); page.api.render(); await page.advance(20);
+    equal(log.scrollTop, 185, 'A new reply does not silently reset a reader above the bottom');
+    doc.getElementById('bhranti-jump-latest').focus(); doc.getElementById('bhranti-jump-latest').click(); await page.advance();
+    equal(log.scrollTop, log.scrollHeight, 'Jump to latest explicitly moves to the current conversation bottom');
+    equal(doc.getElementById('bhranti-jump-latest').hidden, true, 'Jump to latest hides after reaching the bottom');
+    equal(doc.activeElement.id, 'bhranti-composer', 'Jump to latest returns focus to the draft without changing it'); equal(page.api.state.draft, 'Per-chat menu draft', 'Jump to latest retains the unsent draft');
+    const copies = [];
+    Object.defineProperty(page.w.navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { copies.push(text); } } });
+    page.api.state.session.messages.push({ id: 'copy-fixture', role: 'assistant', content: 'Exact local reply <literal> 猫', created: '2026-10-09T00:00:07Z' }); page.api.render(); await page.advance();
+    const response = [...doc.querySelectorAll('.bhranti-message.is-assistant')].find((node) => node.textContent.includes('Exact local reply'));
+    const copy = response.querySelector('.bhranti-copy-button'); check(copy && copy.id === response.id + '-copy', 'Response copy has a durable per-message focus identity');
+    const copyId = copy.id; copy.focus(); page.api.state.session = clone(page.api.state.session); page.api.render();
+    equal(doc.getElementById(copyId), copy, 'An identical response poll retains the copy control node'); equal(doc.activeElement, copy, 'Polling retains copy-button keyboard focus');
+    copy.click(); await flush(); await page.advance();
+    equal(copies.length, 1, 'Copy performs exactly one local clipboard operation'); equal(copies[0], 'Exact local reply <literal> 猫', 'Copy uses the exact response text rather than rendered HTML');
+    equal(page.requests.length, 0, 'Menu search, Jump to latest and local copying never call a provider or server');
+  } finally { page.close(); }
+}
+
+async function testDirectChatNavigation() {
+  const first = session('complete'); first.events = [tool('same-event')];
+  const second = { ...clone(first), id: 18, title: 'Second independent chat' };
+  const page = fixture({ session: first, handler: async (request) => {
+    if (request.method === 'GET' && request.path.endsWith('/sessions/17')) return clone(first);
+    if (request.method === 'GET' && request.path.endsWith('/sessions/18')) return clone(second);
+    throw new Error('Chat navigation must only read the selected owned conversation.');
+  } });
+  try {
+    const doc = page.w.document;
+    page.api.state.draft = 'First chat exact draft'; page.api.rememberDraft(); page.api.render(); await page.advance(20);
+    const stream = doc.getElementById('bhranti-stream'); stream.scrollTop = 120; stream.dispatchEvent(new page.w.Event('scroll'));
+    chooseDisclosure(page, doc.querySelector('.bhranti-tool-event'), true);
+    doc.getElementById('bhranti-chats').click(); await page.advance();
+    doc.getElementById('bhranti-chat-18').click(); await until(() => idle(page), page); await page.advance(20);
+    equal(page.api.state.session.id, 18, 'Direct chat selection opens the exact requested session');
+    equal(count(page, '/sessions/18', 'GET'), 1, 'Direct chat selection issues one bounded selected-session read');
+    equal(page.api.state.menu, false, 'Selecting a chat closes its menu');
+    equal(page.api.state.draft, '', 'A newly selected chat does not inherit another chat’s draft');
+    equal(doc.querySelector('.bhranti-tool-event').open, false, 'The same event ID in a different chat cannot inherit disclosure state');
+    page.api.state.draft = 'Second chat exact draft'; page.api.rememberDraft(); page.api.render();
+    const secondStream = doc.getElementById('bhranti-stream'); secondStream.scrollTop = 280; secondStream.dispatchEvent(new page.w.Event('scroll'));
+    doc.getElementById('bhranti-chats').click(); await page.advance(); doc.getElementById('bhranti-chat-17').click(); await until(() => idle(page), page); await page.advance(20);
+    equal(page.api.state.session.id, 17, 'Returning through Chats opens the original exact session');
+    equal(page.api.state.draft, 'First chat exact draft', 'Direct chat navigation restores the original unsent draft');
+    equal(doc.getElementById('bhranti-stream').scrollTop, 120, 'Direct chat navigation restores the original reading position');
+    equal(doc.querySelector('.bhranti-tool-event').open, true, 'Direct chat navigation restores the original disclosure choice');
+    page.api.state.session.run.status = 'running'; page.api.state.session.run.phase = 'model'; page.api.render();
+    doc.getElementById('bhranti-chats').click(); await page.advance();
+    check([...doc.querySelectorAll('.bhranti-chat-item')].every((node) => node.disabled), 'An active run prevents switching its actionable chat controls');
+    const requests = page.requests.length; doc.getElementById('bhranti-chat-18').click(); await page.advance();
+    equal(page.requests.length, requests, 'Activating a disabled chat during a task cannot send a read or mutation');
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Direct chat navigation never submits, approves or replays a task');
+    equal(page.api.navigation.length, 0, 'Chat navigation cannot navigate the native WordPress page');
+  } finally { page.close(); }
+}
+
 async function main() {
   await testTransportBoundaries();
   await testPollingOutage();
@@ -430,6 +810,16 @@ async function main() {
   await testSubmissionAcknowledgement();
   await testUncertainActionRecovery();
   await testCompletedTargetRefresh();
+  await testStablePollingAndComposer();
+  await testToolDisclosuresAndGrouping();
+  await testActionPreviewDisclosure();
+  await testNativeDisclosureToggleRace();
+  await testTruthfulTaskDock();
+  await testLiveRequestElapsed();
+  await testExactApprovalControls();
+  await testChatMenuJumpAndCopy();
+  await testDirectChatNavigation();
   console.log('PASS ' + checks + ' isolated product UX checks; no HTTP, AI, WordPress load or DB access');
 }
-main().catch((error) => { console.error(error); process.exitCode = 1; });
+const watchdog = setTimeout(() => { console.error('FAIL: unresolved isolated UI operation exceeded the 20-second test deadline'); process.exit(1); }, 20000);
+main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(watchdog));
