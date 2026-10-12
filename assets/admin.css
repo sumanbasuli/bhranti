@@ -64,7 +64,7 @@
 .bhranti-app .bhranti-message-content.is-rendered figure { margin: 14px 0; max-width: 100%; overflow-x: auto; }
 .bhranti-app .bhranti-message-content.is-rendered img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
 .bhranti-app .bhranti-message-content.is-rendered figcaption { color: #a7aaad; font-size: 12px; }
-.bhranti-app .bhranti-message-content.is-rendered table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.bhranti-app .bhranti-message-content.is-rendered table { display: block; width: 100%; max-width: 100%; overflow-x: auto; overflow-wrap: normal; word-break: normal; border-collapse: collapse; font-size: 12px; }
 .bhranti-app .bhranti-message-content.is-rendered th, .bhranti-app .bhranti-message-content.is-rendered td { border: 1px solid #50575e; padding: 7px; text-align: left; }
 .bhranti-app .bhranti-message-content.is-rendered th { background: #2c3338; }
 .bhranti-app .bhranti-message-content.is-rendered ul, .bhranti-app .bhranti-message-content.is-rendered ol { padding-left: 22px; }
@@ -171,6 +171,10 @@ body.wp-admin.bhranti-panel-open .interface-interface-skeleton { border-radius: 
 body.wp-admin.bhranti-panel-open .edit-site-layout { width: calc(100% - var(--bhranti-panel-width)); right: 0; border-radius: 12px; overflow: hidden; }
 body.wp-admin.bhranti-panel-open .edit-site-layout .edit-site-editor__editor-interface.interface-interface-skeleton { width: 100%; right: 0; }
 body:not(.wp-admin).bhranti-panel-open { width: calc(100% - var(--bhranti-panel-width)); }
+@media (min-width: 783px) {
+	body.wp-admin.post-type-product.bhranti-panel-open #posts-filter { clear: both; overflow-x: auto; }
+	body.wp-admin.post-type-product.bhranti-panel-open #posts-filter .wp-list-table { min-width: 960px; }
+}
 @media (max-width: 782px) {
 	.bhranti-app { top: 46px; width: min(var(--bhranti-panel-width), 100%); }
 	.bhranti-app .bhranti-resize { display: none; }

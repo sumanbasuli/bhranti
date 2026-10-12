@@ -207,7 +207,7 @@ final class Bhranti_Actions {
 						),
 						'params' => array(
 							'type'        => 'object',
-							'description' => 'Only actual core route parameters. No author changes, password, meta, force, source or credential fields. GET may filter content by author ID. Collections are limited to 20 items.',
+							'description' => 'Only actual core route parameters. No author changes, password, meta, force, source, _embed or credential fields. GET may filter content by author ID and use _fields as a comma-separated string or array of up to 50 field paths, for example id,title.raw,status. Field selection only reduces already reviewed response data; it is unavailable on writes. Collections are limited to 20 items.',
 						),
 					),
 					'required'             => array( 'method', 'path' ),
@@ -306,9 +306,15 @@ final class Bhranti_Actions {
 			}
 			$target = self::target( $review, $data );
 			self::audit( 'action_completed', __( 'WordPress information retrieved.', 'bhranti' ), $session_id, $details + array( 'target' => $target ), $requester_id, $actor_id );
+			$data = self::public_data( $data, $review['class'] );
+			if ( $review['fields'] ) {
+				$projection = new WP_REST_Request( 'GET' );
+				$projection->set_query_params( array( '_fields' => $review['fields'] ) );
+				$data = rest_filter_response_fields( new WP_REST_Response( $data ), rest_get_server(), $projection )->get_data();
+			}
 			return array(
 				'summary'            => __( 'WordPress information retrieved.', 'bhranti' ),
-				'data'               => self::public_data( $data, $review['class'] ),
+				'data'               => $data,
 				'target'             => $target,
 				'action_id'          => '',
 				'rollback_available' => false,
@@ -829,6 +835,30 @@ final class Bhranti_Actions {
 		if ( 'DELETE' === $method && ( in_array( $class, array( 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Global_Styles_Controller' ), true ) || ( in_array( $class, array( 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller' ), true ) && ! $creation_undo ) ) ) {
 			return self::error( 'bhranti_action_blocked', __( 'This resource cannot be safely moved to Trash.', 'bhranti' ), 403 );
 		}
+		$fields = array();
+		if ( 'GET' === $method && array_key_exists( '_fields', $params ) ) {
+			$fields = is_string( $params['_fields'] ) ? wp_parse_list( $params['_fields'] ) : $params['_fields'];
+			$valid  = rest_validate_value_from_schema(
+				$fields,
+				array(
+					'type'     => 'array',
+					'minItems' => 1,
+					'maxItems' => 50,
+					'items'    => array(
+						'type'      => 'string',
+						'minLength' => 1,
+						'maxLength' => 128,
+						'pattern'   => '^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$',
+					),
+				),
+				'_fields'
+			);
+			if ( ! is_array( $fields ) || is_wp_error( $valid ) ) {
+				return self::error( 'bhranti_action_invalid', __( 'Use _fields with 1–50 field names or dotted field paths, as a comma-separated string or array.', 'bhranti' ) );
+			}
+			// Project only safe response data; native permissions, targets and recovery reads retain complete records.
+			unset( $params['_fields'] );
+		}
 		foreach ( $params as $key => $value ) {
 			if ( in_array( $key, array( 'force', 'password', 'meta', 'author_email', 'author_ip', 'author_user_agent', 'source', '_fields', '_embed', 'id' ), true ) || ! isset( $endpoint['args'][ $key ] ) || ( 'GET' !== $method && ! in_array( $key, $allowed, true ) ) ) {
 				return self::error( 'bhranti_action_blocked', __( 'A parameter is outside the reviewed route schema or rollback policy.', 'bhranti' ), 403 );
@@ -903,6 +933,7 @@ final class Bhranti_Actions {
 			'class'   => $class,
 			'type'    => $type,
 			'create'  => $create,
+			'fields'  => $fields,
 		);
 	}
 

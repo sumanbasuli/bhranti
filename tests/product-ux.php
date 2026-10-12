@@ -28,7 +28,7 @@ function get_userdata( $id ) { return 11 === (int) $id ? $GLOBALS['ux_actor'] : 
 function get_user_meta( $id, $key, $single = false ) { return 11 === (int) $id && 'bhranti_managed_actor' === $key ? 1 : ''; }
 function wp_slash( $value ) { return $value; }
 function wp_json_encode( $value ) { return json_encode( $value ); }
-function wp_ai_client_prompt() { throw new RuntimeException( 'This isolated test must not request AI.' ); }
+function wp_ai_client_prompt( $history = array() ) { if ( isset( $GLOBALS['ux_prompt_factory'] ) ) { return ( $GLOBALS['ux_prompt_factory'] )( $history ); } throw new RuntimeException( 'This isolated test must not request AI.' ); }
 function wp_get_connectors() { return array( 'fixture' => array( 'type' => 'ai_provider' ) ); }
 function wp_generate_uuid4() { return sprintf( '00000000-0000-4000-8000-%012d', ++$GLOBALS['ux_uuid'] ); }
 function sanitize_text_field( $value ) { return $value; }
@@ -66,9 +66,11 @@ final class Bhranti_Chat {
 }
 final class Bhranti_Settings {
     public static function profile( $id ) { return array( 'id' => $id, 'max_steps' => 128 ); }
+    public static function all() { return array( 'permissions' => array() ); }
 }
 final class Bhranti_Actions {
     public static function ensure_actor() { return 11; }
+    public static function catalog() { return array(); }
 }
 final class BhrantiUXClient {
     public static function defaultRegistry() { return new self(); }

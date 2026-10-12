@@ -437,6 +437,114 @@ async function testUncertainActionRecovery() {
   } finally { page.close(); }
 }
 
+async function testBackgroundPreparedStepRace() {
+  const prepared = session('running', { phase: 'prepared', step: 4, next_action: { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Save the requested page.', write: true } });
+  const stale = () => Object.assign(new Error('This request is no longer active.'), { code: 'bhranti_run_missing', data: { status: 409 } });
+  for (const phase of ['prepared', 'action', '', 'complete', 'awaiting_confirmation']) {
+    let reads = 0;
+    const fresh = phase === 'complete' || phase === 'awaiting_confirmation' ? session(phase, { step: 7 }) : { ...prepared, run: { ...prepared.run, step: 7, phase } };
+    const finished = session('complete', { step: 8 });
+    finished.messages = [...finished.messages, { role: 'assistant', content: 'The store setup is saved.' }];
+    const page = fixture({ session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/execute')) {
+        if (request.data.prepared_step === 4) throw stale();
+        equal(request.data.run_id, runId, 'Race recovery executes only the original owned run');
+        equal(request.data.prepared_step, 7, 'Race recovery executes only the newly fetched prepared step');
+        return finished;
+      }
+      if (request.path.endsWith('/step')) { equal(phase, '', 'A new planning request needs a freshly read idle checkpoint'); return finished; }
+      if (request.method === 'GET') return ++reads === 1 ? fresh : finished;
+      throw new Error('Unexpected mutation during checkpoint recovery.');
+    } });
+    try {
+      page.api.state.draft = 'Keep my follow-up while the background task advances'; page.api.rememberDraft();
+      const operation = page.api.continueRun(); await until(() => idle(page), page); await operation;
+      equal(page.requests.filter((entry) => entry.path.endsWith('/execute') && entry.data.prepared_step === 4).length, 1, phase + ': the stale step is rejected once and never replayed');
+      equal(count(page, '/sessions/17', 'GET'), phase === 'action' ? 2 : 1, phase + ': a known conflict is reconciled through the owned session read');
+      equal(page.api.state.error, '', phase + ': a proven newer checkpoint avoids a false reconnect failure');
+      equal(controls(page, 'Reconnect').length, 0, phase + ': the user is not asked to repair normal Cron progress');
+      equal(page.api.state.draft, 'Keep my follow-up while the background task advances', phase + ': checkpoint recovery preserves the unsent draft');
+      equal(count(page, '/execute', 'POST'), phase === 'prepared' ? 2 : 1, phase + ': only an authoritative new prepared checkpoint can execute another action');
+      equal(count(page, '/step', 'POST'), phase === '' ? 1 : 0, phase + ': action polling and approvals never invent a planning request');
+      equal(page.api.state.session.run.status, phase === 'awaiting_confirmation' ? 'awaiting_confirmation' : 'complete', phase + ': recovery retains the real final status');
+    } finally { page.close(); }
+  }
+  for (const [label, fresh, error] of [
+    ['unchanged checkpoint', prepared, stale()],
+    ['regressed checkpoint', { ...prepared, run: { ...prepared.run, step: 3 } }, stale()],
+    ['different run', { ...prepared, run: { ...prepared.run, id: '90000000-1000-4000-8000-100000000018', step: 7 } }, stale()],
+    ['different conversation', { ...prepared, id: 18, run: { ...prepared.run, step: 7 } }, stale()],
+    ['invalid checkpoint number', { ...prepared, run: { ...prepared.run, step: '7' } }, stale()],
+    ['ambiguous write', { ...prepared, run: { ...prepared.run, step: 7 } }, Object.assign(new Error('The response was lost.'), { data: { status: 503 } })],
+    ['unknown conflict', { ...prepared, run: { ...prepared.run, step: 7 } }, Object.assign(new Error('Another conflict.'), { code: 'unknown_conflict', data: { status: 409 } })],
+    ['wrong conflict status', { ...prepared, run: { ...prepared.run, step: 7 } }, Object.assign(stale(), { data: { status: 403 } })],
+  ]) {
+    const page = fixture({ session: prepared, handler: async (request) => { if (request.method === 'GET') return fresh; throw error; } });
+    try {
+      const operation = page.api.continueRun(); await until(() => idle(page), page); await operation;
+      equal(count(page, '/execute', 'POST'), 1, label + ': recovery cannot replay a write without proof');
+      equal(count(page, '/step', 'POST'), 0, label + ': recovery cannot run a new model step');
+      check(!!page.api.state.error, label + ': the unresolved state remains explicitly stopped');
+    } finally { page.close(); }
+  }
+  const page = fixture({ session: session('running', { step: 4 }), handler: async (request) => { if (request.method === 'GET') return { ...prepared, run: { ...prepared.run, step: 7 } }; throw stale(); } });
+  try {
+    const operation = page.api.continueRun(); await until(() => idle(page), page); await operation;
+    equal(count(page, '/step', 'POST'), 1, 'A stale planning request is not the known prepared-step rejection and never retries');
+    equal(count(page, '/execute', 'POST'), 0, 'A rejected planner request cannot take over another checkpoint');
+    check(!!page.api.state.error, 'Unexplained planner ownership conflict remains stopped');
+  } finally { page.close(); }
+}
+
+async function testPendingHeartbeatRecovery() {
+  const prepared = session('running', { phase: 'prepared', step: 4, next_action: { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Save the requested page.', write: true } });
+  const clean = { dirty: false, active: false, write_blocked: false, stale_dirty: false };
+  for (const outcome of ['clean', 'dirty', 'timeout']) {
+    let rejectPending, reports = 0;
+    const page = fixture({ background: true, session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) {
+        reports++;
+        if (reports === 1) return new Promise((resolve, reject) => { rejectPending = reject; });
+        if (outcome === 'timeout') return new Promise((resolve, reject) => request.signal.addEventListener('abort', () => reject(Object.assign(new Error('The fresh safety report timed out.'), { name: 'AbortError' }))));
+        return outcome === 'dirty' ? { ...clean, dirty: true, write_blocked: true, stale_dirty: true } : clean;
+      }
+      if (request.path.endsWith('/execute')) { equal(outcome, 'clean', 'Only a fresh clean safety report permits the original action'); return session('complete', { step: 4 }); }
+      throw new Error('Unexpected request during pending heartbeat recovery.');
+    } });
+    try {
+      const operation = page.api.continueRun(); await flush();
+      equal(reports, 1, outcome + ': the write waits for the already pending safety report');
+      equal(count(page, '/execute', 'POST'), 0, outcome + ': no action executes before the pending report is resolved');
+      rejectPending(Object.assign(new Error('The earlier heartbeat timed out.'), { name: 'AbortError' }));
+      await until(() => idle(page), page, 250); await operation;
+      equal(reports, 2, outcome + ': one fresh safety report replaces the failed pending heartbeat');
+      equal(count(page, '/execute', 'POST'), outcome === 'clean' ? 1 : 0, outcome + ': an unsafe or unknown state cannot execute or replay an action');
+      equal(page.api.state.pausedForEditor, outcome !== 'clean', outcome + ': dirty or failed fresh checks retain the explicit editor pause');
+      equal(!!page.api.state.editorError, outcome === 'timeout', outcome + ': only a successful fresh report clears the stale safety error');
+      equal(page.requests.filter((entry) => entry.path.endsWith('/editor-state') && 'release_stale' in entry.data).length, 0, outcome + ': automatic checking never releases another tab’s sticky dirty marker');
+      equal(count(page, '/step', 'POST'), 0, outcome + ': safety recovery never invents a planning request');
+    } finally { page.close(); }
+  }
+  for (const [releaseStale, fresh] of [[false, false], [true, true]]) {
+    let rejectPending;
+    const page = fixture({ background: true, handler: async () => new Promise((resolve, reject) => { rejectPending = reject; }) });
+    try {
+      let caught = false;
+      const report = page.api.reportEditor(releaseStale, fresh).catch(() => { caught = true; });
+      rejectPending(new Error('The original safety report failed.')); await report;
+      equal(count(page, '/editor-state', 'POST'), 1, 'Ordinary periodic reports and stale-marker release never automatically retry a rejected report');
+      equal(caught, true, 'A non-fresh or explicit stale-marker release caller retains the report failure');
+    } finally { page.close(); }
+  }
+  const page = fixture({ background: true });
+  try {
+    await flush(); page.api.state.pausedForEditor = true;
+    await page.api.reportEditor();
+    equal(page.api.state.pausedForEditor, true, 'A later clean periodic heartbeat never automatically resumes an unrelated dirty-editor pause');
+    equal(count(page, '/execute', 'POST'), 0, 'Periodic heartbeat success cannot dispatch an action');
+  } finally { page.close(); }
+}
+
 async function completedWriteFixture(options = {}) {
   const target = { id: options.targetId || 99, type: options.type || 'page', title: 'Fixture page', url: '/wp-admin/post.php?post=' + (options.targetId || 99) + '&action=edit' };
   const action = { ...historical, id: 'new-write', action_id: 'new-snapshot', run_id: runId, success: options.success === undefined ? true : options.success, operation: options.operation || 'write', target, created: '2026-10-09T00:00:03Z' };
@@ -1295,6 +1403,8 @@ async function main() {
   await testCommerceTargetLinks();
   await testSubmissionAcknowledgement();
   await testUncertainActionRecovery();
+  await testBackgroundPreparedStepRace();
+  await testPendingHeartbeatRecovery();
   await testCompletedTargetRefresh();
   await testStablePollingAndComposer();
   await testToolDisclosuresAndGrouping();

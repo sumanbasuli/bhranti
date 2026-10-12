@@ -466,7 +466,8 @@ final class Bhranti_Commerce {
 		$request->set_url_params( $matched['url_params'] );
 		$defaults = array();
 		foreach ( $matched['endpoint']['args'] ?? array() as $name => $schema ) {
-			if ( array_key_exists( 'default', $schema ) ) {
+			// Match native REST routing: null defaults are omitted, not sanitized as values.
+			if ( isset( $schema['default'] ) ) {
 				$defaults[ $name ] = $schema['default']; }
 		}
 		$request->set_default_params( $defaults );

@@ -495,12 +495,12 @@ final class Bhranti_Agent {
 				'kind' => 'model_request',
 				'step' => $run['step'],
 			);
-			return self::finish( $post, $run, __( 'The AI connection failed after three retries. Completed actions and images are saved. Use Resume task to continue.', 'bhranti' ), 'failed' );
+			return self::finish( $post, $run, __( 'The AI request failed after three retries. Completed actions and images are saved. Use Resume task to continue.', 'bhranti' ), 'failed' );
 		}
 		$run['request_retries'] = $attempt + 1;
 		$run['retry_at']        = time() + $delays[ $attempt ];
 		$run['phase']           = '';
-		$logged                 = Bhranti_Audit::record( 'ai_request_retry', __( 'Retrying the AI connection after a delay. Completed actions are saved.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
+		$logged                 = Bhranti_Audit::record( 'ai_request_retry', __( 'Retrying the AI request after a delay. Completed actions are saved.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 		if ( is_wp_error( $logged ) ) {
 			return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
 		}
@@ -547,11 +547,11 @@ final class Bhranti_Agent {
 			$events[] = $event;
 		}
 		$failure = $events[1]['details'];
-		return 'run_failed' === $events[0]['type'] && 'failed' === ( $events[0]['details']['status'] ?? '' ) && 'ai_failed' === $events[1]['type'] && in_array( $failure['reason'] ?? '', array( 'network', 'upstream' ), true ) && in_array( $failure['code'] ?? '', array( 'prompt_network_error', 'prompt_upstream_server_error', 'prompt_builder_error' ), true ) && ! in_array( (int) ( $failure['status'] ?? 0 ), array( 401, 403, 429 ), true );
+		return 'run_failed' === $events[0]['type'] && 'failed' === ( $events[0]['details']['status'] ?? '' ) && 'ai_failed' === $events[1]['type'] && in_array( $failure['reason'] ?? '', array( 'network', 'upstream', 'incomplete_response' ), true ) && in_array( $failure['code'] ?? '', array( 'prompt_network_error', 'prompt_upstream_server_error', 'prompt_builder_error' ), true ) && ! in_array( (int) ( $failure['status'] ?? 0 ), array( 401, 403, 429 ), true );
 	}
 
 	/**
-	 * Resume a proven model transport failure without discarding earlier results.
+	 * Resume a proven failed model request without discarding earlier results.
 	 *
 	 * @param WP_REST_Request $request Owned run identity.
 	 * @return array|WP_Error
@@ -571,7 +571,7 @@ final class Bhranti_Agent {
 				if ( ! $actor || (int) get_option( 'bhranti_actor_id' ) !== (int) $actor->ID || (int) get_user_meta( $actor->ID, 'bhranti_managed_actor', true ) !== get_current_blog_id() || array( 'bhranti_agent' ) !== $actor->roles || array( 'bhranti_agent' => true ) !== $actor->caps ) {
 					return self::error( 'bhranti_actor_invalid', __( 'The managed Bhranti account needs administrator review.', 'bhranti' ), 409 );
 				}
-				$logged = Bhranti_Audit::record( 'ai_resumed', __( 'The administrator resumed the saved task after a native AI connection failure. Completed actions remain recorded.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
+				$logged = Bhranti_Audit::record( 'ai_resumed', __( 'The administrator resumed the saved task after a native AI request failure. Completed actions remain recorded.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				if ( is_wp_error( $logged ) ) {
 					return $logged;
 				}
@@ -662,7 +662,7 @@ final class Bhranti_Agent {
 				array(
 					'status'    => 502,
 					'retryable' => in_array( $code, array( 'prompt_network_error', 'prompt_upstream_server_error', 'prompt_token_limit_reached', 'prompt_builder_error', 'bhranti_provider_exception', 'bhranti_invalid_response' ), true ) && ! in_array( $details['status'] ?? 0, array( 401, 403 ), true ) && ! in_array( $diagnostic['reason'], array( 'authentication', 'permission', 'usage_limit', 'prevented', 'unsupported_prompt', 'protocol_version', 'model_unavailable' ), true ),
-					'transient' => in_array( $diagnostic['reason'], array( 'network', 'upstream' ), true ) && in_array( $code, array( 'prompt_network_error', 'prompt_upstream_server_error', 'prompt_builder_error' ), true ) && ! in_array( $details['status'] ?? 0, array( 401, 403, 429 ), true ),
+					'transient' => in_array( $diagnostic['reason'], array( 'network', 'upstream', 'incomplete_response' ), true ) && in_array( $code, array( 'prompt_network_error', 'prompt_upstream_server_error', 'prompt_builder_error' ), true ) && ! in_array( $details['status'] ?? 0, array( 401, 403, 429 ), true ),
 				)
 			);
 		}

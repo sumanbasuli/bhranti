@@ -315,12 +315,17 @@
 	}
 	const heartbeatToken = settings.isAdmin && settings.backgroundEnabled ? editorToken() : null;
 	function editorSummary() { return state.editor || currentRun() && currentRun().editor || {}; }
-	async function reportEditor(releaseStale = false, fresh = false) {
+	async function reportEditor(releaseStale = false, fresh = false, retryPending = true) {
 		if (!heartbeatToken || pageSuspended) return editorSummary();
 		const local = editorState();
 		if (releaseStale && local.unsaved_changes) return editorSummary();
 		if (heartbeatRequest) {
-			if (fresh || releaseStale) { await heartbeatRequest; return reportEditor(releaseStale, true); }
+			if (fresh || releaseStale) {
+				try { await heartbeatRequest; }
+				catch (error) { if (!fresh || releaseStale || !retryPending || pageSuspended) throw error; }
+				// A failed earlier heartbeat cannot replace this write's fresh safety check.
+				return reportEditor(releaseStale, true, false);
+			}
 			if (heartbeatFingerprint !== JSON.stringify(local)) heartbeatQueued = true;
 			return heartbeatRequest;
 		}
@@ -639,7 +644,7 @@
 					if (!currentRun() || currentRun().id !== runId || revealNewTarget(new Set(), runId)) break; continue;
 				}
 				const previousEvents = new Set((state.session.events || []).map((event) => String(event.id)));
-				const prepared = currentRun().phase === 'prepared', action = currentRun().next_action;
+				const prepared = currentRun().phase === 'prepared', action = currentRun().next_action, preparedStep = currentRun().step;
 				if (prepared) {
 					if (!action) throw new Error(__('The prepared action could not load. Reload this conversation before continuing.', 'bhranti'));
 					if (String(action.method || 'GET').toUpperCase() !== 'GET') {
@@ -651,9 +656,17 @@
 					if (!state.open || pageSuspended) break; if (state.stopRequested) continue;
 				}
 				try {
-					state.session = await runRequest('/sessions/' + encodeURIComponent(id) + (prepared ? '/execute' : '/step'), prepared ? { run_id: runId, prepared_step: currentRun().step, unsaved_changes: !!runtimeContext().unsaved_changes } : { run_id: runId, defer_tool: true }, prepared ? action.summary || __('Executing prepared action…', 'bhranti') : __('Planning next step…', 'bhranti'));
+					state.session = await runRequest('/sessions/' + encodeURIComponent(id) + (prepared ? '/execute' : '/step'), prepared ? { run_id: runId, prepared_step: preparedStep, unsaved_changes: !!runtimeContext().unsaved_changes } : { run_id: runId, defer_tool: true }, prepared ? action.summary || __('Executing prepared action…', 'bhranti') : __('Planning next step…', 'bhranti'));
 				} catch (error) {
 					if (['bhranti_unsaved_changes', 'bhranti_editor_busy'].includes(error.code)) { state.pausedForEditor = true; await reloadAfterError(); render(); break; }
+					if (prepared && error.code === 'bhranti_run_missing' && error.data && error.data.status === 409) {
+						// Cron can advance while this browser is reopening. Never replay the rejected step.
+						const fresh = await request('/sessions/' + encodeURIComponent(id));
+						if (pageSuspended || !state.session || state.session.id !== id || !currentRun() || currentRun().id !== runId) break;
+						if (!fresh || fresh.id !== id || !fresh.run || fresh.run.id !== runId || !Number.isSafeInteger(fresh.run.step) || fresh.run.step <= preparedStep) throw error;
+						state.session = fresh; waitingSince = null; markExistingEvents(); render();
+						if (revealNewTarget(previousEvents, runId)) break; continue;
+					}
 					if (error.code !== 'bhranti_busy' || !error.data || error.data.status !== 409) throw error;
 					if (waitingSince === null) waitingSince = Date.now();
 					if (Date.now() - waitingSince >= 600000) throw new Error(__('WordPress is still busy. Stop this run and check Logs before retrying.', 'bhranti'));
