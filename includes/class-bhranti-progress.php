@@ -12,12 +12,13 @@ final class Bhranti_Progress {
 	/**
 	 * Describe a proposed tool using bounded labels and native item links.
 	 *
-	 * @param array $command Parsed tool command. Execution still validates its complete schema.
-	 * @param int   $requester_id Requesting administrator.
-	 * @param int   $actor_id Managed user.
+	 * @param array  $command Parsed tool command. Execution still validates its complete schema.
+	 * @param int    $requester_id Requesting administrator.
+	 * @param int    $actor_id Managed user.
+	 * @param string $intent Optional public description of the intended outcome.
 	 * @return array
 	 */
-	public static function describe( $command, $requester_id, $actor_id ) {
+	public static function describe( $command, $requester_id, $actor_id, $intent = '' ) {
 		$tool   = $command['tool'];
 		$args   = $command['args'];
 		$method = is_string( $args['method'] ?? null ) ? strtoupper( $args['method'] ) : 'GET';
@@ -36,6 +37,7 @@ final class Bhranti_Progress {
 			'plugin_search'  => __( 'Searching the WordPress plugin directory', 'bhranti' ),
 			'generate_image' => __( 'Generating an image through WordPress AI', 'bhranti' ),
 			'open_item'      => __( 'Reading the requested WordPress item', 'bhranti' ),
+			'reference_page' => __( 'Inspecting the supplied design reference', 'bhranti' ),
 		);
 		if ( isset( $labels[ $tool ] ) ) {
 			$data['summary'] = $labels[ $tool ];
@@ -93,6 +95,9 @@ final class Bhranti_Progress {
 		}
 		if ( 'commerce_request' !== $tool && isset( $args['params'] ) && is_array( $args['params'] ) ) {
 			$data['details'] = array_values( array_intersect( array_keys( $args['params'] ), array( 'title', 'content', 'excerpt', 'status', 'featured_media', 'alt_text', 'caption', 'description', 'slug', 'parent', 'menu_order', 'categories', 'tags', 'template', 'styles', 'settings' ) ) );
+		}
+		if ( is_string( $intent ) && '' !== trim( $intent ) ) {
+			$data['intent'] = mb_substr( sanitize_text_field( $intent ), 0, 240 );
 		}
 		return $data;
 	}

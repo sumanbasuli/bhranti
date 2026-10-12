@@ -9,6 +9,7 @@
 
 use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Files\DTO\File;
+use WordPress\AiClient\Files\Enums\FileTypeEnum;
 use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\ModelMessage;
 use WordPress\AiClient\Messages\Enums\ModalityEnum;
@@ -68,6 +69,8 @@ final class Bhranti_QA_Image_Provider extends AbstractProvider {
 					array(
 						new SupportedOption( OptionEnum::inputModalities(), array( array( ModalityEnum::text() ) ) ),
 						new SupportedOption( OptionEnum::outputModalities(), array( array( ModalityEnum::image() ) ) ),
+						new SupportedOption( OptionEnum::outputMimeType(), array( 'image/png', 'image/jpeg', 'image/webp' ) ),
+						new SupportedOption( OptionEnum::outputFileType(), array( FileTypeEnum::inline() ) ),
 					)
 				);
 			}
@@ -117,6 +120,7 @@ $media_http = array();
 $media_connectors = array();
 $media_failure = null;
 $media_preserved = false;
+$media_memory_clean = true;
 $media_original_user = get_current_user_id();
 $media_marker = 'bhranti-media-qa-' . str_replace( '-', '', wp_generate_uuid4() );
 $media_deny_cap = array();
@@ -395,9 +399,18 @@ try {
 		array( 'prompt' => 'test', 'author' => $other ),
 		array( 'prompt' => 'test', 'filename' => '../escape.php' ),
 		array( 'prompt' => 'test', 'provider' => 'unapproved' ),
+		array( 'prompt' => 'test', 'format' => 'svg' ),
+		array( 'prompt' => 'test', 'format' => array( 'png' ) ),
 	);
 	foreach ( $invalid as $case ) {
 		bhranti_media_reject( bhranti_media_command( $case ), $owner, $session, 'Invalid media arguments fail closed', 'bhranti_media_invalid' );
+	}
+	$png_only = static function ( $types ) { return array_intersect( $types, array( 'image/png' ) ); };
+	add_filter( 'upload_mimes', $png_only, PHP_INT_MAX );
+	try {
+		bhranti_media_reject( bhranti_media_command( $args + array( 'format' => 'webp' ) ), $owner, $session, 'Unsupported native output format fails before any model call', 'bhranti_media_format' );
+	} finally {
+		remove_filter( 'upload_mimes', $png_only, PHP_INT_MAX );
 	}
 	bhranti_media_reject( $command + array( 'confirmed' => true ), $owner, $session, 'Extra envelope keys cannot grant image authority', 'bhranti_media_invalid' );
 	bhranti_media_reject( array( 'tool' => 'generate_image', 'args' => 'not-an-object' ), $owner, $session, 'Scalar media argument envelope is rejected', 'bhranti_media_invalid' );
@@ -474,15 +487,15 @@ try {
 		array( new File( '', 'image/png' ), 'bhranti_media_image' ),
 		array( new File( base64_encode( bhranti_media_png( 8193, 2 ) ), 'image/png' ), 'bhranti_media_image' ),
 		array( new File( base64_encode( bhranti_media_png( 8192, 8192 ) ), 'image/png' ), 'bhranti_media_image' ),
-		array( 'Provider prose cannot be saved as an image.', 'bhranti_image_failed' ),
+		array( 'Provider prose cannot be saved as an image.', 'bhranti_media_image' ),
 	);
 	foreach ( $bad_images as $case ) {
 		Bhranti_QA_Image_Model::$image = $case[0];
 		bhranti_media_reject( $command, $owner, $session, 'Unsupported remote/type/bytes/dimensions/provider output fails closed', $case[1], 1 );
 	}
 	Bhranti_QA_Image_Model::$image = new File( base64_encode( $png ), 'image/png' );
-	$size_limit = static function () use ( $png ) {
-		return strlen( $png ) - 1;
+	$size_limit = static function () {
+		return 1;
 	};
 	add_filter( 'upload_size_limit', $size_limit, PHP_INT_MAX );
 	try {
@@ -650,6 +663,9 @@ try {
 	}
 	require_once ABSPATH . 'wp-admin/includes/user.php';
 	foreach ( $media_users as $id ) {
+		if ( class_exists( 'Bhranti_Memory' ) ) {
+			$media_memory_clean = ! is_wp_error( Bhranti_Memory::erase_user( $id ) ) && $media_memory_clean;
+		}
 		foreach ( get_posts( array( 'post_type' => 'bhranti_event', 'post_status' => 'private', 'author' => $id, 'posts_per_page' => -1, 'fields' => 'ids' ) ) as $event_id ) {
 			wp_delete_post( $event_id, true );
 		}
@@ -671,7 +687,7 @@ try {
 	wp_set_current_user( $media_original_user );
 	remove_filter( 'pre_http_request', $media_http_guard, PHP_INT_MAX );
 	remove_filter( 'pre_wp_mail', '__return_true', PHP_INT_MAX );
-	$media_preserved = $media_before_content === bhranti_media_content() && $media_before_files === bhranti_media_files() && $media_before_identity === bhranti_media_preserved_identity();
+	$media_preserved = $media_memory_clean && $media_before_content === bhranti_media_content() && $media_before_files === bhranti_media_files() && $media_before_identity === bhranti_media_preserved_identity();
 	foreach ( $media_options as $name => $raw ) {
 		$media_preserved = $media_preserved && $raw === bhranti_media_raw_option( $name );
 	}

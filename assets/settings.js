@@ -8,6 +8,7 @@
 	const __ = wp.i18n ? wp.i18n.__ : (value) => value;
 	const settingsPage = window.bhrantiSettingsPage || {};
 	const apiPath = settingsPage.apiPath || '/bhranti/v1/settings';
+	const memoryApiPath = settingsPage.memoryApiPath || '/bhranti/v1/memory';
 	const docLimit = 16000;
 	const actionPermissions = [
 		{ key: 'edit_content', label: __('Edit content', 'bhranti') },
@@ -25,9 +26,9 @@
 	function validPermissions(permissions) {
 		return permissions && !Array.isArray(permissions) && Object.keys(permissions).length === actionPermissions.length && actionPermissions.every(({ key }) => typeof permissions[key] === 'boolean');
 	}
-	async function readSettings() {
+	async function readSettings(path = apiPath) {
 		const controller = new AbortController(), timer = window.setTimeout(() => controller.abort(), 20000);
-		try { return await wp.apiFetch({ path: apiPath, signal: controller.signal }); }
+		try { return await wp.apiFetch({ path, signal: controller.signal }); }
 		catch (error) { if (controller.signal.aborted) throw new Error(__('Loading took too long. Please try again.', 'bhranti')); throw error; }
 		finally { window.clearTimeout(timer); }
 	}
@@ -62,16 +63,54 @@
 		if (total > 200000) return __('These settings are too large. Keep the total below 200,000 characters.', 'bhranti');
 		return '';
 	}
+	function validMemory(result) {
+		if (!result || typeof result.available !== 'boolean' || typeof result.revision !== 'string' || typeof result.message !== 'string' || !Array.isArray(result.preferences) || !Array.isArray(result.capabilities) || result.preferences.some((item) => !item || typeof item.id !== 'string' || typeof item.text !== 'string') || result.capabilities.some((item) => !item || typeof item.id !== 'string' || typeof item.summary !== 'string' || !Number.isFinite(item.observed) || !Number.isFinite(item.expires))) throw new Error(__('Memory could not be read. Refresh to try again.', 'bhranti'));
+		return result;
+	}
+	function MemoryCard({ onBusy }) {
+		const [memory, setMemory] = useState(null), [loading, setLoading] = useState(true), [resetting, setResetting] = useState(false), [confirm, setConfirm] = useState(false), [notice, setNotice] = useState(null), [needsRefresh, setNeedsRefresh] = useState(false);
+		const alive = useRef(true), operation = useRef(false);
+		useLayoutEffect(() => { onBusy(resetting); return () => onBusy(false); }, [resetting]);
+		async function load() {
+			if (operation.current) return;
+			operation.current = true; setLoading(true); setNotice(null); setConfirm(false);
+			try { const result = validMemory(await readSettings(memoryApiPath)); if (alive.current) { setMemory(result); setNeedsRefresh(false); } }
+			catch (error) { if (alive.current) { setNeedsRefresh(true); setNotice({ status: 'error', text: __('Memory could not load. Refresh to try again.', 'bhranti') }); } }
+			finally { operation.current = false; if (alive.current) setLoading(false); }
+		}
+		useEffect(() => { alive.current = true; load(); return () => { alive.current = false; }; }, []);
+		async function reset() {
+			if (!confirm || operation.current || needsRefresh || !memory || !memory.available) return;
+			operation.current = true; setResetting(true); setNotice(null);
+			try {
+				const result = validMemory(await wp.apiFetch({ path: memoryApiPath + '/reset', method: 'POST', data: { revision: memory.revision } }));
+				if (alive.current) { setMemory(result); setConfirm(false); setNotice({ status: 'success', text: __('Your memory was reset.', 'bhranti') }); }
+			} catch (error) {
+				if (alive.current) { setConfirm(false); setNeedsRefresh(true); setNotice({ status: 'error', text: error.data && error.data.status === 409 ? __('Your memory changed. Refresh and review it before resetting.', 'bhranti') : __('The reset could not be confirmed. Refresh to check your memory before trying again.', 'bhranti') }); }
+			} finally { operation.current = false; if (alive.current) setResetting(false); }
+		}
+		const hasEntries = memory && (memory.preferences.length || memory.capabilities.length || memory.message), disabled = loading || resetting;
+		return h(Card, { className: 'bhranti-settings-card' }, h(CardHeader, null, h('h2', null, __('Memory', 'bhranti'))), h(CardBody, null,
+			h('p', { className: 'bhranti-settings-memory-help' }, __('Private to you on this site. Relevant preferences and verified capabilities are included when you chat.', 'bhranti')),
+			notice && h(Notice, { status: notice.status, isDismissible: true, onRemove: () => setNotice(null) }, h('p', null, notice.text)),
+			memory && memory.available && memory.message && h(Notice, { status: 'warning', isDismissible: false }, h('p', null, memory.message)),
+			loading ? h('div', { className: 'bhranti-settings-loading', role: 'status' }, h(Spinner), __('Loading memory…', 'bhranti')) : memory && !memory.available ? h('p', { role: 'status' }, memory.message || __('Memory is currently unavailable. You can still chat with Bhranti.', 'bhranti')) : memory && h('div', null,
+				h('h3', null, __('Saved preferences', 'bhranti')), memory.preferences.length ? h('ul', { className: 'bhranti-settings-memory-list' }, memory.preferences.map((item) => h('li', { key: item.id }, item.text))) : h('p', null, __('No saved preferences yet.', 'bhranti')),
+				h(PanelBody, { title: __('Verified capabilities', 'bhranti'), initialOpen: false }, memory.capabilities.length ? h('ul', { className: 'bhranti-settings-memory-list' }, memory.capabilities.map((item) => h('li', { key: item.id }, item.summary, h('span', { className: 'bhranti-settings-memory-time' }, item.expires <= Date.now() / 1000 ? __('Expired — checked again when needed.', 'bhranti') : __('Recently verified; checked again when needed.', 'bhranti'))))) : h('p', null, __('No verified capabilities saved yet.', 'bhranti')))),
+			confirm && h(Notice, { status: 'warning', isDismissible: false }, h('p', null, __('Reset your memory? This removes your saved preferences and verified capabilities for this site. Your chats and site content stay in place.', 'bhranti')), h('div', { className: 'bhranti-settings-actions' }, h(Button, { variant: 'secondary', isDestructive: true, onClick: reset, disabled, isBusy: resetting }, resetting ? __('Resetting…', 'bhranti') : __('Reset my memory', 'bhranti')), h(Button, { variant: 'tertiary', onClick: () => setConfirm(false), disabled }, __('Keep memory', 'bhranti')))),
+			h('div', { className: 'bhranti-settings-actions' }, h(Button, { variant: 'secondary', onClick: load, disabled }, __('Refresh memory', 'bhranti')), !confirm && h(Button, { variant: 'tertiary', isDestructive: true, disabled: disabled || needsRefresh || !memory || !memory.available || !hasEntries, onClick: () => setConfirm(true) }, __('Reset memory', 'bhranti')))));
+	}
 	function Settings() {
 		const [config, setConfig] = useState(null), [revision, setRevision] = useState('initial'), [baseline, setBaseline] = useState('');
 		const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [notice, setNotice] = useState(null), [removal, setRemoval] = useState(null), [reloadConfirm, setReloadConfirm] = useState(false);
+		const [memoryBusy, setMemoryBusy] = useState(false);
 		const dirty = config && JSON.stringify(config) !== baseline;
 		const current = useRef(null), sync = useRef({ pending: false, generation: 0, running: false, alive: true });
 		current.current = { config, dirty, saving, loading };
 		useLayoutEffect(() => {
-			mount.dataset.bhrantiDirty = String(!!dirty); mount.dataset.bhrantiBusy = String(loading || saving || !config);
+			mount.dataset.bhrantiDirty = String(!!dirty); mount.dataset.bhrantiBusy = String(loading || saving || memoryBusy || !config);
 			window.dispatchEvent(new CustomEvent('bhranti:settings-state'));
-		}, [!!dirty, loading, saving, !!config]);
+		}, [!!dirty, loading, saving, memoryBusy, !!config]);
 		async function refreshSaved() {
 			const before = current.current;
 			if (!sync.current.alive || !sync.current.pending || sync.current.running || before.dirty || before.loading || before.saving) return;
@@ -158,6 +197,7 @@
 			h(Card, { className: 'bhranti-settings-card' }, h(CardHeader, null, h('h2', null, __('Global instructions', 'bhranti'))), h(CardBody, null,
 				h(TextareaControl, { label: __('System prompt', 'bhranti'), value: config.system_prompt, rows: 6, help: __('Additional instructions applied to every agent.', 'bhranti'), onChange: (system_prompt) => setConfig({ ...config, system_prompt }), disabled: saving }),
 				h(TextareaControl, { label: __('Guardrails', 'bhranti'), value: config.guardrails, rows: 6, help: __('Rules every agent should follow. WordPress permissions and built-in confirmations still apply.', 'bhranti'), onChange: (guardrails) => setConfig({ ...config, guardrails }), disabled: saving }))),
+			h(MemoryCard, { onBusy: setMemoryBusy }),
 			h('div', { className: 'bhranti-settings-section-heading' }, h('h2', null, __('Agents', 'bhranti')), h(Button, { variant: 'secondary', disabled: saving || config.agents.length >= 20, onClick: () => setConfig({ ...config, agents: config.agents.concat({ id: id('agent'), name: '', agent_md: '', skills: [] }) }) }, __('Add agent', 'bhranti'))),
 			config.agents.map(agentCard), h('div', { className: 'bhranti-settings-save' }, h(Button, { variant: 'primary', onClick: save, disabled: saving || !dirty, isBusy: saving }, saving ? __('Saving…', 'bhranti') : __('Save settings', 'bhranti')), dirty && h('span', null, __('Unsaved changes', 'bhranti')))));
 	}

@@ -77,6 +77,7 @@ final class Bhranti_Settings {
 			'window.bhrantiSettingsPage = ' . wp_json_encode(
 				array(
 					'apiPath'                 => '/bhranti/v1/settings',
+					'memoryApiPath'           => '/bhranti/v1/memory',
 					'pluginDeletionAvailable' => defined( 'BHRANTI_ALLOW_IRREVERSIBLE_PLUGIN_DELETION' ) && BHRANTI_ALLOW_IRREVERSIBLE_PLUGIN_DELETION,
 					'route'                   => add_query_arg( 'page', 'bhranti', admin_url( 'admin.php' ) ),
 				),

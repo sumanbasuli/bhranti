@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.17
+Stable tag: 0.4.20
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -42,9 +42,9 @@ Rollback restores supported WordPress state. Emails, webhooks and other plugin h
 
 === External services and privacy ===
 
-Bhranti has no telemetry or remote assets and does not call a third-party API directly. AI providers, routing, models and credentials remain in WordPress Settings > Connectors. Opening the panel does not contact the AI provider. Native connector approvals remain authoritative.
+Bhranti has no telemetry or remote assets. AI providers, routing, models and credentials remain in WordPress Settings > Connectors. Opening the panel does not contact the AI provider. Native connector approvals remain authoritative. When you supply a public HTTPS design URL in chat, Bhranti may retrieve that page through native WordPress safe HTTP, without credentials or cookies, to inspect its structure and text.
 
-Sending a request shares your message, up to 12 recent conversation messages, basic site information, attached current page HTML/text and selected-block context, explicitly captured tab screenshots, selected system/agent/skill instructions, image-generation prompts, and site content/query/action results needed for the task through the native WordPress AI Client. Site content, instructions and messages may contain personal data. Do not include passwords or API keys. Requests may incur provider charges or use a connected account's allowance.
+Sending a request shares your message, up to 12 recent conversation messages, basic site information, attached current page HTML/text and selected-block context, explicitly captured tab screenshots, attached reference images and retrieved design-reference text, selected system/agent/skill instructions, image-generation prompts, relevant saved preferences and verified image facts, and site content/query/action results needed for the task through the native WordPress AI Client. Site content, instructions and messages may contain personal data. Do not include passwords or API keys. Requests may incur provider charges or use a connected account's allowance.
 
 The destination and service terms depend on the installed native connector. Common policies:
 
@@ -55,6 +55,8 @@ The destination and service terms depend on the installed native connector. Comm
 Other connectors have their own terms. Bhranti never stores connector credentials. Its tools exclude credentials and security settings, and audit records exclude prompt/content bodies and raw provider errors.
 
 Site-wide prompt, agent and skill settings remain until replaced or uninstalled. Settings support 20 agents, 20 skills per agent, 16,000 characters per document and 200,000 characters for the full configuration. These instructions are included in the relevant conversation snapshots for personal-data export and erasure.
+
+Private memory stores explicitly requested language, tone, design and workflow preferences and bounded verified image facts in encrypted, owner-scoped files under wp-content/bhranti-memory. Files are data only, never included or executed. Native local filesystem and crypto support are required; chat can continue without memory if unavailable. Settings provides review/reset; native personal-data export, erasure and uninstall cover memory. Preferences remain until forgotten or erased. Capability observations expire after one day and never override fresh native checks. Changing WordPress authentication salts makes old memory unreadable but still resettable.
 
 Conversations, run context, tool results, rollback snapshots and audit records are stored in this WordPress database until deleted or erased. The UI lists the latest 50 conversations and latest 100 timeline events; the separate audit log retains paginated records without that timeline limit. A conversation accepts 200 messages; each submitted message may contain 12,000 characters. Assistant replies show sanitized static HTML previews for standard WordPress images, tables and text formatting. Block delimiters are hidden; dynamic block callbacks are never executed. Raw response content remains available through Copy response. Per-tab editor protection stores only a UUID, editor/dirty flags and expiry. Clean closed tabs expire after two minutes; dirty markers remain until cleared or explicitly resumed. These markers support native export, erasure and uninstall. Background queue entries contain only conversation/run/requester identifiers. Unsent drafts are stored separately per chat in this browser tab’s session storage; attached screenshots stay in browser memory until sent or removed. Sent screenshots are bounded to 2 MiB and become native AI image message parts.
 
@@ -103,13 +105,29 @@ Yes. New successful actions on the open post or page update its native block edi
 
 = Can I edit while Bhranti works? =
 
-As soon as a task is ready to fetch or change the current clean post or page, a dark WordPress overlay protects the native block editor from accidental clicks and shortcuts. Saved updates continue to appear beneath it. Other prepared site actions similarly protect the clean main WordPress area, including Settings and classic product forms. Bhranti and the admin bar remain accessible. Control returns when the task finishes, pauses for approval or stops, after any known in-flight operation returns. Existing typing, unsaved work and save requests remain protected. Bhranti Settings refreshes its saved task limit in place without overwriting local edits.
+As soon as a task is ready to fetch or change the current clean post or page, a dark WordPress overlay protects the native block editor from accidental clicks and shortcuts. Saved updates continue to appear beneath it. Other prepared site actions cover the whole clean admin viewport, including navigation, the admin bar, Settings and classic product forms. Chat, Stop and a Bhranti reopening button remain accessible. Control returns when the task finishes, pauses for approval or stops, after any known in-flight operation returns. Existing typing, unsaved work and save requests remain protected. Bhranti Settings refreshes its saved task limit in place without overwriting local edits.
 
 = Can it roll back everything? =
 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.20 =
+* Preflight native image formats and upload limits, request supported output formats and convert bounded images locally without a second generation.
+* Recognize supported reference images by their raster data, including misleading file names, before sharing on Send.
+* Keep explicitly requested preferences and verified image facts in private encrypted files with Settings review/reset and native privacy cleanup.
+* Compact native country options without losing their exact values, and distinguish unavailable block metadata from permission failures.
+
+= 0.4.19 =
+* Dim and lock the whole admin area during site control, keeping chat, Stop and reopening accessible.
+* Discover existing global-style records without creating records during a theme read; clarify native template and style routes.
+
+= 0.4.18 =
+* Clarify missing business and design decisions before changes, with a distinct waiting-for-answer state and visible action intent.
+* Accept reference images and inspect user-supplied public design URLs as bounded, inert context through native WordPress APIs.
+* Discover installed block metadata without evaluating render/variation callbacks or exposing script/style assets.
+* Add reviewed store location, countries and units, native shipping zones/rates, offline cash-on-delivery and shop visibility, with audit and conflict-safe supported Undo.
 
 = 0.4.17 =
 * Match native WooCommerce category-query defaults so ordinary catalog reads succeed.

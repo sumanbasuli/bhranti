@@ -1,6 +1,6 @@
 <?php
 /**
- * Bounded, untrusted rendered-page and explicitly captured screenshot context.
+ * Bounded, untrusted rendered-page and explicitly attached image context.
  *
  * @package Bhranti
  * @license GPL-2.0-or-later
@@ -22,18 +22,18 @@ final class Bhranti_Context {
 	 */
 	public static function screenshot( $input ) {
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'data', 'mime_type' ) ) || ! is_string( $input['data'] ?? null ) || ! in_array( $input['mime_type'] ?? '', array( 'image/jpeg', 'image/png' ), true ) ) {
-			return self::error( __( 'Attach one captured PNG or JPEG screenshot as inline image data.', 'bhranti' ) );
+			return self::error( __( 'Attach one PNG or JPEG image as inline image data.', 'bhranti' ) );
 		}
 		$data  = $input['data'];
 		$limit = 2097152;
 		if ( '' === $data || strlen( $data ) > 4 * (int) ceil( $limit / 3 ) || ! preg_match( '/\A[A-Za-z0-9+\/]+={0,2}\z/', $data ) ) {
-			return self::error( __( 'The captured screenshot exceeds the 2 MiB limit or contains invalid image data.', 'bhranti' ) );
+			return self::error( __( 'The attached image exceeds the 2 MiB limit or contains invalid image data.', 'bhranti' ) );
 		}
 		// Native File DTOs accept base64, but decoded bytes are bounded and checked first.
 		$bytes = base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- User-chosen screenshots are decoded only for bounded raster validation, never code execution.
 		$info  = is_string( $bytes ) && strlen( $bytes ) <= $limit ? @getimagesizefromstring( $bytes ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Malformed screenshot bytes must return a validation error without PHP warnings.
 		if ( ! is_array( $info ) || ( $info['mime'] ?? '' ) !== $input['mime_type'] || $info[0] < 1 || $info[1] < 1 || $info[0] > 2560 || $info[1] > 2560 ) {
-			return self::error( __( 'The screenshot must be a valid PNG or JPEG no larger than 2560 pixels on either side.', 'bhranti' ) );
+			return self::error( __( 'The attached image must be a valid PNG or JPEG no larger than 2560 pixels on either side.', 'bhranti' ) );
 		}
 		return array(
 			'data'      => base64_encode( $bytes ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Canonical native screenshot data, never executable code.
@@ -51,7 +51,7 @@ final class Bhranti_Context {
 	 */
 	public static function screenshot_part( $input ) {
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'data', 'mime_type', 'width', 'height' ) ) ) {
-			return self::error( __( 'The captured screenshot is not a supported image object.', 'bhranti' ) );
+			return self::error( __( 'The attached image is not a supported image object.', 'bhranti' ) );
 		}
 		$validated = self::screenshot( array_intersect_key( $input, array_flip( array( 'data', 'mime_type' ) ) ) );
 		if ( is_wp_error( $validated ) ) {
@@ -60,7 +60,7 @@ final class Bhranti_Context {
 		try {
 			return new MessagePart( new File( $validated['data'], $validated['mime_type'] ) );
 		} catch ( Throwable $error ) {
-			return self::error( __( 'WordPress could not prepare the captured screenshot for its native AI connector.', 'bhranti' ) );
+			return self::error( __( 'WordPress could not prepare the attached image for its native AI connector.', 'bhranti' ) );
 		}
 	}
 

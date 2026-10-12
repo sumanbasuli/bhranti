@@ -181,6 +181,20 @@ final class Bhranti_Privacy {
 		}
 
 		if ( 1 === $page ) {
+			$memory = Bhranti_Memory::export_user( $user->ID );
+			if ( is_wp_error( $memory ) || $memory['preferences'] || $memory['capabilities'] ) {
+				$data[] = array(
+					'group_id'    => 'bhranti-memory',
+					'group_label' => __( 'Bhranti private memory', 'bhranti' ),
+					'item_id'     => "bhranti-memory-{$site_id}-{$user->ID}",
+					'data'        => array(
+						array(
+							'name'  => __( 'Saved preferences and verified observations', 'bhranti' ),
+							'value' => is_wp_error( $memory ) ? esc_html__( 'Saved private memory could not be read. It can be erased through this privacy tool or reset in Bhranti Settings.', 'bhranti' ) : esc_html( wp_json_encode( $memory ) ),
+						),
+					),
+				);
+			}
 			$editors = get_user_meta( $user->ID, 'bhranti_editor_state_' . $site_id, true );
 			if ( $editors ) {
 				$data[] = array(
@@ -255,6 +269,14 @@ final class Bhranti_Privacy {
 		$user   = get_user_by( 'email', trim( $email_address ) );
 		if ( ! $user ) {
 			return $result;
+		}
+
+		$memory_removed = Bhranti_Memory::erase_user( $user->ID );
+		if ( is_wp_error( $memory_removed ) ) {
+			$result['items_retained'] = true;
+			$result['messages'][]     = __( 'Private memory could not be erased. Resolve the storage problem and retry.', 'bhranti' );
+		} elseif ( $memory_removed ) {
+			$result['items_removed'] = true;
 		}
 
 		// Always take the first remaining batch: deletion changes pagination offsets.

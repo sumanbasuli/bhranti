@@ -13,6 +13,7 @@ const bundles = ['vendor/react.js', 'vendor/react-dom.js', 'escape-html.js', 'el
 const permissionKeys = ['edit_content', 'publish_content', 'trash_content', 'manage_comments', 'manage_media', 'manage_navigation', 'manage_design', 'manage_site_settings', 'plugins_install', 'plugins_activate', 'plugins_delete'];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const initial = () => ({ config: { max_steps: 128, system_prompt: '', guardrails: '', permissions: Object.fromEntries(permissionKeys.map((key) => [key, key !== 'plugins_delete'])), agents: [{ id: 'bhranti', name: 'Bhranti', agent_md: '', skills: [] }] }, revision: 'initial' });
+const initialMemory = () => ({ available: true, revision: 'memory-initial', preferences: [], capabilities: [], message: '' });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 12));
 let checks = 0, httpCalls = 0, currentCase = 'initialization';
@@ -26,7 +27,7 @@ function fixture(options = {}) {
   const dom = new JSDOM('<!doctype html><html><body class="wp-admin"><main id="wpbody-content"><div id="bhranti-settings-app"></div></main></body></html>', { url: 'https://bhranti.wp.local/wp-admin/admin.php?page=bhranti', runScripts: 'outside-only', pretendToBeVisual: true, virtualConsole });
   const w = dom.window, mount = w.document.getElementById('bhranti-settings-app');
   const requests = [], states = [], savedEvents = [], changedListeners = new Set();
-  let root = null, handler = options.handler, saved = clone(options.saved || initial());
+  let root = null, handler = options.handler, memoryHandler = options.memoryHandler, saved = clone(options.saved || initial()), memory = clone(options.memory || initialMemory());
   const add = w.addEventListener.bind(w), remove = w.removeEventListener.bind(w);
   w.addEventListener = (name, callback, ...args) => { if (name === 'bhranti:settings-changed') changedListeners.add(callback); return add(name, callback, ...args); };
   w.removeEventListener = (name, callback, ...args) => { if (name === 'bhranti:settings-changed') changedListeners.delete(callback); return remove(name, callback, ...args); };
@@ -54,6 +55,12 @@ function fixture(options = {}) {
   w.wp.apiFetch = async (request) => {
     const captured = { path: request.path, method: request.method || 'GET', data: request.data === undefined ? undefined : clone(request.data), signal: request.signal };
     requests.push(captured);
+    if (captured.path === '/bhranti/v1/memory' || captured.path === '/bhranti/v1/memory/reset') {
+      if (memoryHandler) return memoryHandler(captured);
+      if (captured.path.endsWith('/reset')) { assert.equal(captured.method, 'POST'); assert.deepEqual(Object.keys(captured.data), ['revision']); memory = { ...initialMemory(), revision: 'memory-reset' }; }
+      else assert.equal(captured.method, 'GET');
+      return clone(memory);
+    }
     assert.equal(captured.path, '/bhranti/v1/settings', 'Only the reviewed Settings endpoint is called');
     assert.ok(['GET', 'POST'].includes(captured.method), 'The fixture exposes only read/save requests');
     if (handler) return handler(captured, requests.length);
@@ -68,8 +75,9 @@ function fixture(options = {}) {
   function field(label, index = 0) { const labels = [...mount.querySelectorAll('label')].filter((node) => node.textContent === label); assert.ok(labels[index], 'Missing Settings field: ' + label); return w.document.getElementById(labels[index].htmlFor); }
   function button(label, index = 0) { const buttons = [...mount.querySelectorAll('button')].filter((node) => node.textContent === label); assert.ok(buttons[index], 'Missing Settings button: ' + label); return buttons[index]; }
   return { w, dom, mount, requests, states, savedEvents, changedListeners, settle, field, button,
-    setHandler(next) { handler = next; }, setSaved(next) { saved = clone(next); },
-    gets: () => requests.filter((request) => request.method === 'GET'), posts: () => requests.filter((request) => request.method === 'POST'),
+    setHandler(next) { handler = next; }, setSaved(next) { saved = clone(next); }, setMemoryHandler(next) { memoryHandler = next; },
+    gets: () => requests.filter((request) => request.path === '/bhranti/v1/settings' && request.method === 'GET'), posts: () => requests.filter((request) => request.path === '/bhranti/v1/settings' && request.method === 'POST'),
+    memoryReads: () => requests.filter((request) => request.path === '/bhranti/v1/memory'), memoryResets: () => requests.filter((request) => request.path === '/bhranti/v1/memory/reset'),
     async input(label, value, index) { const node = field(label, index); node.value = value; node.dispatchEvent(new w.Event('input', { bubbles: true })); await settle(); },
     async click(label, index) { button(label, index).click(); await settle(); },
     async changed() { w.dispatchEvent(new w.CustomEvent('bhranti:settings-changed')); await settle(); },
@@ -202,8 +210,69 @@ async function testNewCommitDuringRefresh() {
   } finally { held.resolve(initial()); await page.close(); }
 }
 
+async function testMemoryReviewAndConfirmedReset() {
+  const memory = { ...initialMemory(), revision: 'reviewed-memory', preferences: [{ id: 'style', text: 'Use a calm visual style <script>not executable</script>' }], capabilities: [{ id: 'images', summary: 'Images can be saved as PNG, JPEG or WebP.', observed: 1791800000, expires: 1991800000, runtime: 'PRIVATE_RUNTIME_MARKER', details: { secret: 'PRIVATE_DETAIL_MARKER' } }] };
+  const page = fixture({ memory }), held = deferred();
+  try {
+    await until(page, () => page.mount.textContent.includes('Images can be saved'), 'Saved memory is displayed');
+    equal(page.memoryReads().length, 1, 'Memory loads once through its private read endpoint'); equal(page.memoryResets().length, 0, 'Reviewing memory cannot reset it');
+    check(page.mount.textContent.includes(memory.preferences[0].text), 'Preferences render as literal readable text'); equal(page.mount.querySelectorAll('script').length, 0, 'Preference content is never executed'); check(!page.mount.textContent.includes('PRIVATE_'), 'Capability runtime and raw details never appear in the product');
+    await page.input('System prompt', 'Keep this unrelated unsaved instruction'); await page.click('Reset memory');
+    equal(page.memoryResets().length, 0, 'The first Reset button only requests confirmation'); check(page.mount.textContent.includes('Your chats and site content stay in place'), 'Reset explains its exact private-memory scope');
+    await page.click('Keep memory'); equal(page.memoryResets().length, 0, 'Declining reset keeps all saved memory');
+    page.setMemoryHandler((request) => { assert.equal(request.path, '/bhranti/v1/memory/reset'); return held.promise; });
+    await page.click('Reset memory'); await page.click('Reset my memory'); flags(page, true, true, 'Confirmed memory reset protects in-flight Settings');
+    equal(page.memoryResets().length, 1, 'Explicit confirmation resets once'); deep(page.memoryResets()[0].data, { revision: 'reviewed-memory' }, 'Reset sends only the revision the user reviewed');
+    check(page.button('Refresh memory').disabled, 'Refresh cannot race an unacknowledged reset'); equal(page.field('System prompt').value, 'Keep this unrelated unsaved instruction', 'Memory reset leaves other Settings drafts intact');
+    held.resolve({ ...initialMemory(), revision: 'fresh-empty' }); await until(page, () => page.mount.textContent.includes('Your memory was reset'), 'Reset waits for native acknowledgement');
+    flags(page, true, false, 'Acknowledged reset returns control while preserving the Settings draft'); check(page.button('Reset memory').disabled, 'An empty acknowledged memory cannot accidentally be reset again');
+    equal(page.posts().length, 0, 'Reset never submits site-wide Settings'); equal(page.savedEvents.length, 0, 'Memory reset never claims unrelated Settings were saved');
+  } finally { held.resolve(initialMemory()); await page.close(); }
+}
+
+async function testMemoryFailureAndAvailability() {
+  for (const status of [409, 502]) {
+    const populated = { ...initialMemory(), preferences: [{ id: 'tone', text: 'Prefer concise explanations.' }] };
+    const page = fixture({ memory: populated });
+    try {
+      await until(page, () => page.mount.textContent.includes('Prefer concise'), 'Memory initially loads');
+      page.setMemoryHandler(() => Promise.reject(Object.assign(new Error('PRIVATE_ERROR_DETAIL'), { data: { status } })));
+      await page.click('Reset memory'); await page.click('Reset my memory');
+      await until(page, () => page.button('Reset memory').disabled, 'Unconfirmed reset requires a fresh review');
+      equal(page.memoryResets().length, 1, 'Failed reset is never retried automatically'); check(!page.mount.textContent.includes('PRIVATE_ERROR_DETAIL'), 'Reset failures use actionable UI copy without backend detail'); check(page.mount.textContent.includes('Prefer concise'), 'Unconfirmed reset preserves the last known review'); flags(page, false, false, 'Failed memory reset releases busy state');
+      await page.click('Reset memory'); equal(page.memoryResets().length, 1, 'Disabled Reset cannot resubmit uncertain deletion');
+      page.setMemoryHandler(() => ({ ...populated, revision: 'new-review' })); await page.click('Refresh memory');
+      equal(page.memoryReads().length, 2, 'A human refresh obtains a fresh memory revision'); check(!page.button('Reset memory').disabled, 'Successful refresh allows another explicit review and confirmation'); equal(page.memoryResets().length, 1, 'Refreshing never replays the earlier reset');
+    } finally { await page.close(); }
+  }
+  const page = fixture({ memory: { ...initialMemory(), available: false, message: 'Memory is unavailable. Chat remains available.' } });
+  try {
+    await until(page, () => page.mount.textContent.includes('Chat remains available'), 'Unavailable storage is explained locally');
+    check(page.button('Reset memory').disabled, 'Unavailable memory cannot be mutated'); await page.input('System prompt', 'Still edit normal settings'); check(!page.button('Save settings').disabled, 'Unavailable memory does not block normal Settings');
+    equal(page.memoryResets().length, 0, 'Unavailable memory does not invoke reset');
+  } finally { await page.close(); }
+  const damaged = fixture({ memory: { ...initialMemory(), revision: 'a'.repeat(64), message: 'Saved memory could not be read. You can reset it here.' } });
+  try {
+    await until(damaged, () => damaged.mount.textContent.includes('Saved memory could not be read'), 'Damaged storage explains the recovery path');
+    check(!damaged.button('Reset memory').disabled, 'Unreadable memory remains explicitly resettable even without decoded entries');
+    await damaged.click('Reset memory'); await damaged.click('Reset my memory');
+    await until(damaged, () => damaged.mount.textContent.includes('Your memory was reset'), 'Confirmed reset recovers unreadable private memory');
+    equal(damaged.memoryResets()[0].data.revision, 'a'.repeat(64), 'Recovery retains the complete ciphertext revision without treating it as a UUID');
+    equal(damaged.memoryResets().length, 1, 'Damaged private memory is reset only once after confirmation');
+  } finally { await damaged.close(); }
+  const failed = fixture({ memoryHandler: () => Promise.reject(new Error('/private/secret-storage/credential-marker')) });
+  try {
+    await until(failed, () => failed.mount.textContent.includes('Memory could not load'), 'Memory read failure provides an independent retry');
+    check(!failed.mount.textContent.includes('credential-marker'), 'Storage transport details do not leak into the Settings product'); equal(failed.memoryReads().length, 1, 'Memory read failure does not spin an automatic retry loop');
+    await failed.input('System prompt', 'Other settings remain usable'); check(!failed.button('Save settings').disabled, 'A failed memory read leaves unrelated Settings usable');
+    failed.setMemoryHandler(() => initialMemory()); await failed.click('Refresh memory');
+    await until(failed, () => failed.mount.textContent.includes('No saved preferences yet'), 'Manual refresh recovers the memory card');
+    equal(failed.memoryReads().length, 2, 'Manual recovery issues exactly one new read'); equal(failed.memoryResets().length, 0, 'Read recovery cannot mutate private memory');
+  } finally { await failed.close(); }
+}
+
 async function main() {
-  for (const test of [testInitialAndReactDirty, testAcknowledgedAndFailedSave, testCommittedCleanRefreshAndDirtyDeferral, testEditsDuringRefresh, testChangedThenRestoredDuringRefresh, testCommitWhileSaving, testRefreshFailureAndUnmount, testNewCommitDuringRefresh]) { currentCase = test.name; await test(); }
+  for (const test of [testInitialAndReactDirty, testAcknowledgedAndFailedSave, testCommittedCleanRefreshAndDirtyDeferral, testEditsDuringRefresh, testChangedThenRestoredDuringRefresh, testCommitWhileSaving, testRefreshFailureAndUnmount, testNewCommitDuringRefresh, testMemoryReviewAndConfirmedReset, testMemoryFailureAndAvailability]) { currentCase = test.name; await test(); }
   equal(httpCalls, 0, 'All Settings React checks remain offline');
   console.log('PASS ' + checks + ' Settings sync checks; real WordPress React/element; no HTTP, AI, WordPress load or DB');
 }

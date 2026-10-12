@@ -8,11 +8,14 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
+require_once __DIR__ . '/includes/class-bhranti-memory.php';
+
 /**
  * Delete workspace records and site-specific user options on one site.
  */
 $bhranti_remove_site_data = static function () {
 	wp_unschedule_hook( 'bhranti_run_tick', true );
+	Bhranti_Memory::uninstall_site();
 	$bhranti_retained_count = 0;
 	do {
 		$bhranti_sessions = get_posts(

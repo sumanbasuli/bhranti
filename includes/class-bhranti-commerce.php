@@ -8,13 +8,15 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-bhranti-commerce-setup.php';
+
 /** Keep commerce work inside native controllers without financial transactions. */
 final class Bhranti_Commerce {
 	/** Return the narrow commerce tool, including useful dependency discovery. */
 	public static function catalog() {
 		return array(
 			'commerce_request' => array(
-				'description' => 'Manage a WooCommerce store through reviewed native APIs. First GET /wc/v3 for availability and safe setting paths. If WooCommerce is missing, use existing plugin_request to install directory slug woocommerce inactive, then activate woocommerce/woocommerce when the user requested a store. Never claim the store is ready until successful native results. GET /wc/v3/products and /wc/v3/products/categories searches existing catalog items. POST /wc/v3/products creates a simple product, default draft; example params {"name":"Handmade bowl","type":"simple","status":"draft","regular_price":"25.00","description":"<p>Confirmed product details.</p>"}. Product fields: name,slug,status,type=simple,description,short_description,regular_price,sale_price,sku,featured,catalog_visibility,virtual,manage_stock,stock_quantity,stock_status,backorders,sold_individually,weight,dimensions,categories:[{id:1}],images:[{id:123}],menu_order,reviews_allowed. Images must be existing native Media Library IDs; no remote uploads. POST product item updates it. DELETE product item only trashes after the human Approve button; never send force. POST categories supports name,slug,parent,description,display,menu_order; category deletion is unavailable. Store settings: GET the exact allowed path returned by discovery; POST it with only {"value":"..."}. Reads and edits are bounded, audited and checked against native schemas and current permissions. Product Undo restores supported saved state; hook/email effects are not universally reversible. Ask for missing real products/prices/currency/shipping/payment decisions; never invent business facts or configure payment credentials, orders or customers.',
+				'description' => 'Manage a WooCommerce store through reviewed native APIs. First GET /wc/v3 for availability and safe setting paths. If WooCommerce is missing, use existing plugin_request to install directory slug woocommerce inactive, then activate woocommerce/woocommerce when the user requested a store. Never claim the store is ready until successful native results. GET /wc/v3/products and /wc/v3/products/categories searches existing catalog items. POST /wc/v3/products creates a simple product, default draft; example params {"name":"Handmade bowl","type":"simple","status":"draft","regular_price":"25.00","description":"<p>Confirmed product details.</p>"}. Product fields: name,slug,status,type=simple,description,short_description,regular_price,sale_price,sku,featured,catalog_visibility,virtual,manage_stock,stock_quantity,stock_status,backorders,sold_individually,weight,dimensions,categories:[{id:1}],images:[{id:123}],menu_order,reviews_allowed. Images must be existing native Media Library IDs; no remote uploads. POST product item updates it. DELETE product item only trashes after the human Approve button; never send force. POST categories supports name,slug,parent,description,display,menu_order; category deletion is unavailable. Store settings: GET the exact allowed path returned by discovery; POST it with only {"value":"..."}. Large country/state settings may return options plus option_groups. Both contain the original selectable keys; each grouped label is label_prefix followed by its options label. Send the complete option key unchanged. Reads and edits are bounded, audited and checked against native schemas and current permissions. Product Undo restores supported saved state; hook/email effects are not universally reversible. Ask for missing real products/prices/currency/shipping/payment decisions; never invent business facts or configure payment credentials, orders or customers. Store setup: GET/POST /wc/v3/shipping/zones (name,order); GET/POST /wc/v3/shipping/zones/{id}/locations with params {locations:[{type:country,code:IN}]} replacing the complete location list; GET/POST /wc/v3/shipping/zones/{id}/methods with method_id flat_rate/free_shipping/local_pickup,enabled,order,settings; GET/POST a specific /methods/{instance_id} without method_id. Read before updates. Supported method settings: title,tax_status,cost for flat_rate/local_pickup; title,requires,min_amount,ignore_discounts for free_shipping. Costs must be numeric strings, never expressions. GET/POST /wc/v3/payment_gateways/cod configures native cash on delivery only: enabled,title,description,settings {instructions,enable_for_virtual}. Cash on delivery covers all configured delivery methods unless native discovery supplies specific supported method options. Shipping zones govern delivery regions. Never create an order. GET /wc-admin/options reads shop visibility; POST accepts only woocommerce_coming_soon and woocommerce_store_pages_only as yes/no. Change visibility only when the user requests launch, and verify customer-facing setup first. Publish the assigned Cart page through the reviewed content tool before visibility; native visibility invalidation re-publishes that already published page and requires content/publishing permissions. No public shipping deletion; Undo can remove an unchanged, dependency-free item created by this chat.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -41,6 +43,24 @@ final class Bhranti_Commerce {
 	 * @return array
 	 */
 	public static function progress( $command, $requester_id, $actor_id ) {
+		$setup_path = $command['args']['path'] ?? '';
+		if ( is_string( $setup_path ) && ( 0 === strpos( $setup_path, '/wc/v3/shipping/' ) || '/wc/v3/payment_gateways/cod' === $setup_path || '/wc-admin/options' === $setup_path ) ) {
+			$read   = array(
+				'tool' => 'commerce_request',
+				'args' => array(
+					'method' => 'GET',
+					'path'   => $setup_path,
+				),
+			);
+			$review = self::review( $read, $requester_id, $actor_id );
+			if ( ! is_wp_error( $review ) ) {
+				return array(
+					'summary' => 'GET' === ( $command['args']['method'] ?? 'GET' ) ? __( 'Reading store setup', 'bhranti' ) : __( 'Updating store setup', 'bhranti' ),
+					'details' => array(),
+					'target'  => self::target( $review ),
+				);
+			}
+		}
 		$method = $command['args']['method'] ?? 'GET';
 		$path   = $command['args']['path'] ?? '';
 		$data   = array(
@@ -155,12 +175,20 @@ final class Bhranti_Commerce {
 			if ( 'setting' === $review['kind'] && $before['option']['exists'] ) {
 				$prior      = $before['option']['value'];
 				$setting    = $review['controller']->get_setting( $review['request']['group_id'], $review['id'] );
-				$valid      = is_scalar( $prior ) ? self::setting_value( $review['id'], (string) $prior, $setting, $requester_id, $actor_id ) : false;
+				$prior      = self::setting_input( $prior, $review['id'] );
+				$valid      = self::setting_value( $review['id'], $prior, $setting, $requester_id, $actor_id );
 				$validator  = 'validate_setting_' . $setting['type'] . '_field';
 				$validator  = is_callable( array( $review['controller'], $validator ) ) ? $validator : 'validate_setting_text_field';
-				$restorable = true === $valid ? $review['controller']->$validator( (string) $prior, $setting ) : false;
-				if ( true !== $valid || is_wp_error( $restorable ) || $restorable !== (string) $prior ) {
+				$restorable = true === $valid ? $review['controller']->$validator( $prior, $setting ) : false;
+				if ( true !== $valid || is_wp_error( $restorable ) || $restorable !== $prior ) {
 					return self::refused( self::error( 'bhranti_commerce_preservation', __( 'The existing store setting cannot be safely restored. Use WooCommerce Settings for this change.', 'bhranti' ), 403 ), $session_id, $requester_id, $actor_id, $details );
+				}
+			}
+			if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) && ! $review['create'] ) {
+				$restore_params = Bhranti_Commerce_Setup::restore_params( $review, array( 'before' => $before ) );
+				$restorable     = Bhranti_Commerce_Setup::prepare( 'POST', $review['path'], $restore_params, true );
+				if ( is_wp_error( $restorable ) ) {
+					return self::refused( self::error( 'bhranti_commerce_preservation', __( 'The current store setup cannot be safely restored. Review this change in WooCommerce Settings.', 'bhranti' ), 403 ), $session_id, $requester_id, $actor_id, $details );
 				}
 			}
 			$fingerprint = self::fingerprint( $before );
@@ -219,9 +247,15 @@ final class Bhranti_Commerce {
 				$review['id']           = absint( $data['id'] ?? 0 );
 				$review['path']        .= '/' . $review['id'];
 				$snapshot['created_id'] = $review['id'];
+				if ( 'shipping_zone' === $review['kind'] ) {
+					$review['zone_id'] = $review['id'];
+				}
 			}
 			$after = self::state( $review );
-			if ( is_wp_error( $after ) || ( 'setting' === $review['kind'] && (string) $after['option']['value'] !== (string) $review['params']['value'] ) ) {
+			if ( is_wp_error( $after ) || ( 'setting' === $review['kind'] && ! self::same_setting( $after['option']['value'], $review['params']['value'] ) ) || ( Bhranti_Commerce_Setup::handles( $review['kind'] ) && ! is_wp_error( $after ) && ! Bhranti_Commerce_Setup::verified( $review, $after ) ) || ( 'visibility' === $review['kind'] && ! is_wp_error( $after ) && $after['cart'] !== $before['cart'] ) ) {
+				$snapshot['state'] = 'failed';
+				self::snapshot( $session_id, $snapshot );
+				self::audit( 'action_failed', __( 'WooCommerce did not verify the saved change. Inspect the target before retrying.', 'bhranti' ), $session_id, $requester_id, $actor_id, $details + array( 'code' => 'bhranti_commerce_storage' ) );
 				return self::uncertain( self::error( 'bhranti_commerce_storage', __( 'WooCommerce did not verify the saved change. Inspect the target before retrying.', 'bhranti' ), 500 ) );
 			}
 			$snapshot['state']             = 'completed';
@@ -301,7 +335,14 @@ final class Bhranti_Commerce {
 			}
 			$restore_command                   = $command;
 			$restore_command['args']['method'] = ! empty( $record['created_id'] ) ? 'DELETE' : 'POST';
-			$restore_command['args']['params'] = 'setting' === $review['kind'] ? array( 'value' => $record['before']['option']['exists'] ? (string) $record['before']['option']['value'] : (string) $current['setting']['value'] ) : array();
+			$restore_command['args']['params'] = 'setting' === $review['kind'] ? array( 'value' => self::setting_input( $record['before']['option']['exists'] ? $record['before']['option']['value'] : $current['setting']['value'], $review['id'] ) ) : array();
+			if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+				$restore_command['args']['params'] = Bhranti_Commerce_Setup::restore_params( $review, $record );
+				$allowed                           = Bhranti_Commerce_Setup::can_remove( $review, $record, $current );
+				if ( is_wp_error( $allowed ) ) {
+					return self::refused( $allowed, $session_id, $requester_id, $actor_id, $details );
+				}
+			}
 			if ( 'product' === $review['kind'] && empty( $record['created_id'] ) ) {
 				$restore_command['args']['params'] = array(
 					'status'     => $record['before']['props']['status'],
@@ -358,6 +399,14 @@ final class Bhranti_Commerce {
 				self::snapshot( $session_id, $record );
 				return self::refused( self::error( 'bhranti_rollback_conflict', __( 'The store item changed during Undo preparation.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
 			}
+			if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+				$removable = Bhranti_Commerce_Setup::can_remove( $fresh_review, $record, $fresh );
+				if ( is_wp_error( $removable ) ) {
+					$record['state'] = 'completed';
+					self::snapshot( $session_id, $record );
+					return self::refused( $removable, $session_id, $requester_id, $actor_id, $details );
+				}
+			}
 			$data = self::restore( $fresh_review, $record, $actor_id );
 			if ( is_wp_error( $data ) ) {
 				$record['state'] = 'failed';
@@ -401,9 +450,43 @@ final class Bhranti_Commerce {
 		if ( ! in_array( $method, array( 'GET', 'POST', 'DELETE' ), true ) || ! is_string( $path ) || ! is_array( $params ) || strlen( wp_json_encode( $params ) ) > 60000 ) {
 			return self::error( 'bhranti_commerce_invalid', __( 'Use a bounded commerce request with its exact method, path and fields.', 'bhranti' ) );
 		}
+		$setup = Bhranti_Commerce_Setup::prepare( $method, $path, $params, $recovery );
+		if ( is_wp_error( $setup ) ) {
+			return $setup;
+		}
+		if ( is_array( $setup ) ) {
+			$review     = $setup + array(
+				'requester_id' => (int) $requester_id,
+				'actor_id'     => (int) $actor_id,
+				'recovery'     => $recovery,
+				'command'      => array(
+					'tool' => 'commerce_request',
+					'args' => array(
+						'method' => $method,
+						'path'   => $path,
+						'params' => $params,
+					),
+				),
+			);
+			$permission = self::permission( $review, $requester_id );
+			if ( ! is_wp_error( $permission ) ) {
+				$permission = self::acting(
+					$review,
+					$actor_id,
+					static function () use ( $review, $actor_id ) {
+						return self::permission( $review, $actor_id );
+					}
+				);
+			}
+			if ( is_wp_error( $permission ) ) {
+				return $permission;
+			}
+			$allowed = self::policy( $review );
+			return is_wp_error( $allowed ) ? $allowed : $review;
+		}
 		if ( ! preg_match( '#\A/wc/v3/(products(?:/categories)?)(?:/([1-9][0-9]*))?\z#', $path, $match ) ) {
 			if ( ! is_string( $path ) || ! preg_match( '#\A/wc/v3/settings/(general|products|advanced)/(woocommerce_[a-z_]+)\z#', $path, $match ) || ! isset( self::settings()[ $match[2] ] ) || self::settings()[ $match[2] ] !== $match[1] || ! in_array( $method, array( 'GET', 'POST' ), true ) || ! is_array( $params ) ) {
-				return self::error( 'bhranti_commerce_blocked', __( 'Only reviewed catalog items and selected store settings are available. Orders, customers, payments, downloads and arbitrary routes are unavailable.', 'bhranti' ), 403 );
+				return self::error( 'bhranti_commerce_blocked', __( 'Choose a supported catalog, store-setting, shipping or cash-on-delivery action.', 'bhranti' ), 403 );
 			}
 			$kind = 'setting';
 			$id   = $match[2];
@@ -630,7 +713,7 @@ final class Bhranti_Commerce {
 	 * @return mixed
 	 */
 	private static function acting( $review, $actor_id, $callback ) {
-		if ( 'setting' === $review['kind'] ) {
+		if ( 'setting' === $review['kind'] || Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
 			$capabilities = array( 'manage_woocommerce' );
 		} elseif ( 'category' === $review['kind'] ) {
 			$capabilities = 'GET' === $review['method'] ? array( 'manage_product_terms' ) : ( 'DELETE' === $review['method'] ? array( 'delete_product_terms', 'manage_product_terms' ) : array( 'edit_product_terms', 'manage_product_terms' ) );
@@ -674,7 +757,7 @@ final class Bhranti_Commerce {
 			$review,
 			$actor_id,
 			static function () use ( $review ) {
-				$response = rest_do_request( $review['request'] );
+				$response = Bhranti_Commerce_Setup::request( $review );
 				if ( $response->is_error() ) {
 					return self::error( 'bhranti_commerce_native', __( 'WooCommerce could not complete this action. Read the target and check its required fields before trying again.', 'bhranti' ), $response->get_status() );
 				}
@@ -690,6 +773,9 @@ final class Bhranti_Commerce {
 	 * @return array|WP_Error
 	 */
 	private static function state( $review ) {
+		if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+			return Bhranti_Commerce_Setup::state( $review );
+		}
 		if ( $review['create'] && ! $review['id'] ) {
 			return array(); }
 		$id = $review['id'];
@@ -770,6 +856,9 @@ final class Bhranti_Commerce {
 			$review,
 			$actor_id,
 			static function () use ( $review, $record ) {
+				if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+					return Bhranti_Commerce_Setup::restore( $review, $record );
+				}
 				$id     = $review['id'];
 				$before = $record['before'];
 				if ( 'setting' === $review['kind'] ) {
@@ -782,10 +871,16 @@ final class Bhranti_Commerce {
 							return self::error( 'bhranti_commerce_restore', __( 'WooCommerce could not restore this setting.', 'bhranti' ), 500 );
 						}
 						// Preserve native sanitization filters; restore autoload only after checking their result.
-						if ( (string) get_option( $id ) !== (string) $review['params']['value'] ) {
+						if ( ! self::same_setting( get_option( $id ), $review['params']['value'] ) ) {
 							return self::error( 'bhranti_commerce_restore', __( 'WooCommerce changed the restored value. Inspect Settings before trying again.', 'bhranti' ), 500 );
 						}
-						wp_set_option_autoload_values( array( $id => $before['option']['autoload'] ) );
+						// WooCommerce historically stores an empty string for an unselected country list.
+						if ( '' === $before['option']['value'] && array() === self::setting_input( $before['option']['value'], $id ) ) {
+							update_option( $id, '' );
+						}
+						if ( array_key_exists( $id, wp_load_alloptions( true ) ) !== $before['option']['autoload'] ) {
+							wp_set_option_autoload_values( array( $id => $before['option']['autoload'] ) );
+						}
 					}
 					$state = self::state( $review );
 					if ( is_wp_error( $state ) || $state['option'] !== $before['option'] ) {
@@ -908,39 +1003,75 @@ final class Bhranti_Commerce {
 			);
 		}
 		return array(
-			'available'  => $available,
-			'version'    => defined( 'WC_VERSION' ) ? WC_VERSION : ( $plugins[ $file ]['Version'] ?? '' ),
-			'dependency' => array(
+			'available'    => $available,
+			'version'      => defined( 'WC_VERSION' ) ? WC_VERSION : ( $plugins[ $file ]['Version'] ?? '' ),
+			'dependency'   => array(
 				'slug'      => 'woocommerce',
 				'plugin'    => 'woocommerce/woocommerce',
 				'installed' => isset( $plugins[ $file ] ),
 				'active'    => is_plugin_active( $file ),
 			),
-			'settings'   => $settings,
-			'next_step'  => $available ? 'Read the existing catalog and exact setting paths before making the requested changes.' : 'For a requested store, install directory slug woocommerce inactive with plugin_request, then activate woocommerce/woocommerce and check availability again.',
+			'settings'     => $settings,
+			'setup_routes' => Bhranti_Commerce_Setup::routes(),
+			'next_step'    => $available ? 'Read the existing catalog and exact setting paths before making the requested changes.' : 'For a requested store, install directory slug woocommerce inactive with plugin_request, then activate woocommerce/woocommerce and check availability again.',
 		);
 	}
 
 	/** Return only public catalog, page and inventory option identifiers. */
 	private static function settings() {
 		return array(
-			'woocommerce_currency'                => 'general',
-			'woocommerce_currency_pos'            => 'general',
-			'woocommerce_price_thousand_sep'      => 'general',
-			'woocommerce_price_decimal_sep'       => 'general',
-			'woocommerce_price_num_decimals'      => 'general',
-			'woocommerce_shop_page_id'            => 'products',
-			'woocommerce_cart_redirect_after_add' => 'products',
-			'woocommerce_enable_ajax_add_to_cart' => 'products',
-			'woocommerce_manage_stock'            => 'products',
-			'woocommerce_hold_stock_minutes'      => 'products',
-			'woocommerce_notify_low_stock_amount' => 'products',
-			'woocommerce_notify_no_stock_amount'  => 'products',
-			'woocommerce_hide_out_of_stock_items' => 'products',
-			'woocommerce_cart_page_id'            => 'advanced',
-			'woocommerce_checkout_page_id'        => 'advanced',
-			'woocommerce_myaccount_page_id'       => 'advanced',
+			'woocommerce_store_address'              => 'general',
+			'woocommerce_store_address_2'            => 'general',
+			'woocommerce_store_city'                 => 'general',
+			'woocommerce_store_postcode'             => 'general',
+			'woocommerce_default_country'            => 'general',
+			'woocommerce_allowed_countries'          => 'general',
+			'woocommerce_all_except_countries'       => 'general',
+			'woocommerce_specific_allowed_countries' => 'general',
+			'woocommerce_ship_to_countries'          => 'general',
+			'woocommerce_specific_ship_to_countries' => 'general',
+			'woocommerce_weight_unit'                => 'products',
+			'woocommerce_dimension_unit'             => 'products',
+			'woocommerce_currency'                   => 'general',
+			'woocommerce_currency_pos'               => 'general',
+			'woocommerce_price_thousand_sep'         => 'general',
+			'woocommerce_price_decimal_sep'          => 'general',
+			'woocommerce_price_num_decimals'         => 'general',
+			'woocommerce_shop_page_id'               => 'products',
+			'woocommerce_cart_redirect_after_add'    => 'products',
+			'woocommerce_enable_ajax_add_to_cart'    => 'products',
+			'woocommerce_manage_stock'               => 'products',
+			'woocommerce_hold_stock_minutes'         => 'products',
+			'woocommerce_notify_low_stock_amount'    => 'products',
+			'woocommerce_notify_no_stock_amount'     => 'products',
+			'woocommerce_hide_out_of_stock_items'    => 'products',
+			'woocommerce_cart_page_id'               => 'advanced',
+			'woocommerce_checkout_page_id'           => 'advanced',
+			'woocommerce_myaccount_page_id'          => 'advanced',
 		);
+	}
+
+	/**
+	 * Normalize scalar option storage while retaining native country arrays.
+	 *
+	 * @param mixed $value Value to validate or normalize.
+	 * @param mixed $id Exact native item or option ID.
+	 */
+	private static function setting_input( $value, $id = '' ) {
+		if ( '' === $value && in_array( $id, array( 'woocommerce_all_except_countries', 'woocommerce_specific_allowed_countries', 'woocommerce_specific_ship_to_countries' ), true ) ) {
+			return array();
+		}
+		return is_scalar( $value ) ? (string) $value : $value;
+	}
+
+	/**
+	 * Compare native persisted settings without lossy array-to-string conversion.
+	 *
+	 * @param mixed $left First saved value.
+	 * @param mixed $right Second saved value.
+	 */
+	private static function same_setting( $left, $right ) {
+		return self::setting_input( $left ) === self::setting_input( $right );
 	}
 
 	/**
@@ -954,6 +1085,25 @@ final class Bhranti_Commerce {
 	 * @return true|WP_Error
 	 */
 	private static function setting_value( $id, $value, $setting, $requester_id, $actor_id ) {
+		$country_lists = array( 'woocommerce_all_except_countries', 'woocommerce_specific_allowed_countries', 'woocommerce_specific_ship_to_countries' );
+		if ( in_array( $id, $country_lists, true ) ) {
+			$valid = is_array( $value ) && count( $value ) <= 250 && ( ! $value || array_keys( $value ) === range( 0, count( $value ) - 1 ) );
+			if ( $valid ) {
+				foreach ( $value as $country ) {
+					if ( ! is_string( $country ) || ! isset( $setting['options'][ $country ] ) ) {
+						$valid = false;
+						break;
+					}
+				}
+			}
+			return $valid ? true : self::error( 'bhranti_commerce_invalid', __( 'Choose country codes available in the native store setting.', 'bhranti' ) );
+		}
+		if ( in_array( $id, array( 'woocommerce_store_address', 'woocommerce_store_address_2', 'woocommerce_store_city', 'woocommerce_store_postcode' ), true ) ) {
+			return is_string( $value ) && mb_strlen( $value ) <= 250 && sanitize_text_field( $value ) === $value ? true : self::error( 'bhranti_commerce_invalid', __( 'Use the confirmed plain-text business address.', 'bhranti' ) );
+		}
+		if ( in_array( $id, array( 'woocommerce_default_country', 'woocommerce_allowed_countries', 'woocommerce_ship_to_countries', 'woocommerce_weight_unit', 'woocommerce_dimension_unit' ), true ) ) {
+			return is_string( $value ) && array_key_exists( $value, $setting['options'] ?? array() ) ? true : self::error( 'bhranti_commerce_invalid', __( 'Choose a value returned by the native store setting.', 'bhranti' ) );
+		}
 		$valid = is_string( $value ) && mb_strlen( $value ) <= 100 && ! self::unsafe( $value );
 		if ( $valid && in_array( $id, array( 'woocommerce_currency', 'woocommerce_currency_pos' ), true ) ) {
 			$valid = isset( $setting['options'][ $value ] );
@@ -986,9 +1136,15 @@ final class Bhranti_Commerce {
 		if ( 'GET' === $review['method'] ) {
 			return true;
 		}
-		$allowed = $review['recovery'] ? true : Bhranti_Settings::allows( 'setting' === $review['kind'] ? 'manage_site_settings' : ( 'DELETE' === $review['method'] ? 'trash_content' : 'edit_content' ) );
+		$allowed = $review['recovery'] ? true : Bhranti_Settings::allows( ( 'setting' === $review['kind'] || Bhranti_Commerce_Setup::handles( $review['kind'] ) ) ? 'manage_site_settings' : ( 'DELETE' === $review['method'] ? 'trash_content' : 'edit_content' ) );
 		if ( is_wp_error( $allowed ) ) {
 			return $allowed;
+		}
+		if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+			$allowed = Bhranti_Commerce_Setup::policy( $review );
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
+			}
 		}
 		if ( 'product' === $review['kind'] ) {
 			if ( $before ) {
@@ -1106,6 +1262,9 @@ final class Bhranti_Commerce {
 	 * @return array
 	 */
 	private static function project( $data, $kind ) {
+		if ( Bhranti_Commerce_Setup::handles( $kind ) ) {
+			return Bhranti_Commerce_Setup::project( $data, $kind );
+		}
 		if ( ! is_array( $data ) ) {
 			return array();
 		}
@@ -1119,6 +1278,9 @@ final class Bhranti_Commerce {
 		}
 		$fields = 'setting' === $kind ? array( 'id', 'label', 'description', 'value', 'default', 'type', 'options' ) : ( 'category' === $kind ? array( 'id', 'name', 'slug', 'parent', 'description', 'display', 'menu_order', 'count', 'deleted' ) : array( 'id', 'name', 'slug', 'permalink', 'status', 'type', 'description', 'short_description', 'sku', 'regular_price', 'sale_price', 'price', 'featured', 'catalog_visibility', 'virtual', 'manage_stock', 'stock_quantity', 'stock_status', 'backorders', 'sold_individually', 'weight', 'dimensions', 'categories', 'images', 'menu_order', 'reviews_allowed' ) );
 		$public = array_intersect_key( $data, array_flip( $fields ) );
+		if ( 'setting' === $kind && 'woocommerce_default_country' === ( $public['id'] ?? '' ) && isset( $public['options'] ) && is_array( $public['options'] ) && strlen( wp_json_encode( $public['options'] ) ) > 60000 ) {
+			$public = self::compact_country_options( $public );
+		}
 		foreach ( array( 'images', 'categories' ) as $field ) {
 			if ( isset( $public[ $field ] ) && is_array( $public[ $field ] ) ) {
 				$public[ $field ] = array_map(
@@ -1133,12 +1295,49 @@ final class Bhranti_Commerce {
 	}
 
 	/**
+	 * Share repeated country labels without losing any native option key or label.
+	 *
+	 * @param array $setting Public native setting with an oversized options map.
+	 * @return array Lossless presentation; native validation and snapshots stay flat.
+	 */
+	private static function compact_country_options( $setting ) {
+		$compact = $setting;
+		$groups  = array();
+		foreach ( $setting['options'] as $code => $label ) {
+			if ( ! is_string( $code ) || ! preg_match( '/\A([A-Z]{2}):.+\z/u', $code, $match ) || ! is_string( $label ) || 1 !== preg_match( '//u', $label ) ) {
+				continue;
+			}
+			$separator = strpos( $label, ' - ' );
+			if ( false === $separator || 0 === $separator ) {
+				continue;
+			}
+			// The ASCII separator is a complete UTF-8 boundary in a validated label.
+			$prefix  = substr( $label, 0, $separator + 3 );
+			$country = $match[1];
+			if ( isset( $groups[ $country ] ) && $groups[ $country ]['label_prefix'] !== $prefix ) {
+				continue;
+			}
+			$groups[ $country ]['label_prefix']     = $prefix;
+			$groups[ $country ]['options'][ $code ] = substr( $label, $separator + 3 );
+			unset( $compact['options'][ $code ] );
+		}
+		if ( ! $groups ) {
+			return $setting;
+		}
+		$compact['option_groups'] = $groups;
+		return strlen( wp_json_encode( $compact ) ) < strlen( wp_json_encode( $setting ) ) ? $compact : $setting;
+	}
+
+	/**
 	 * Return a safe native destination for an existing catalog entity.
 	 *
 	 * @param array $review Reviewed target.
 	 * @return array
 	 */
 	private static function target( $review ) {
+		if ( Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
+			return Bhranti_Commerce_Setup::target( $review );
+		}
 		$id = $review['id'];
 		if ( 'setting' === $review['kind'] ) {
 			return array(
@@ -1201,6 +1400,15 @@ final class Bhranti_Commerce {
 	 * @return int|WP_Error
 	 */
 	private static function audit( $type, $summary, $session_id, $requester_id, $actor_id, $details ) {
+		if ( '/wc-admin/options' === ( $details['path'] ?? '' ) && 'GET' !== ( $details['method'] ?? 'GET' ) ) {
+			$cart_id = absint( get_option( 'woocommerce_cart_page_id', 0 ) );
+			if ( $cart_id ) {
+				$details['target'] = array(
+					'id'   => $cart_id,
+					'type' => 'page',
+				);
+			}
+		}
 		return Bhranti_Audit::record( $type, $summary, $session_id, $details, $requester_id, $actor_id );
 	}
 

@@ -49,6 +49,8 @@ function fixture(options = {}) {
   if (options.siteFrame) {
     Object.defineProperty(w, 'innerWidth', { configurable: true, value: 1280 }); Object.defineProperty(w, 'innerHeight', { configurable: true, value: 800 });
     const rectangle = (left, top, right, bottom) => ({ x: left, y: top, left, top, right, bottom, width: right - left, height: bottom - top, toJSON() { return {}; } });
+    const nativeRects = w.HTMLElement.prototype.getClientRects;
+    w.HTMLElement.prototype.getClientRects = function () { return this.id === 'bhranti-site-opener' && !this.hidden ? [rectangle(0, 0, 90, 32)] : nativeRects.call(this); };
     const frame = w.document.querySelector(options.siteFrame === 'frontend' ? 'main' : options.siteFrame === 'fse' ? '.edit-site-layout' : '#wpbody-content');
     rectangles.set(frame, rectangle(160, 24, 1280, 940)); rectangles.set(w.document.getElementById('bhranti-app'), rectangle(944, 32, 1280, 800)); rectangles.set(w.document.getElementById('wpadminbar'), rectangle(0, 0, 1280, 32));
     rectangles.forEach((rect, node) => { node.getBoundingClientRect = () => rectangles.get(node); node.getClientRects = () => [rectangles.get(node)]; });
@@ -201,6 +203,153 @@ async function testTransportBoundaries() {
   } finally { page.close(); }
 }
 
+function referenceImageFixture(options = {}) {
+  const page = fixture(options), operations = [], revoked = [];
+  const image = { width: 3200, height: 1600, data: '/9j/2Q==', decodeError: false, ...(options.image || {}) };
+  page.w.URL.createObjectURL = (blob) => { operations.push('decode', ['mime', blob.type]); return 'blob:local-reference-fixture'; };
+  page.w.URL.revokeObjectURL = (url) => revoked.push(url);
+  page.w.Image = class { constructor() { this.naturalWidth = image.width; this.naturalHeight = image.height; } set src(value) { this.url = value; Promise.resolve().then(() => image.decodeError ? this.onerror() : this.onload()); } };
+  page.w.HTMLCanvasElement.prototype.getContext = function () { const canvas = this; operations.push('canvas'); return { set fillStyle(value) { operations.push(['background', value]); }, fillRect(...values) { operations.push(['fill', ...values]); }, drawImage(source, x, y, width, height) { operations.push(['draw', width, height, canvas.width, canvas.height]); } }; };
+  page.w.HTMLCanvasElement.prototype.toDataURL = (type, quality) => { operations.push(['encode', type, quality]); return 'data:image/jpeg;base64,' + image.data; };
+  return { ...page, image, operations, revoked };
+}
+function referenceFile(type = 'image/png', size, signature) {
+  const bytes = signature || (type === 'image/jpeg' ? [255, 216, 255, 224, 0, 2, 255, 217] : type === 'image/webp' ? [82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80] : [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]);
+  return { type, size: size === undefined ? bytes.length : size, name: 'private-local-reference.png', arrayBuffer: async () => Uint8Array.from(bytes).buffer };
+}
+async function testReferenceImageContext() {
+  for (const type of ['image/png', 'image/jpeg', 'image/webp']) {
+    const page = referenceImageFixture();
+    try {
+      page.api.state.draft = 'Use this as a visual reference'; page.api.rememberDraft();
+      await page.api.attachReferenceImage(referenceFile(type));
+      equal(page.api.state.screenshot.mime_type, 'image/jpeg', type + ': the browser emits only canonical raster JPEG');
+      equal(page.api.state.screenshot.data, '/9j/2Q==', type + ': only re-encoded pixels become attached context');
+      check(page.operations.some((entry) => Array.isArray(entry) && entry[0] === 'draw' && entry[1] === 1600 && entry[2] === 800), type + ': source pixels resize proportionally to the 1600px bound');
+      check(page.operations.some((entry) => Array.isArray(entry) && entry[0] === 'background' && entry[1] === '#fff'), type + ': transparent references receive a predictable white JPEG background');
+      equal(page.revoked.length, 1, type + ': the temporary local object URL is always released');
+      equal(page.requests.length, 0, type + ': selecting and preparing a local reference makes no server or AI request');
+      equal(page.w.document.getElementById('bhranti-image-file').accept, 'image/png,image/jpeg,image/webp', 'Native file picker offers only supported raster formats');
+      check(controls(page, 'Attach reference image').length === 1 && controls(page, 'Attach tab screenshot').length === 1 && controls(page, 'Attach current page context').length === 1, 'Reference input preserves existing capture and page-context controls');
+      check(page.w.document.body.textContent.includes('Shared with AI when you send.'), 'Preview clearly explains when the selected image is shared');
+      equal(page.api.state.draft, 'Use this as a visual reference', 'Image selection preserves the current unsent message');
+      const original = page.api.state.screenshot; page.api.state.attachPage = false;
+      equal(page.api.attachedContext().screenshot, original, 'Reference images do not depend on attaching the current page');
+      check(!('rendered_page' in page.api.attachedContext()), 'Opting out of page context remains respected with an image');
+      await page.api.openSession(18); await until(() => idle(page), page);
+      equal(page.api.state.screenshot, null, 'Another conversation does not inherit this unsent attachment');
+      await page.api.openSession(17); await until(() => idle(page), page);
+      equal(page.api.state.screenshot, original, 'Returning to the conversation restores its own attachment');
+      equal(page.api.state.draft, 'Use this as a visual reference', 'Returning restores its matching unsent text');
+      check(page.requests.every((request) => request.method === 'GET' && !request.data), 'Conversation switching never uploads the local attachment');
+      await page.api.attachReferenceImage(undefined); equal(page.api.state.screenshot, original, 'Cancelling file selection preserves the previous image');
+      controls(page, 'Remove image')[0].click();
+      equal(page.api.state.screenshot, null, 'Remove image detaches the unsent reference');
+      equal(page.api.state.screenshots.has(page.api.draftKey(17)), false, 'Removal also clears that chat’s attachment draft');
+    } finally { page.close(); }
+  }
+  for (const declared of ['', 'image/png', 'image/webp']) {
+    const page = referenceImageFixture();
+    try {
+      const file = referenceFile('image/jpeg'); file.type = declared; file.name = 'screenshot.png';
+      await page.api.attachReferenceImage(file);
+      equal(page.api.state.screenshot.mime_type, 'image/jpeg', 'Mislabelled or unlabelled JPEG is safely prepared regardless of filename');
+      check(page.operations.some((entry) => Array.isArray(entry) && entry[0] === 'mime' && entry[1] === 'image/jpeg'), 'Native decoding receives the detected JPEG MIME rather than the picker label');
+      equal(page.requests.length, 0, 'Correcting a local image label never uploads the image'); equal(page.notices.length, 0, 'A valid screenshot with a benign filename/MIME mismatch needs no error');
+    } finally { page.close(); }
+  }
+  for (const [label, file, image] of [
+    ['SVG', referenceFile('image/svg+xml'), {}],
+    ['oversized input', referenceFile('image/png', 10485761), {}],
+    ['empty input', referenceFile('image/jpeg', 0), {}],
+    ['forged raster type', referenceFile('image/png', 1000, [60, 115, 118, 103]), {}],
+    ['HTML with image name', referenceFile('text/html'), {}],
+    ['trailing JPEG payload', referenceFile('image/jpeg', undefined, [255, 216, 255, 217, 60, 115, 118, 103]), {}],
+    ['trailing PNG payload', referenceFile('image/png', undefined, [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130, 60]), {}],
+    ['trailing WebP payload', referenceFile('image/webp', undefined, [82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80, 60]), {}],
+    ['undecodable raster', referenceFile(), { decodeError: true }],
+    ['excessive width', referenceFile(), { width: 10001, height: 1 }],
+    ['excessive pixel count', referenceFile(), { width: 5001, height: 5000 }],
+    ['empty dimensions', referenceFile(), { width: 0, height: 0 }],
+    ['encoded limit boundary', referenceFile(), { data: Buffer.alloc(2097153).toString('base64') }],
+  ]) {
+    const page = referenceImageFixture({ image });
+    try {
+      const original = { mime_type: 'image/jpeg', data: 'b2xk' }; page.api.state.screenshot = original;
+      await page.api.attachReferenceImage(file);
+      equal(page.api.state.screenshot, original, label + ': rejected input preserves the already chosen image');
+      equal(page.api.state.capturing, false, label + ': rejection unlocks the composer and image controls');
+      equal(page.notices.length, 1, label + ': invalid reference gives one actionable local notice');
+      equal(page.requests.length, 0, label + ': rejection never makes a server request');
+      if (['SVG', 'oversized input', 'empty input', 'forged raster type', 'HTML with image name', 'trailing JPEG payload', 'trailing PNG payload', 'trailing WebP payload'].includes(label)) equal(page.operations.length, 0, label + ': untrusted input is rejected before browser image decoding');
+      if (['excessive width', 'excessive pixel count', 'empty dimensions'].includes(label)) check(!page.operations.includes('canvas'), label + ': the pixel guard rejects before allocating the output canvas');
+      equal(page.revoked.length, page.operations.includes('decode') ? 1 : 0, label + ': any allocated local URL is released');
+    } finally { page.close(); }
+  }
+  for (const flag of ['busy', 'loading', 'capturing', 'active']) {
+    const page = referenceImageFixture();
+    try {
+      if (flag === 'active') page.api.state.session.run.status = 'running'; else page.api.state[flag] = true;
+      page.api.render(); await page.api.attachReferenceImage(referenceFile());
+      equal(controls(page, 'Attach reference image')[0].disabled, true, flag + ': file selection is unavailable while the composer cannot accept an attachment');
+      equal(page.operations.length, 0, flag + ': direct selection cannot decode or attach during a conflicting operation');
+    } finally { page.close(); }
+  }
+  for (const acknowledgement of ['success', 'lost-accepted', 'lost-unaccepted']) {
+    let attempted;
+    const page = referenceImageFixture({ handler: async (request) => {
+      if (request.path.endsWith('/workspace')) return { sessions: [], agents: [], ai: { available: true } };
+      const result = session('complete');
+      if (request.path.endsWith('/messages')) { attempted = request; if (acknowledgement !== 'success') throw new Error('The native response was lost.'); result.messages.push({ role: 'user', content: request.data.content }); return result; }
+      if (request.method === 'GET') { if (acknowledgement === 'lost-accepted') result.messages.push({ role: 'user', content: attempted.data.content }); return result; }
+      throw new Error('Unexpected mutation in image submission fixture.');
+    } });
+    try {
+      await page.api.attachReferenceImage(referenceFile()); const image = page.api.state.screenshot;
+      page.api.state.draft = 'Follow this reference'; await page.api.sendMessage(); await until(() => idle(page), page);
+      equal(count(page, '/messages', 'POST'), 1, acknowledgement + ': the chosen image is sent only once with the explicit message');
+      equal(attempted.data.context.screenshot, image, acknowledgement + ': native context carries only the prepared attachment');
+      equal(page.api.state.screenshot, acknowledgement === 'lost-unaccepted' ? image : null, acknowledgement + ': accepted messages clear the image and unproven submission preserves it');
+      equal(page.api.state.screenshots.has(page.api.draftKey(17)), acknowledgement === 'lost-unaccepted', acknowledgement + ': draft attachment state matches proven submission');
+    } finally { page.close(); }
+  }
+  const page = referenceImageFixture({ handler: async (request) => {
+    if (request.path.endsWith('/workspace')) return { sessions: [], ai: { available: true } };
+    if (request.path.endsWith('/sessions/17') && request.method === 'DELETE') return { deleted: true };
+    throw new Error('Unexpected attachment ownership request.');
+  } });
+  try {
+    await page.api.attachReferenceImage(referenceFile());
+    const otherImage = { mime_type: 'image/jpeg', data: 'bmV3' }; page.api.state.screenshots.set(page.api.draftKey(null), otherImage);
+    page.api.state.capturing = true; await page.api.deleteChat();
+    equal(count(page, '/sessions/17', 'DELETE'), 0, 'A conversation cannot be deleted while its attachment is being prepared');
+    page.api.state.capturing = false; await page.api.deleteChat();
+    equal(count(page, '/sessions/17', 'DELETE'), 1, 'Explicit conversation deletion happens once after image preparation');
+    equal(page.api.state.screenshots.has(page.api.draftKey(17)), false, 'Deleting a conversation removes its private pending attachment');
+    equal(page.api.state.screenshot, otherImage, 'New chat restores only its own draft attachment after deletion');
+  } finally { page.close(); }
+}
+
+async function testAwaitingInputAndIntent() {
+  const page = fixture({ siteFrame: 'admin', session: session('running', { phase: 'prepared', next_action: { tool: 'commerce_request', method: 'GET', path: '/wc/v3', summary: 'Check store tools.', intent: 'I’ll check the existing catalog before creating your requested store.' } }) });
+  try {
+    equal(page.w.document.querySelector('.bhranti-action-intent').textContent, 'I’ll check the existing catalog before creating your requested store.', 'Prepared action displays its actual public intent separately from technical details');
+    page.api.state.session.run.next_action.intent = '<img src=x onerror=alert(1)>' + 'x'.repeat(300); page.api.render();
+    equal(page.w.document.querySelector('.bhranti-action-intent').textContent.length, 240, 'Public intent stays bounded in the sidebar');
+    equal(page.w.document.querySelectorAll('.bhranti-action-intent img').length, 0, 'Intent is rendered as text and never executable HTML');
+    page.api.state.session.run.next_action.intent = 'Check store tools.'; page.api.render();
+    equal(page.w.document.querySelector('.bhranti-action-intent'), null, 'Duplicated canonical summary is not displayed twice');
+    page.api.state.session.run.status = 'awaiting_input'; page.api.state.draft = 'Mitti & Thread, home decor in INR'; page.api.render();
+    equal(page.w.document.querySelector('.bhranti-status-label').textContent, 'Waiting for your answer', 'A genuine question receives a waiting status rather than Completed');
+    equal(page.w.document.getElementById('bhranti-send').disabled, false, 'The user can answer the question directly');
+    equal(page.w.document.getElementById('bhranti-new-chat').disabled, false, 'Waiting for input does not trap the user in a conversation');
+    equal(page.w.document.getElementById('bhranti-stop'), null, 'A paused question has no misleading Stop control');
+    equal(page.w.document.querySelector('.bhranti-site-control'), null, 'Asking the user a question returns site control');
+    equal(page.w.document.querySelector('.bhranti-action-preview'), null, 'A finished prepared-action preview does not linger while waiting for the answer');
+    equal(page.requests.length, 0, 'Question presentation and intent never start a model request or native mutation');
+  } finally { page.close(); }
+}
+
 async function testPollingOutage() {
   let reads = 0;
   const completed = session('complete'); completed.messages.push({ role: 'assistant', content: 'The server completed the existing task.', created: '2026-10-09T00:00:09Z' });
@@ -314,12 +463,12 @@ async function testCommerceTargetLinks() {
   const settingsTarget = { type: 'woocommerce_settings', title: 'WooCommerce settings', url: '/wp-admin/admin.php?page=wc-settings&tab=general' };
   const categoryTarget = { type: 'product_cat', id: 7, title: 'Handmade bowls', url: '/wp-admin/term.php?taxonomy=product_cat&tag_ID=7&post_type=product' };
   const valid = [
-    ...['general', 'products', 'advanced'].map((tab) => ({ ...settingsTarget, title: 'WooCommerce ' + tab, url: '/wp-admin/admin.php?tab=' + tab + '&page=wc-settings' })),
+    ...['general', 'products', 'advanced', 'shipping', 'checkout', 'site-visibility'].map((tab) => ({ ...settingsTarget, title: 'WooCommerce ' + tab, url: '/wp-admin/admin.php?tab=' + tab + '&page=wc-settings' })),
     categoryTarget,
     { ...categoryTarget, title: 'Absolute native product category', url: 'https://bhranti.wp.local/wp-admin/term.php?post_type=product&tag_ID=17&taxonomy=product_cat' },
   ];
   const invalid = [
-    ...['checkout', 'payments', '', 'General'].map((tab) => ({ ...settingsTarget, url: '/wp-admin/admin.php?page=wc-settings&tab=' + tab })),
+    ...['payments', 'shipping-zones', 'checkout-settings', 'visibility', '', 'General'].map((tab) => ({ ...settingsTarget, url: '/wp-admin/admin.php?page=wc-settings&tab=' + tab })),
     { ...settingsTarget, url: '/wp-admin/admin.php?page=wc-settings' },
     { ...settingsTarget, url: '/wp-admin/admin.php?page=bhranti&tab=general' },
     { ...settingsTarget, url: settingsTarget.url + '&action=edit' },
@@ -1135,14 +1284,25 @@ function assertSiteControlled(page, label) {
   check(frame.hasAttribute('inert'), label + ' protects the main frame from concurrent editing');
   check(!frame.contains(overlay), label + ' leaves its status outside the inert frame');
   check(!doc.getElementById('bhranti-app').closest('[inert]'), label + ' keeps chat and Stop interactive');
-  check(!doc.getElementById('wpadminbar').closest('[inert]'), label + ' preserves the native admin bar');
-  check(!doc.getElementById('adminmenu').closest('[inert]'), label + ' preserves native WordPress navigation');
+  if (page.w.bhrantiSettings.isAdmin) {
+    check(doc.getElementById('wpadminbar').closest('[inert]'), label + ' blocks native admin-bar navigation');
+    check(doc.getElementById('adminmenu').closest('[inert]'), label + ' blocks native WordPress navigation');
+    check(doc.getElementById('bhranti-site-opener') && !doc.getElementById('bhranti-site-opener').closest('[inert]'), label + ' retains a dedicated reopening button outside native locks');
+    check(doc.body.classList.contains('bhranti-site-controlled'), label + ' raises chat above the full admin overlay');
+  } else {
+    check(!doc.getElementById('wpadminbar').closest('[inert]'), label + ' preserves the frontend admin bar');
+    check(!doc.getElementById('adminmenu').closest('[inert]'), label + ' preserves frontend navigation');
+    equal(doc.getElementById('bhranti-site-opener'), null, label + ' does not add an admin-only opener to the frontend');
+  }
   check(doc.getElementById('bhranti-stop') && !doc.getElementById('bhranti-stop').disabled, label + ' keeps the persistent live Stop control available');
 }
 function assertSiteReleased(page, label) {
   equal(siteOverlay(page), null, label + ' releases the site-control indicator');
   check(!mainFrame(page).hasAttribute('inert'), label + ' restores main-frame interaction');
   equal(mainFrame(page).getAttribute('aria-busy'), null, label + ' restores absent native busy state');
+  for (const node of page.w.document.querySelectorAll('#wpadminbar, #adminmenu')) { check(!node.hasAttribute('inert'), label + ' releases native navigation inert'); equal(node.getAttribute('aria-busy'), null, label + ' restores native navigation busy state'); }
+  equal(page.w.document.getElementById('bhranti-site-opener'), null, label + ' removes the temporary reopening control');
+  check(!page.w.document.body.classList.contains('bhranti-site-controlled'), label + ' restores the original stacking layout');
 }
 
 async function testGeneralSiteControlLifecycle() {
@@ -1185,7 +1345,7 @@ async function testGeneralSiteControlLifecycle() {
     page.api.state.error = 'An in-flight response is uncertain.'; page.api.state.editorError = 'An in-flight safety response is uncertain.'; page.api.state.stopRequested = true; page.api.render();
     equal(siteOverlay(page), executing, 'An already bound in-flight action retains protection through Stop and transport uncertainty');
     page.api.closePanel(); equal(siteOverlay(page), executing, 'Closing during an already bound action retains native-frame protection');
-    check(page.api.triggerAvailable(doc.querySelector('#wp-admin-bar-bhranti > a')), 'The native Bhranti opener remains usable outside the held frame');
+    check(page.api.triggerAvailable(doc.getElementById('bhranti-site-opener')), 'The dedicated Bhranti opener remains usable outside all held native frames');
     page.api.state.session.run.phase = 'model'; page.api.render(); assertSiteReleased(page, 'Server handover after a closed in-flight action');
     equal(frame.querySelector('#native-field').value, 'Unsaved native text', 'Control and handover never edit native form values');
     equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Control lifecycle never dispatches a tool or replays a write');
@@ -1326,20 +1486,56 @@ async function testGenericNativeNavigationAndGeometry() {
   const page = fixture({ siteFrame: 'admin', session: siteTask() });
   try {
     const doc = page.w.document, overlay = siteOverlay(page), frame = mainFrame(page);
-    equal(overlay.style.top, '32px', 'General control begins below the native admin bar'); equal(overlay.style.left, '160px', 'General control leaves the native admin navigation untouched');
-    equal(overlay.style.width, '784px', 'General control stops at the open Bhranti sidebar'); equal(overlay.style.height, '768px', 'General control stays within the native viewport');
-    const search = doc.getElementById('adminbar-search'); search.focus(); search.value = 'A harmless site search'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
+    equal(overlay.style.top, '0px', 'General admin control includes the native admin bar'); equal(overlay.style.left, '0px', 'General admin control includes the whole left navigation');
+    equal(overlay.style.width, '1280px', 'General admin control dims the whole viewport behind chat'); equal(overlay.style.height, '800px', 'General admin control reaches the viewport edges');
+    equal(overlay.style.paddingRight, '360px', 'The ownership heading stays centered in the visible WordPress area');
+    equal(doc.getElementById('bhranti-app').style.top, '32px', 'Making the native bar inert does not move the chat header');
+    const search = doc.getElementById('adminbar-search'); search.value = 'A harmless site search'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
     equal(page.api.editorState().unsaved_changes, false, 'Admin-bar search text is outside protected page forms and cannot mark the task dirty');
-    equal(siteOverlay(page), overlay, 'Native admin-bar search remains available without dropping owned main-frame control');
-    equal(doc.activeElement, search, 'General control preserves native admin-bar focus');
+    equal(siteOverlay(page), overlay, 'A synthetic admin search event cannot remove proven site ownership');
+    check(search.closest('[inert]'), 'Native admin-bar search is unavailable while the site is controlled');
     const undo = new page.w.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }); search.dispatchEvent(undo);
-    equal(undo.defaultPrevented, false, 'Browser undo remains available in the native admin-bar search outside the controlled frame');
+    equal(undo.defaultPrevented, true, 'Native undo cannot change a now-controlled admin input');
     const original = page.rectangles.get(frame); page.rectangles.set(frame, { ...original, left: 200, right: 1100, width: 900 }); page.w.dispatchEvent(new page.w.Event('resize'));
-    equal(overlay.style.left, '200px', 'Responsive main-frame geometry is remeasured without a task action'); equal(overlay.style.width, '744px', 'Responsive control still stops before the chat panel');
+    equal(overlay.style.left, '0px', 'Native content movement never opens a gap beside navigation'); equal(overlay.style.width, '1280px', 'Admin control continues to cover the whole viewport after content movement');
+    Object.defineProperty(page.w, 'innerWidth', { configurable: true, value: 600 }); Object.defineProperty(page.w, 'innerHeight', { configurable: true, value: 700 });
+    page.rectangles.set(doc.getElementById('bhranti-app'), { left: 250, right: 600, top: 46, bottom: 700, width: 350, height: 654 }); page.w.dispatchEvent(new page.w.Event('resize'));
+    equal(overlay.style.width, '600px', 'Narrow viewport control remains edge to edge'); equal(overlay.style.height, '700px', 'Narrow viewport control follows the viewport height'); equal(overlay.style.paddingRight, '374px', 'Narrow layout centers the status outside the chat');
+    Object.defineProperty(page.w, 'innerWidth', { configurable: true, value: 350 }); page.rectangles.set(doc.getElementById('bhranti-app'), { left: 0, right: 350, top: 46, bottom: 700, width: 350, height: 654 }); page.w.dispatchEvent(new page.w.Event('resize'));
+    equal(overlay.style.width, '350px', 'A full-width mobile chat does not expand the overlay beyond the viewport'); equal(overlay.style.paddingRight, '326px', 'Mobile heading spacing cannot grow beyond the border-box width'); check(overlay.firstElementChild.hidden, 'The covered ownership heading does not wrap into a narrow vertical column on mobile');
     equal(page.api.navigation.length, 0, 'Control geometry and protected navigation never redirect WordPress'); equal(page.requests.length, 0, 'Local generic control never generates transport requests');
   } finally { page.close(); }
   const frontend = fixture({ siteFrame: 'frontend', isAdmin: false, url: 'https://bhranti.wp.local/fixture-page/', context: { screen: '' }, session: siteTask({ next_action: { tool: 'site_search', method: 'GET', summary: 'Inspect the requested site.' } }) });
   try { assertSiteControlled(frontend, 'A proven frontend task'); check(!frontend.w.document.getElementById('native-site-header').hasAttribute('inert'), 'Frontend takeover preserves its native header'); frontend.api.state.session.run.status = 'complete'; frontend.api.render(); assertSiteReleased(frontend, 'Frontend task completion'); equal(frontend.requests.length, 0, 'Frontend control does not load or mutate site data'); } finally { frontend.close(); }
+}
+
+async function testGeneralAdminShellRestoration() {
+  const page = fixture({ siteFrame: 'admin', session: session('complete') });
+  try {
+    const doc = page.w.document, frame = mainFrame(page), root = doc.getElementById('bhranti-app');
+    const shell = doc.createElement('div'); shell.id = 'wpwrap'; doc.body.appendChild(shell);
+    const content = doc.createElement('div'); content.id = 'wpcontent'; content.appendChild(frame); shell.appendChild(content);
+    const navigation = doc.createElement('div'); navigation.id = 'adminmenumain'; navigation.appendChild(doc.getElementById('adminmenu')); shell.appendChild(navigation);
+    const footer = doc.createElement('div'); footer.id = 'wpfooter'; footer.innerHTML = '<button id="native-footer-action">Native footer action</button>'; shell.appendChild(footer); shell.appendChild(root);
+    const bar = doc.getElementById('wpadminbar'); shell.appendChild(bar);
+    content.setAttribute('aria-busy', 'false'); navigation.setAttribute('inert', 'native-owner'); footer.setAttribute('aria-busy', 'native-pending'); bar.setAttribute('aria-label', 'Native toolbar');
+    const protectedNodes = [frame, content, navigation, doc.getElementById('adminmenu'), footer, bar];
+    const original = protectedNodes.map((node) => ({ node, inert: node.getAttribute('inert'), busy: node.getAttribute('aria-busy') }));
+    doc.getElementById('native-footer-action').focus(); page.api.state.session = siteTask(); page.api.render();
+    for (const node of protectedNodes) { equal(node.getAttribute('inert'), '', 'The real native shell locks ' + node.id); equal(node.getAttribute('aria-busy'), 'true', 'The real native shell marks ' + node.id + ' busy'); }
+    check(!shell.hasAttribute('inert'), 'The shared wpwrap ancestor is never made inert'); check(!root.closest('[inert]'), 'Chat stays interactive when mounted at the native admin_footer location');
+    equal(doc.activeElement, siteOverlay(page), 'Acquisition moves native navigation/footer focus outside its new inert ancestor');
+    page.api.state.session.run.status = 'awaiting_input'; page.api.render();
+    for (const { node, inert, busy } of original) { equal(node.getAttribute('inert'), inert, 'Handover restores the exact original inert value for ' + node.id); equal(node.getAttribute('aria-busy'), busy, 'Handover restores the exact original busy value for ' + node.id); }
+    equal(bar.getAttribute('aria-label'), 'Native toolbar', 'Handover preserves unrelated native attributes'); equal(siteOverlay(page), null, 'A question releases the whole admin shell');
+    navigation.removeAttribute('inert');
+    const search = doc.getElementById('adminbar-search'); search.focus(); page.api.state.session = siteTask(); page.api.render();
+    equal(siteOverlay(page), null, 'Existing admin-bar typing defers acquisition of the larger native lock'); equal(doc.activeElement, search, 'A new prepared action never steals ongoing admin-bar typing');
+    root.querySelector('#bhranti-composer').focus(); page.api.render(); check(siteOverlay(page), 'Returning focus to chat allows safe admin-shell control');
+    page.w.dispatchEvent(new page.w.PageTransitionEvent('pagehide'));
+    for (const node of protectedNodes) check(!node.hasAttribute('inert'), 'Page unload releases owned inert from ' + node.id);
+    equal(page.requests.length, 0, 'Admin-shell acquisition and handover never request, save or replay a task'); equal(page.api.navigation.length, 0, 'Admin-shell acquisition and handover never navigate');
+  } finally { page.close(); }
 }
 
 async function testGeneralFseControlSafety() {
@@ -1358,14 +1554,16 @@ async function testGeneralFseControlSafety() {
 async function testGeneralControlWithoutExternalOpener() {
   const page = fixture({ siteFrame: 'fse', url: 'https://bhranti.wp.local/wp-admin/site-editor.php', context: { screen: 'site-editor' }, session: siteTask({ phase: 'action' }) });
   try {
-    const doc = page.w.document; equal(doc.getElementById('bhranti-close').disabled, false, 'An in-flight task can close while its native outside opener is reachable'); doc.getElementById('wpadminbar').remove(); page.api.render();
+    const doc = page.w.document; equal(doc.getElementById('bhranti-close').disabled, false, 'An in-flight task can close with its dedicated reopening control'); doc.getElementById('wpadminbar').remove(); page.api.render();
     const overlay = siteOverlay(page); check(overlay, 'A fullscreen/no-bar Site Editor retains its bound native action protection');
-    equal(doc.getElementById('bhranti-close').disabled, true, 'An in-flight task with no reachable outside opener cannot hide its only chat/Stop controls');
-    page.api.closePanel(); equal(page.api.state.open, true, 'Direct close cannot trap a running action behind an inert native frame'); equal(siteOverlay(page), overlay, 'Unavailable close retains the same exact action protection');
-    doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await page.advance();
-    equal(page.api.state.open, true, 'Escape applies the same no-opener in-flight safety guard');
+    const opener = doc.getElementById('bhranti-site-opener'); check(opener.hidden, 'An open sidebar needs no redundant floating button');
+    equal(doc.getElementById('bhranti-close').disabled, false, 'A no-bar admin can close because the dedicated opener survives');
+    page.api.closePanel(); equal(page.api.state.open, false, 'Closing a running action leaves only the dedicated reopening control'); equal(siteOverlay(page), overlay, 'Closing retains the same exact action protection');
+    check(page.api.triggerAvailable(opener), 'The dedicated opener becomes available while every native frame stays inert'); equal(doc.activeElement, opener, 'Closing moves focus to the accessible reopening button');
+    page.api.state.busy = true; opener.click(); await page.advance();
+    equal(page.api.state.open, true, 'The dedicated opener restores chat during an in-flight action'); equal(doc.getElementById('bhranti-site-opener'), opener, 'Reopening preserves the same control without replacing an active click target'); check(opener.hidden, 'Reopening hides the redundant floating button again');
+    page.api.state.busy = false;
     check(!doc.getElementById('bhranti-stop').disabled, 'Stop remains usable in the only visible task controls');
-    doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keyup', { key: 'Escape', bubbles: true })); await page.advance();
     page.api.state.session.run.phase = 'model'; page.api.state.session.events.push(tool('handover', 'read')); delete page.api.state.session.run.next_action; page.api.render();
     equal(doc.getElementById('bhranti-close').disabled, false, 'Normal Close becomes available after safe server handover');
     page.api.closePanel(); equal(page.api.state.open, false, 'A handed-over no-bar task may close normally'); assertSiteReleased(page, 'Closed fullscreen task after handover');
@@ -1393,6 +1591,8 @@ async function testSettingsActionBridgeProof() {
 
 async function main() {
   await testTransportBoundaries();
+  await testReferenceImageContext();
+  await testAwaitingInputAndIntent();
   await testPollingOutage();
   await testNoncriticalAndExpiredChat();
   await testInitialOutageCard();
@@ -1425,6 +1625,7 @@ async function main() {
   await testClassicProductControlAndPriceProtection();
   await testSettingsStateControlAndHeartbeat();
   await testGenericNativeNavigationAndGeometry();
+  await testGeneralAdminShellRestoration();
   await testGeneralFseControlSafety();
   await testGeneralControlWithoutExternalOpener();
   await testSettingsActionBridgeProof();

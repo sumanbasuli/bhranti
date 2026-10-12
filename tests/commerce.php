@@ -622,7 +622,7 @@ try {
 	$schema_method = new ReflectionMethod( Bhranti_Agent::class, 'plan_schema' );
 	$plan_args = array( 'method' => 'GET', 'path' => '/wc/v3', 'params' => array() );
 	$native_plan = wp_json_encode( array( 'type' => 'tool', 'content' => 'Check requested store setup.', 'tool' => 'commerce_request', 'args' => wp_json_encode( $plan_args ) ) );
-	co_check( array( 'type' => 'tool', 'tool' => 'commerce_request', 'args' => $plan_args ) === $parse->invoke( null, $native_plan ), 'Agent parses native strict commerce envelope as data' );
+	co_check( array( 'type' => 'tool', 'tool' => 'commerce_request', 'args' => $plan_args, 'intent' => 'Check requested store setup.' ) === $parse->invoke( null, $native_plan ), 'Agent parses native strict commerce envelope with separate public intent' );
 	co_check( in_array( 'commerce_request', $schema_method->invoke( null )['properties']['tool']['enum'], true ) && isset( Bhranti_Actions::catalog()['commerce_request'] ), 'Agent output schema and Actions catalog expose the genuine commerce tool' );
 	$co_native_update_count = 0;
 	$co_count_update = static function ( $id ) use ( $co_product_id, &$co_native_update_count ) { if ( $co_product_id === (int) $id ) { ++$co_native_update_count; } };

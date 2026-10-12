@@ -29,6 +29,10 @@ body.toplevel_page_bhranti #wpfooter { bottom: 12px; margin-right: 12px; }
 .bhranti-settings .bhranti-settings-save { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 24px 0 40px; }
 .bhranti-settings .bhranti-settings-save > span { font-size: 12px; color: #50575e; }
 .bhranti-settings .bhranti-settings-loading { display: flex; align-items: center; gap: 12px; padding: 24px 0; }
+.bhranti-settings .bhranti-settings-memory-help { margin: 0 0 20px; color: #50575e; line-height: 1.6; }
+.bhranti-settings .bhranti-settings-memory-list { margin: 12px 0 20px; padding-left: 20px; list-style: disc; }
+.bhranti-settings .bhranti-settings-memory-list li { margin-bottom: 12px; overflow-wrap: anywhere; }
+.bhranti-settings .bhranti-settings-memory-time { display: block; margin-top: 4px; color: #646970; font-size: 12px; }
 @media (max-width: 782px) {
 	body.toplevel_page_bhranti #wpcontent { padding-left: 0; min-height: calc(100dvh - 58px); }
 	body.toplevel_page_bhranti.bhranti-panel-open #wpcontent, body.toplevel_page_bhranti.bhranti-panel-open #wpfooter { margin-right: 12px; }

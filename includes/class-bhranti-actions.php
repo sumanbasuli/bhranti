@@ -193,7 +193,7 @@ final class Bhranti_Actions {
 	public static function catalog() {
 		$catalog = array(
 			'wp_request'  => array(
-				'description' => 'Use reviewed core /wp/v2 routes. GET discovers content, types, taxonomies, comments, public users, installed themes, templates, styles and safe settings. GET /wp/v2/themes lists installed themes; theme writes are unavailable. POST/PUT/PATCH creates or updates content and comments, updates media descriptions, existing terms/menus, published templates, navigation, styles and safe settings. DELETE only trashes reversible content/comments after human confirmation. No arbitrary routes, user changes, secrets, files or core changes. Use plugin_request for reviewed plugin management and generate_image for native AI image creation. Use GET to discover IDs/schema before writing. New taxonomy terms and classic menus, arbitrary media upload, template source resets, deletion of existing templates and permanent deletes are unsupported. Examples: {"method":"GET","path":"/wp/v2/types"}, {"method":"GET","path":"/wp/v2/taxonomies"}, {"method":"POST","path":"/wp/v2/pages","params":{"title":"New page","content":"<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->","status":"draft"}}. Do not send OPTIONS requests.',
+				'description' => 'Use reviewed core /wp/v2 routes. GET discovers content, types, taxonomies, comments, public users, installed themes, templates, styles and safe settings. GET /wp/v2/themes lists installed themes and global_styles_id for an existing readable user-style record (null when absent or unavailable); theme writes are unavailable. There is no /wp/v2/global-styles collection. Read active theme defaults at /wp/v2/global-styles/themes/{stylesheet}; read/update existing user overrides at /wp/v2/global-styles/{global_styles_id}. Never guess a style ID or create one during discovery. GET /wp/v2/block-types or /wp/v2/block-types/namespace lists up to 200 compact installed block names; GET /wp/v2/block-types/namespace/name reads its native attributes/supports without scripts, asset URLs or rendering. Use exact discovered block names for complex layouts; block metadata is read-only. POST/PUT/PATCH creates or updates content and comments, updates media descriptions, existing terms/menus, published templates, navigation, styles and safe settings. DELETE only trashes reversible content/comments after human confirmation. No arbitrary routes, user changes, secrets, files or core changes. Use plugin_request for reviewed plugin management and generate_image for native AI image creation. Use GET to discover IDs/schema before writing. New taxonomy terms and classic menus, arbitrary media upload, template source resets, deletion of existing templates and permanent deletes are unsupported. Examples: {"method":"GET","path":"/wp/v2/types"}, {"method":"GET","path":"/wp/v2/taxonomies"}, {"method":"POST","path":"/wp/v2/pages","params":{"title":"New page","content":"<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->","status":"draft"}}. Do not send OPTIONS requests.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -248,7 +248,7 @@ final class Bhranti_Actions {
 				),
 			),
 		);
-		return $catalog + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog();
+		return $catalog + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
 	}
 
 	/**
@@ -278,6 +278,12 @@ final class Bhranti_Actions {
 		if ( is_array( $command ) && 'generate_image' === ( $command['tool'] ?? '' ) ) {
 			return Bhranti_Media::execute( $command, $requester_id, $session_id );
 		}
+		if ( is_array( $command ) && 'bhranti_memory' === ( $command['tool'] ?? '' ) ) {
+			return Bhranti_Memory::execute( $command, $requester_id, $session_id );
+		}
+		if ( is_array( $command ) && 'reference_page' === ( $command['tool'] ?? '' ) ) {
+			return Bhranti_References::execute( $command, $requester_id, $session_id );
+		}
 		$actor_id = self::ensure_actor();
 		if ( is_wp_error( $actor_id ) ) {
 			return $actor_id;
@@ -299,6 +305,14 @@ final class Bhranti_Actions {
 			if ( is_wp_error( $logged ) ) {
 				return $logged;
 			}
+			if ( 'WP_REST_Block_Types_Controller' === $review['class'] ) {
+				// Metadata reads must not evaluate a block's optional variation callback.
+				$attributes = $review['request']->get_attributes();
+				$review['request']->set_param( '_fields', self::block_fields( 'get_items' === $attributes['callback'][1] ) );
+			} elseif ( 'WP_REST_Themes_Controller' === $review['class'] ) {
+				// Native theme links create a global-styles post when none exists.
+				$review['request']->set_param( '_fields', Bhranti_Site::theme_fields() );
+			}
 			$data = self::dispatch( $review['request'], $actor_id );
 			if ( is_wp_error( $data ) ) {
 				self::audit( 'action_failed', __( 'WordPress could not complete the read request.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $actor_id );
@@ -306,7 +320,7 @@ final class Bhranti_Actions {
 			}
 			$target = self::target( $review, $data );
 			self::audit( 'action_completed', __( 'WordPress information retrieved.', 'bhranti' ), $session_id, $details + array( 'target' => $target ), $requester_id, $actor_id );
-			$data = self::public_data( $data, $review['class'] );
+			$data = 'WP_REST_Themes_Controller' === $review['class'] ? Bhranti_Site::theme_data( $data, $requester_id, $actor_id ) : self::public_data( $data, $review['class'] );
 			if ( $review['fields'] ) {
 				$projection = new WP_REST_Request( 'GET' );
 				$projection->set_query_params( array( '_fields' => $review['fields'] ) );
@@ -905,6 +919,7 @@ final class Bhranti_Actions {
 			return self::error( 'bhranti_action_invalid', __( 'WordPress rejected these route parameters.', 'bhranti' ) );
 		}
 		$previous_user = get_current_user_id();
+		$missing_block = false;
 		try {
 			foreach ( array( $requester_id, $actor_id ) as $user_id ) {
 				wp_set_current_user( $user_id );
@@ -912,9 +927,17 @@ final class Bhranti_Actions {
 					return call_user_func( $endpoint['permission_callback'], $request );
 				};
 				$permission = (int) $user_id === (int) $actor_id && Bhranti_Site::is_theme_request( $request ) ? Bhranti_Site::actor_read( $request, $actor_id, $check ) : $check();
+				// Some plugins register blocks only in the editor, not in scheduled requests.
+				if ( 'GET' === $method && 'WP_REST_Block_Types_Controller' === $class && is_wp_error( $permission ) && 'rest_block_type_invalid' === $permission->get_error_code() && 404 === ( $permission->get_error_data()['status'] ?? 0 ) ) {
+					$missing_block = true;
+					continue;
+				}
 				if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
 					return self::error( 'bhranti_action_permission', __( 'Both your account and Bhranti must have permission for this action.', 'bhranti' ), 403 );
 				}
+			}
+			if ( $missing_block ) {
+				return self::error( 'bhranti_block_metadata_unavailable', __( 'This block is not registered in the current WordPress request. Discover available block names before continuing.', 'bhranti' ), 404 );
 			}
 		} finally {
 			wp_set_current_user( $previous_user );
@@ -984,7 +1007,7 @@ final class Bhranti_Actions {
 	 * @return array|WP_Error
 	 */
 	private static function handler( $method, $path ) {
-		$classes = array( 'WP_REST_Posts_Controller', 'WP_REST_Attachments_Controller', 'WP_REST_Comments_Controller', 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller', 'WP_REST_Global_Styles_Controller', 'WP_REST_Post_Types_Controller', 'WP_REST_Taxonomies_Controller', 'WP_REST_Users_Controller', 'WP_REST_Search_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Themes_Controller' );
+		$classes = array( 'WP_REST_Posts_Controller', 'WP_REST_Attachments_Controller', 'WP_REST_Comments_Controller', 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller', 'WP_REST_Global_Styles_Controller', 'WP_REST_Post_Types_Controller', 'WP_REST_Taxonomies_Controller', 'WP_REST_Users_Controller', 'WP_REST_Search_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Themes_Controller', 'WP_REST_Block_Types_Controller' );
 		$server  = rest_get_server();
 		foreach ( $server->get_routes() as $route => $endpoints ) {
 			if ( ! preg_match( '@^' . $route . '$@i', $path, $matches ) ) {
@@ -1484,6 +1507,26 @@ final class Bhranti_Actions {
 	 * @return array
 	 */
 	private static function public_data( $data, $controller_class ) {
+		if ( 'WP_REST_Block_Types_Controller' === $controller_class ) {
+			if ( isset( $data[0] ) ) {
+				return array_map(
+					static function ( $item ) {
+						return array_intersect_key( $item, array_flip( self::block_fields( true ) ) );
+					},
+					array_slice( $data, 0, 200 )
+				);
+			}
+			$data = array_intersect_key( $data, array_flip( self::block_fields( false ) ) );
+			if ( isset( $data['styles'] ) && is_array( $data['styles'] ) ) {
+				$data['styles'] = array_map(
+					static function ( $style ) {
+						return is_array( $style ) ? array_intersect_key( $style, array_flip( array( 'name', 'label', 'is_default' ) ) ) : array();
+					},
+					array_slice( $data['styles'], 0, 20 )
+				);
+			}
+			return $data;
+		}
 		if ( 'WP_REST_Themes_Controller' === $controller_class ) {
 			return Bhranti_Site::theme_data( $data );
 		}
@@ -1508,6 +1551,16 @@ final class Bhranti_Actions {
 			$allowed = array( 'id', 'name', 'slug', 'url', 'description' );
 		}
 		return array_intersect_key( $data, array_flip( $allowed ) );
+	}
+
+	/**
+	 * Keep block discovery metadata free of assets and executable callbacks.
+	 *
+	 * @param bool $collection Return compact collection fields.
+	 * @return string[]
+	 */
+	private static function block_fields( $collection ) {
+		return $collection ? array( 'name', 'title', 'category', 'is_dynamic' ) : array( 'name', 'title', 'description', 'category', 'attributes', 'supports', 'is_dynamic', 'uses_context', 'provides_context', 'styles', 'api_version' );
 	}
 
 	/**

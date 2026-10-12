@@ -79,19 +79,35 @@ final class Bhranti_Site {
 	}
 
 	/**
+	 * Native theme fields that cannot initialize a user global-styles record.
+	 *
+	 * @return string[]
+	 */
+	public static function theme_fields() {
+		return array( 'stylesheet', 'template', 'name', 'version', 'status', 'is_block_theme', 'requires_wp', 'requires_php' );
+	}
+
+	/**
 	 * Project public installed-theme metadata from a native collection or item.
 	 *
-	 * @param mixed $data Native REST response data.
+	 * @param mixed $data         Native REST response data.
+	 * @param int   $requester_id Requesting user, after native theme permission checks.
+	 * @param int   $actor_id     Managed actor, after native theme permission checks.
 	 * @return array
 	 */
-	public static function theme_data( $data ) {
+	public static function theme_data( $data, $requester_id = 0, $actor_id = 0 ) {
 		if ( ! is_array( $data ) ) {
 			return array();
 		}
 		if ( isset( $data[0] ) ) {
-			return array_map( array( __CLASS__, 'theme_data' ), $data );
+			return array_map(
+				static function ( $item ) use ( $requester_id, $actor_id ) {
+					return self::theme_data( $item, $requester_id, $actor_id );
+				},
+				$data
+			);
 		}
-		$result = array_intersect_key( $data, array_flip( array( 'stylesheet', 'template', 'name', 'version', 'status', 'is_block_theme', 'requires_wp', 'requires_php' ) ) );
+		$result = array_intersect_key( $data, array_flip( self::theme_fields() ) );
 		foreach ( $result as $key => $value ) {
 			if ( 'name' === $key && is_array( $value ) ) {
 				$result[ $key ] = array();
@@ -106,6 +122,79 @@ final class Bhranti_Site {
 				unset( $result[ $key ] );
 			}
 		}
+		if ( isset( $result['stylesheet'] ) && $requester_id > 0 && $actor_id > 0 ) {
+			$result['global_styles_id'] = self::global_styles_id( $result['stylesheet'], $requester_id, $actor_id );
+		}
 		return $result;
+	}
+
+	/**
+	 * Discover an existing styles record without native theme-link initialization.
+	 *
+	 * @param string $stylesheet  Installed theme identifier.
+	 * @param int    $requester_id Requesting user.
+	 * @param int    $actor_id     Managed actor.
+	 * @return int|null Existing ID readable by both identities, otherwise null.
+	 */
+	private static function global_styles_id( $stylesheet, $requester_id, $actor_id ) {
+		$theme = wp_get_theme( $stylesheet );
+		if ( ! $theme->exists() ) {
+			return null;
+		}
+		// Match Core's theme-owned published record without its internal, creating ID getter.
+		$records = get_posts(
+			array(
+				'post_type'              => 'wp_global_styles',
+				'post_status'            => array( 'publish' ),
+				'posts_per_page'         => 1,
+				'orderby'                => 'date',
+				'order'                  => 'DESC',
+				'fields'                 => 'ids',
+				'no_found_rows'          => true,
+				'ignore_sticky_posts'    => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'suppress_filters'       => false,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Core identifies this single record through its wp_theme association.
+				'tax_query'              => array(
+					array(
+						'taxonomy' => 'wp_theme',
+						'field'    => 'name',
+						'terms'    => $stylesheet,
+					),
+				),
+			)
+		);
+
+		$id   = (int) ( $records[0] ?? 0 );
+		$post = $id ? get_post( $id ) : null;
+		$type = get_post_type_object( 'wp_global_styles' );
+		if ( ! $post || 'wp_global_styles' !== $post->post_type || 'publish' !== $post->post_status || ! $type ) {
+			return null;
+		}
+		$themes = wp_get_object_terms( $id, 'wp_theme', array( 'fields' => 'names' ) );
+		if ( is_wp_error( $themes ) || ! in_array( $stylesheet, $themes, true ) ) {
+			return null;
+		}
+		$controller = $type->get_rest_controller();
+		if ( ! $controller || 'WP_REST_Global_Styles_Controller' !== get_class( $controller ) ) {
+			return null;
+		}
+		$request = new WP_REST_Request( 'GET', '/wp/v2/global-styles/' . $id );
+		$request->set_url_params( array( 'id' => $id ) );
+		$request->set_query_params( array( 'context' => 'view' ) );
+		$previous_user = get_current_user_id();
+		try {
+			foreach ( array( $requester_id, $actor_id ) as $user_id ) {
+				wp_set_current_user( $user_id );
+				$permission = $controller->get_item_permissions_check( $request );
+				if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
+					return null;
+				}
+			}
+		} finally {
+			wp_set_current_user( $previous_user );
+		}
+		return $id;
 	}
 }

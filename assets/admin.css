@@ -37,6 +37,8 @@
 .bhranti-app .bhranti-chat-item[aria-current="page"] { background: #2c3338; color: #72aee6; }
 .bhranti-app .bhranti-screenshot { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 10px; }
 .bhranti-app .bhranti-screenshot-preview { width: 100%; max-height: 100px; object-fit: contain; object-position: left; }
+.bhranti-app .bhranti-image-context { flex: 1; min-width: 0; }
+.bhranti-app .bhranti-image-sharing { margin-top: 4px; color: #a7aaad; font-size: 11px; }
 .bhranti-app .bhranti-menu-item { display: block; width: 100%; color: #f0f0f1; background: transparent; text-decoration: none; text-align: left; border: 0; padding: 9px 10px; border-radius: 3px; font-size: 13px; }
 .bhranti-app .bhranti-menu-item:hover { background: #2f2f2f; }
 .bhranti-app .bhranti-menu label { display: block; color: #c3c4c7; font-size: 12px; margin: 10px 10px 4px; }
@@ -194,6 +196,11 @@ body:not(.wp-admin).bhranti-panel-open { width: calc(100% - var(--bhranti-panel-
 }
 .bhranti-editor-control, .bhranti-site-control { position: fixed; z-index: 99980; display: grid; place-items: center; box-sizing: border-box; padding: 24px; overflow: auto; background: rgba(30, 30, 30, .72); backdrop-filter: blur(2px); color: #f0f0f1; border-radius: 12px; outline: none; }
 .bhranti-editor-control h2, .bhranti-site-control h2 { margin: 0; padding: 0; max-width: 100%; color: inherit; font-size: clamp(16px, 1.25vw, 20px); font-weight: 500; line-height: 1.5; text-align: center; text-wrap: balance; }
+.bhranti-site-control.is-admin { z-index: 100000; border-radius: 0; }
+body.bhranti-site-controlled .bhranti-app { z-index: 100010; }
+.bhranti-site-opener { position: fixed; z-index: 100020; min-width: 80px; min-height: 32px; margin: 0; padding: 4px 10px; border: 0; border-radius: 3px; background: #1e1e1e; color: #f0f0f1; font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; }
+.bhranti-site-opener:hover { background: #2c3338; color: #72aee6; }
+.bhranti-site-opener:focus-visible { outline: 2px solid #72aee6; outline-offset: 2px; }
 .bhranti-editor-launcher-slot { display: inline-flex; width: 98px; height: 32px; }
 .bhranti-editor-launcher-fallback { display: inline-flex; align-items: center; }
 .bhranti-editor-launcher-floating { position: fixed; z-index: 99985; pointer-events: none; }

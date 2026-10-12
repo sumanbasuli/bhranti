@@ -206,11 +206,23 @@
 		const control = siteControl; siteControl = null;
 		if (control.observer) control.observer.disconnect();
 		window.removeEventListener('resize', positionSiteControl); window.removeEventListener('scroll', positionSiteControl, true);
-		['inert', 'aria-busy'].forEach((name) => { if (control.attributes[name] === null) control.frame.removeAttribute(name); else control.frame.setAttribute(name, control.attributes[name]); });
+		control.nodes.forEach(({ node, attributes }) => { ['inert', 'aria-busy'].forEach((name) => { if (attributes[name] === null) node.removeAttribute(name); else node.setAttribute(name, attributes[name]); }); });
 		control.overlay.remove();
+		if (control.opener) control.opener.remove();
+		document.body.classList.remove('bhranti-site-controlled');
+		syncTrigger();
 	}
 	function positionSiteControl() {
 		if (!siteControl) return;
+		if (siteControl.admin) {
+			siteControl.opener.hidden = state.open;
+			const width = window.innerWidth, right = state.open ? Math.max(0, Math.min(width, root.getBoundingClientRect().left)) : width;
+			Object.assign(siteControl.overlay.style, { top: '0px', left: '0px', width: width + 'px', height: window.innerHeight + 'px', paddingRight: Math.min(width - 24, width - right + 24) + 'px' });
+			siteControl.overlay.firstElementChild.hidden = right < 120;
+			const trigger = document.querySelector('#wp-admin-bar-bhranti > a'), rect = trigger && trigger.getClientRects()[0];
+			Object.assign(siteControl.opener.style, { top: rect ? Math.max(0, rect.top) + 'px' : '8px', left: rect ? Math.max(0, Math.min(width - 90, rect.left)) + 'px' : 'auto', right: rect ? 'auto' : '12px' });
+			return;
+		}
 		const rect = siteControl.frame.getBoundingClientRect(), bar = document.getElementById('wpadminbar');
 		const top = Math.max(0, rect.top, bar && triggerAvailable(bar) ? bar.getBoundingClientRect().bottom : 0), left = Math.max(0, rect.left);
 		const right = Math.min(window.innerWidth, rect.right, state.open ? root.getBoundingClientRect().left : window.innerWidth), bottom = Math.min(window.innerHeight, rect.bottom);
@@ -223,19 +235,23 @@
 		const proven = run && (run.next_action || ['action', 'tool'].includes(run.phase) || (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id));
 		if (pageSuspended || editorControl || postEditor || !run || run.status !== 'running' || run.interrupted || !proven || (state.error || state.editorError || state.stopRequested) && !inFlight || state.pausedForEditor || !state.open && !inFlight || editorState().unsaved_changes) { releaseSiteControl(); return; }
 		const frame = settings.isAdmin ? document.querySelector('.edit-site-layout') || document.querySelector('#editor.block-editor__container') || document.querySelector('#wpbody-content') : Array.from(document.querySelectorAll('.wp-site-blocks, #page, main, [role="main"]')).find((node) => !node.contains(root) && !node.querySelector('#wpadminbar'));
+		const nodes = [...new Set([frame, ...(settings.isAdmin ? document.querySelectorAll('#wpcontent, #adminmenumain, #adminmenu, #wpadminbar, #wpfooter') : [])])].filter((node) => node && !node.contains(root) && !root.contains(node));
 		const focused = document.activeElement;
 		let gesturing = false;
 		try { const blocks = wp.data && wp.data.select('core/block-editor'); gesturing = !!(blocks && (blocks.isDraggingBlocks && blocks.isDraggingBlocks() || blocks.isMultiSelecting && blocks.isMultiSelecting())); } catch (error) { /* Ordinary admin pages have no block editor. */ }
-		if (!frame || gesturing || window._wpCollaborationEnabled || frame.contains(root) || frame.querySelector('#wpadminbar') || focused && frame.contains(focused) && focused.closest('input, textarea, select, [contenteditable="true"], iframe') || Array.from(document.querySelectorAll('.components-modal__screen-overlay, .media-modal, .components-popover [role="dialog"]')).some((node) => !root.contains(node) && !node.hidden && node.getClientRects().length)) { releaseSiteControl(); return; }
+		if (!frame || gesturing || window._wpCollaborationEnabled || frame.contains(root) || frame.querySelector('#wpadminbar') || focused && nodes.some((node) => node.contains(focused)) && focused.closest('input, textarea, select, [contenteditable="true"], iframe') || Array.from(document.querySelectorAll('.components-modal__screen-overlay, .media-modal, .components-popover [role="dialog"]')).some((node) => !root.contains(node) && !node.hidden && node.getClientRects().length)) { releaseSiteControl(); return; }
 		if (siteControl && siteControl.key === key && siteControl.frame === frame) { positionSiteControl(); return; }
 		releaseSiteControl();
-		const overlay = element('div', 'bhranti-site-control', element('h2', '', __('Site is under Bhranti’s control', 'bhranti')));
+		const overlay = element('div', 'bhranti-site-control' + (settings.isAdmin ? ' is-admin' : ''), element('h2', '', __('Site is under Bhranti’s control', 'bhranti')));
 		overlay.setAttribute('role', 'status'); overlay.setAttribute('aria-live', 'polite'); overlay.tabIndex = -1;
-		siteControl = { key, frame, overlay, attributes: { inert: frame.getAttribute('inert'), 'aria-busy': frame.getAttribute('aria-busy') }, observer: null };
-		document.body.appendChild(overlay); if (frame.contains(focused)) overlay.focus({ preventScroll: true });
-		frame.setAttribute('inert', ''); frame.setAttribute('aria-busy', 'true');
+		const opener = settings.isAdmin ? element('button', 'bhranti-site-opener', __('Bhranti', 'bhranti')) : null;
+		if (opener) { opener.type = 'button'; opener.id = 'bhranti-site-opener'; opener.setAttribute('data-bhranti-open', ''); document.body.appendChild(opener); document.body.classList.add('bhranti-site-controlled'); }
+		siteControl = { key, frame, overlay, opener, admin: !!settings.isAdmin, nodes: nodes.map((node) => ({ node, attributes: { inert: node.getAttribute('inert'), 'aria-busy': node.getAttribute('aria-busy') } })), observer: null };
+		document.body.appendChild(overlay); if (nodes.some((node) => node.contains(focused))) overlay.focus({ preventScroll: true });
+		nodes.forEach((node) => { node.setAttribute('inert', ''); node.setAttribute('aria-busy', 'true'); });
 		if (window.ResizeObserver) { siteControl.observer = new window.ResizeObserver(positionSiteControl); siteControl.observer.observe(frame); }
 		window.addEventListener('resize', positionSiteControl); window.addEventListener('scroll', positionSiteControl, true); positionSiteControl();
+		syncTrigger();
 	}
 	function syncEditorControl() { syncPostControl(); syncSiteControl(); }
 	function nativeEditorChanged(schedule = true) {
@@ -422,7 +438,7 @@
 		} catch (error) { return null; }
 	}
 	async function attachScreenshot() {
-		if (state.capturing || state.busy || activeRun()) return;
+		if (state.capturing || state.busy || state.loading || activeRun()) return;
 		if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { notify(__('This browser cannot capture a tab screenshot. Page HTML and editor context are still available.', 'bhranti')); render(); return; }
 		state.capturing = true; render(); let stream;
 		try {
@@ -435,6 +451,29 @@
 			state.screenshot = { mime_type: 'image/jpeg', data }; rememberDraft();
 		} catch (error) { if (error.name !== 'NotAllowedError') notify(errorMessage(error)); }
 		finally { if (stream) stream.getTracks().forEach((track) => track.stop()); state.capturing = false; render(); }
+	}
+	async function attachReferenceImage(file) {
+		if (!file || state.capturing || state.busy || state.loading || activeRun()) return;
+		state.capturing = true; render(); let url;
+		try {
+			if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size < 1 || file.size > 10485760) throw new Error(__('Choose a PNG, JPEG or WebP image up to 10 MiB.', 'bhranti'));
+			const bytes = new Uint8Array(await file.arrayBuffer()), match = (values, offset = 0) => values.every((value, index) => bytes[index + offset] === value);
+			const type = match([255, 216, 255]) ? 'image/jpeg' : match([137, 80, 78, 71, 13, 10, 26, 10]) ? 'image/png' : match([82, 73, 70, 70]) && match([87, 69, 66, 80], 8) ? 'image/webp' : '';
+			const complete = type === 'image/jpeg' ? match([255, 217], bytes.length - 2) : type === 'image/png' ? match([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130], bytes.length - 12) : type === 'image/webp' && new DataView(bytes.buffer).getUint32(4, true) + 8 === bytes.length;
+			if (!type || !complete || bytes.length !== file.size) throw new Error(__('This file is not a complete PNG, JPEG or WebP image. Export it again in one of those formats and attach the new file.', 'bhranti'));
+			// File pickers can label a JPEG screenshot as PNG; decode the actual raster type, then share only new pixels.
+			url = URL.createObjectURL(new Blob([bytes], { type }));
+			const image = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error(__('This image could not be opened. Choose another PNG, JPEG or WebP image.', 'bhranti'))); image.src = url; });
+			const width = image.naturalWidth, height = image.naturalHeight;
+			if (!width || !height || width > 10000 || height > 10000 || width * height > 25000000) throw new Error(__('Choose an image up to 25 megapixels and 10,000 pixels on either side.', 'bhranti'));
+			const scale = Math.min(1, 1600 / width, 1600 / height), canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+			const context = canvas.getContext('2d'); if (!context) throw new Error(__('This browser could not prepare the image.', 'bhranti'));
+			context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
+			const encoded = canvas.toDataURL('image/jpeg', .8), data = encoded.startsWith('data:image/jpeg;base64,') ? encoded.slice(23) : '';
+			if (!data || data.length > 2796204 || atob(data).length > 2097152) throw new Error(__('This image is too large to attach. Choose a smaller image.', 'bhranti'));
+			if (!pageSuspended) { state.screenshot = { mime_type: 'image/jpeg', data }; rememberDraft(); }
+		} catch (error) { if (!pageSuspended) notify(errorMessage(error)); }
+		finally { if (url) URL.revokeObjectURL(url); state.capturing = false; if (!pageSuspended) { render(); focusComposer(); } }
 	}
 
 	function attachedContext() {
@@ -469,7 +508,7 @@
 			if (url.origin !== window.location.origin || !['http:', 'https:'].includes(url.protocol)) return null;
 			const admin = new URL(settings.connectorsUrl || '/wp-admin/options-connectors.php', window.location.origin).pathname.replace(/[^/]+$/, '');
 			const ownSettings = target.type === 'bhranti_settings' && url.pathname === admin + 'admin.php' && url.searchParams.get('page') === 'bhranti' && Array.from(url.searchParams.keys()).every((key) => key === 'page');
-			const commerceSettings = target.type === 'woocommerce_settings' && url.pathname === admin + 'admin.php' && url.searchParams.get('page') === 'wc-settings' && ['general', 'products', 'advanced'].includes(url.searchParams.get('tab')) && Array.from(url.searchParams.keys()).every((key) => ['page', 'tab'].includes(key)) && ['page', 'tab'].every((key) => url.searchParams.getAll(key).length === 1);
+			const commerceSettings = target.type === 'woocommerce_settings' && url.pathname === admin + 'admin.php' && url.searchParams.get('page') === 'wc-settings' && ['general', 'products', 'advanced', 'shipping', 'checkout', 'site-visibility'].includes(url.searchParams.get('tab')) && Array.from(url.searchParams.keys()).every((key) => ['page', 'tab'].includes(key)) && ['page', 'tab'].every((key) => url.searchParams.getAll(key).length === 1);
 			const productCategory = target.type === 'product_cat' && url.pathname === admin + 'term.php' && url.searchParams.get('taxonomy') === 'product_cat' && /^[1-9]\d*$/.test(url.searchParams.get('tag_ID') || '') && url.searchParams.get('post_type') === 'product' && Array.from(url.searchParams.keys()).every((key) => ['taxonomy', 'tag_ID', 'post_type'].includes(key)) && ['taxonomy', 'tag_ID', 'post_type'].every((key) => url.searchParams.getAll(key).length === 1);
 			if (url.pathname === admin + 'term.php' && (target.type === 'product_cat' || url.searchParams.get('taxonomy') === 'product_cat') && !productCategory) return null;
 			if (url.pathname.startsWith(admin) && !ownSettings && !commerceSettings && !productCategory && !['post.php', 'edit.php', 'revision.php', 'site-editor.php', 'upload.php', 'edit-tags.php', 'term.php', 'edit-comments.php', 'options-general.php', 'options-reading.php', 'nav-menus.php', 'comment.php', 'plugins.php'].includes(url.pathname.slice(admin.length))) return null;
@@ -549,7 +588,7 @@
 		if (state.open) { const control = root.querySelector('#bhranti-composer'); if (control && !control.disabled) control.focus(); else root.querySelector('#bhranti-close').focus(); continueRun(); }
 	}
 	function closeUnavailable() {
-		return !!(siteControl && currentRun() && currentRun().phase === 'action' && !Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a, [data-bhranti-open]')).some(triggerAvailable));
+		return !!(siteControl && currentRun() && currentRun().phase === 'action' && !(siteControl.opener && siteControl.opener.isConnected) && !Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a, [data-bhranti-open]')).some(triggerAvailable));
 	}
 	function closePanel() {
 		if (closeUnavailable()) return;
@@ -558,9 +597,9 @@
 		state.open = false; state.menu = false; root.hidden = true; document.body.classList.remove('bhranti-panel-open'); syncTrigger();
 		syncEditorControl();
 		scheduleBackgroundObservation();
-		const trigger = triggerAvailable(lastTrigger) ? lastTrigger : Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (trigger) trigger.focus();
+		const trigger = triggerAvailable(lastTrigger) ? lastTrigger : Array.from(document.querySelectorAll('#bhranti-site-opener, [data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (trigger) trigger.focus();
 		// The native launcher can change portal parents when editor control ends.
-		window.requestAnimationFrame(() => { if (document.activeElement === document.body) { const opener = Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (opener) opener.focus(); } });
+		window.requestAnimationFrame(() => { if (document.activeElement === document.body) { const opener = Array.from(document.querySelectorAll('#bhranti-site-opener, [data-bhranti-editor-open], #wp-admin-bar-bhranti > a')).find(triggerAvailable); if (opener) opener.focus(); } });
 	}
 	function triggerAvailable(trigger) {
 		if (!trigger || !trigger.isConnected || trigger.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
@@ -570,9 +609,9 @@
 	function syncTrigger() {
 		const trigger = document.querySelector('#wp-admin-bar-bhranti > a'), bar = document.getElementById('wpadminbar');
 		const adminBarAvailable = triggerAvailable(trigger);
-		const top = bar && triggerAvailable(bar) ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+		const top = bar && (triggerAvailable(bar) || siteControl && siteControl.admin && bar.getClientRects().length && window.getComputedStyle(bar).visibility !== 'hidden') ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
 		root.style.top = top + 'px';
-		document.querySelectorAll('#wp-admin-bar-bhranti > a, [data-bhranti-editor-open]').forEach((opener) => {
+		document.querySelectorAll('#bhranti-site-opener, #wp-admin-bar-bhranti > a, [data-bhranti-editor-open]').forEach((opener) => {
 			opener.setAttribute('aria-controls', 'bhranti-app'); opener.setAttribute('aria-expanded', String(state.open)); opener.setAttribute('aria-haspopup', 'dialog');
 			if (opener.hasAttribute('data-bhranti-editor-open')) opener.setAttribute('aria-pressed', String(state.open));
 		});
@@ -588,7 +627,7 @@
 		marker.textContent = label; trigger.title = label;
 	}
 	function newChat() {
-		if (state.busy || activeRun()) return;
+		if (state.busy || state.loading || state.capturing || activeRun()) return;
 		rememberDraft(); state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; state.error = ''; state.menu = false; state.seen.clear(); rememberSession(null); render(); root.querySelector('#bhranti-composer').focus();
 	}
 	async function reloadAfterError(content, previousCount) {
@@ -615,7 +654,7 @@
 			rememberSession(state.session.id); previousCount = (state.session.messages || []).length;
 			state.session.messages = (state.session.messages || []).concat({ role: 'user', content, created: new Date().toISOString() }); render();
 			state.session = await request('/sessions/' + encodeURIComponent(state.session.id) + '/messages', 'POST', { content, context: attachedContext(), agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null));
-		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount) && (state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) state.error = ''; }
+		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount) && (state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) { state.error = ''; state.screenshot = null; state.screenshots.delete(draftKey(null)); } }
 		finally { await refreshWorkspaceQuietly(); state.busy = false; rememberDraft(); render(); }
 		markExistingEvents(); continueRun(); focusComposer();
 	}
@@ -710,10 +749,10 @@
 		markExistingEvents();
 	}
 	async function deleteChat() {
-		if (state.busy || activeRun() || !state.session) return;
+		if (state.busy || state.loading || state.capturing || activeRun() || !state.session) return;
 		if (!window.confirm(__('Delete this conversation permanently? Site actions and their audit records are not undone by deleting a chat.', 'bhranti'))) return;
 		state.busy = true; render();
-		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); state.drafts.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
+		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); state.drafts.delete(key); state.screenshots.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
 		catch (error) { notify(errorMessage(error)); }
 		finally { state.busy = false; render(); }
 	}
@@ -755,12 +794,12 @@
 			state.workspace.agents.forEach((agent) => { const option = element('option', '', agent.name); option.value = agent.id; select.appendChild(option); });
 			select.value = state.agentId; select.disabled = state.busy || state.loading || !!activeRun(); select.addEventListener('change', () => { state.agentId = select.value; }); wrap.appendChild(label); wrap.appendChild(select);
 		}
-		if (state.session) { const remove = button(__('Delete this chat', 'bhranti'), 'bhranti-menu-item', deleteChat, 'bhranti-delete-chat'); remove.disabled = state.busy || !!activeRun(); wrap.appendChild(remove); }
+		if (state.session) { const remove = button(__('Delete this chat', 'bhranti'), 'bhranti-menu-item', deleteChat, 'bhranti-delete-chat'); remove.disabled = state.busy || state.loading || state.capturing || !!activeRun(); wrap.appendChild(remove); }
 		return wrap;
 	}
 	function runStatus() {
 		const run = currentRun(); if (!run) return null;
-		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
+		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), awaiting_input: __('Waiting for your answer', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
 		const retrySeconds = Math.max(0, Math.ceil(Number(run.retry_at) - Date.now() / 1000));
 		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(__('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
 		const pending = run.status === 'running' && !state.stopRequested && !state.pausedForEditor && !state.error && !retrySeconds;
@@ -780,6 +819,7 @@
 		if (!run || run.status !== 'running' || !['prepared', 'action', 'tool'].includes(run.phase) || !action) return null;
 		const name = action.tool === 'generate_image' ? 'image' : action.tool === 'plugin_request' ? 'plugin' : action.write ? 'write' : 'search';
 		const preview = element('section', 'bhranti-action-preview', element('h3', '', icon(name), action.summary || __('Prepared WordPress action', 'bhranti'))); preview.id = 'bhranti-action-preview';
+		if (typeof action.intent === 'string' && action.intent.trim() && action.intent.trim() !== action.summary) preview.appendChild(element('p', 'bhranti-action-intent', action.intent.trim().slice(0, 240)));
 		const meta = [action.tool, action.method, action.path].filter((value) => typeof value === 'string' && value).map((value) => value.slice(0, 200)).join(' · ');
 		if (meta) {
 			const children = [element('p', '', meta)];
@@ -889,10 +929,16 @@
 			});
 		}
 		const attach = iconButton(__('Attach current page context', 'bhranti'), 'bhranti-icon-button', () => { state.attachPage = true; state.attachBlock = true; render(); }, 'plus', 'bhranti-attach');
-		if (state.screenshot) { const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached tab screenshot', 'bhranti'); form.appendChild(element('div', 'bhranti-screenshot', image, iconButton(__('Remove screenshot', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close', 'bhranti-remove-screenshot'))); }
+		if (state.screenshot) {
+			const image = element('img', 'bhranti-screenshot-preview'); image.src = 'data:' + state.screenshot.mime_type + ';base64,' + state.screenshot.data; image.alt = __('Attached image', 'bhranti');
+			const remove = iconButton(__('Remove image', 'bhranti'), 'bhranti-icon-button', () => { state.screenshot = null; rememberDraft(); render(); }, 'close', 'bhranti-remove-screenshot'); remove.disabled = state.busy || state.loading || state.capturing || !!activeRun();
+			form.appendChild(element('div', 'bhranti-screenshot', element('div', 'bhranti-image-context', image, element('p', 'bhranti-image-sharing', __('Shared with AI when you send.', 'bhranti'))), remove));
+		}
+		const file = element('input'); file.type = 'file'; file.accept = 'image/png,image/jpeg,image/webp'; file.hidden = true; file.id = 'bhranti-image-file'; file.addEventListener('change', () => { const selected = file.files && file.files[0]; file.value = ''; if (selected) attachReferenceImage(selected); });
+		const upload = iconButton(__('Attach reference image', 'bhranti'), 'bhranti-icon-button', () => file.click(), 'image', 'bhranti-attach-image'); upload.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const screenshot = iconButton(state.capturing ? __('Choosing screenshot…', 'bhranti') : __('Attach tab screenshot', 'bhranti'), 'bhranti-icon-button', attachScreenshot, 'camera', 'bhranti-screenshot'); screenshot.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const hint = element('span', 'screen-reader-text', __('Enter to send. Shift+Enter for new line.', 'bhranti')); hint.id = 'bhranti-composer-hint';
-		form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, screenshot), hint, send)); return form;
+		form.appendChild(file); form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, upload, screenshot), hint, send)); return form;
 	}
 	function sizeComposer(input) { input.style.height = 'auto'; input.style.height = Math.max(48, Math.min(150, input.scrollHeight)) + 'px'; }
 	function resizeHandle() {
@@ -930,7 +976,7 @@
 		const close = iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'); close.disabled = closeUnavailable(); if (close.disabled) close.title = __('Available after the current change finishes', 'bhranti'); trailing.appendChild(close);
 		const brand = element('h2', 'bhranti-brand', __('Bhranti', 'bhranti')); brand.id = 'bhranti-panel-title';
 		const header = element('header', 'bhranti-header', controls, brand, trailing); header.id = 'bhranti-header';
-		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, attached rendered-page HTML/text, editor context and any screenshot you choose with your configured WordPress AI provider. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
+		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, relevant saved preferences and verified image facts, inspected public reference pages, attached rendered-page HTML/text, editor context and any screenshot or reference image you choose with your configured WordPress AI provider. Images are prepared in your browser and shared only when you send. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
 		if (!(state.workspace.ai || {}).available && state.initialized) details.appendChild(element('p', '', __('No AI provider is configured. Use WordPress connectors in the Bhranti menu.', 'bhranti')));
 		const streamNode = conversation(), dock = activeRun() ? element('div', 'bhranti-task-dock', runStatus()) : null; if (dock) dock.id = 'bhranti-task-dock';
 		const jump = iconButton(__('Jump to latest', 'bhranti'), 'bhranti-jump-latest', (event) => { const stream = root.querySelector('.bhranti-stream'); if (stream) { stream.scrollTop = stream.scrollHeight; scrollPositions.set(String(state.session && state.session.id || 'new'), { top: stream.scrollTop, bottom: true }); } event.currentTarget.hidden = true; const input = root.querySelector('#bhranti-composer'); if (input && !input.disabled) input.focus(); else root.querySelector('#bhranti-close').focus(); }, 'down', 'bhranti-jump-latest'); jump.appendChild(element('span', '', __('Jump to latest', 'bhranti'))); jump.hidden = !position || position.bottom;
@@ -968,7 +1014,7 @@
 		interactionTimer = window.setTimeout(() => { interactionTimer = null; interacting = false; if (renderPending && !pageSuspended) render(); }, 0);
 	}
 	function beginInteraction(event) {
-		if (event.target.closest && event.target.closest('#bhranti-app, #wp-admin-bar-bhranti, [data-bhranti-editor-open]')) { interacting = true; window.clearTimeout(interactionTimer); interactionTimer = null; }
+		if (event.target.closest && event.target.closest('#bhranti-app, #bhranti-site-opener, #wp-admin-bar-bhranti, [data-bhranti-editor-open]')) { interacting = true; window.clearTimeout(interactionTimer); interactionTimer = null; }
 	}
 	document.addEventListener('pointerdown', beginInteraction, true);
 	document.addEventListener('keydown', beginInteraction, true);
@@ -986,7 +1032,7 @@
 		if ((!editorControl && !siteControl) || !(event.ctrlKey || event.metaKey) || !['z', 'y', 's'].includes(event.key.toLowerCase())) return;
 		// Core undo/save shortcuts listen on document even while its editor is inert.
 		event.stopImmediatePropagation();
-		const textUndo = event.key.toLowerCase() !== 's' && event.target.closest && event.target.closest('textarea, input, [contenteditable="true"]') && (root.contains(event.target) || siteControl && !editorControl && !siteControl.frame.contains(event.target));
+		const textUndo = event.key.toLowerCase() !== 's' && event.target.closest && event.target.closest('textarea, input, [contenteditable="true"]') && (root.contains(event.target) || siteControl && !editorControl && !siteControl.nodes.some(({ node }) => node.contains(event.target)));
 		if (!textUndo) event.preventDefault();
 	}, true);
 	if (wp.data && wp.data.subscribe) wp.data.subscribe(() => {
