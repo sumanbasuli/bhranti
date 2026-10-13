@@ -181,7 +181,8 @@
 				h(CardBody, null, confirmation(target), h(PanelBody, { title: __('Instructions and skills', 'bhranti'), initialOpen: !agent.agent_md && !agent.skills.length },
 					h(TextControl, { label: __('Agent name', 'bhranti'), value: agent.name, onChange: (name) => changeAgent(agent.id, { name }), disabled: saving }),
 					h(TextareaControl, { label: __('Agent instructions (agent.md)', 'bhranti'), value: agent.agent_md, rows: 8, help: __('Describe this agent’s role and how it should work.', 'bhranti'), onChange: (agent_md) => changeAgent(agent.id, { agent_md }), disabled: saving }),
-					h('h3', { className: 'bhranti-settings-skills-title' }, __('Skills', 'bhranti')), agent.skills.map((skill) => skillCard(agent, skill)),
+					h('h3', { className: 'bhranti-settings-skills-title' }, __('Skills', 'bhranti')),
+					h('p', null, __('Built-in WordPress design and WCAG 2.2 AA guidance is included automatically. Your skills add to it.', 'bhranti')), agent.skills.map((skill) => skillCard(agent, skill)),
 					h(Button, { variant: 'secondary', disabled: saving || agent.skills.length >= 20, onClick: () => changeAgent(agent.id, { skills: agent.skills.concat({ id: id('skill'), name: '', skill_md: '' }) }) }, __('Add skill', 'bhranti')))));
 		}
 		const heading = h('header', { className: 'bhranti-settings-header' }, h('h1', null, __('Bhranti Settings', 'bhranti')), h('p', null, __('Manage shared instructions, agents, and skills for your WordPress site.', 'bhranti')));

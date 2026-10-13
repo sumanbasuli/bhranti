@@ -141,6 +141,15 @@ $history = array_map( static function( $message ) { return $message->getParts()[
 ac_check( array_column( array_slice( $prepared['messages'], 0, 3 ), 'content' ) === $history, 'Native AI messages preserve the original request, clarification and answer in order.' );
 ac_check( in_array( 'question', $GLOBALS['ac']['schema']['properties']['type']['enum'], true ), 'The native structured response schema advertises explicit questions.' );
 
+// Bundled design policy reaches the native model independently of administrator profiles.
+$skill = Bhranti_Knowledge::design_skill();
+ac_check( is_string( $skill ) && strlen( $skill ) < 16384 && false !== strpos( $GLOBALS['ac']['instruction'], $skill ), 'Actual native prompt includes the complete bounded bundled design skill.' );
+ac_check( in_array( 'form_request', $GLOBALS['ac']['schema']['properties']['tool']['enum'], true ), 'Native structured output advertises the reviewed form definition adapter.' );
+$form_plan = ac_private( 'parse', ac_envelope( 'tool', 'Read existing forms.', 'form_request', '{"method":"GET","path":"/contact-form-7/v1"}' ) );
+ac_check( 'form_request' === $form_plan['tool'] && 'GET' === $form_plan['args']['method'], 'Form requests survive the real strict-envelope parser without guessed HTML.' );
+ac_check( false === ( new ReflectionMethod( Bhranti_Runner::class, 'is_write' ) )->invoke( null, array( 'pending_plan' => array( 'tool' => 'form_request', 'args' => array( 'method' => 'GET' ) ) ) ), 'Form discovery remains a genuine read when an editor is open.' );
+ac_check( true === ( new ReflectionMethod( Bhranti_Runner::class, 'is_write' ) )->invoke( null, array( 'pending_plan' => array( 'tool' => 'form_request', 'args' => array( 'method' => 'POST' ) ) ) ), 'Native form setup retains foreground/background editor write safeguards.' );
+
 // Normal replies retain prior completion behavior, including older compact envelopes.
 ac_private( 'tool_result', get_post( 1 ), $private, array( 'summary' => 'Fixture result.', 'data' => array() ), $private['pending_plan'] );
 $done = ac_step( $next, '{"type":"reply","content":"The requested preview is saved."}' );

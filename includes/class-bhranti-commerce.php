@@ -172,6 +172,10 @@ final class Bhranti_Commerce {
 			if ( is_wp_error( $allowed ) ) {
 				return self::refused( $allowed, $session_id, $requester_id, $actor_id, $details );
 			}
+			$quality = self::content_quality( $review, $before );
+			if ( is_wp_error( $quality ) ) {
+				return self::refused( $quality, $session_id, $requester_id, $actor_id, $details );
+			}
 			if ( 'setting' === $review['kind'] && $before['option']['exists'] ) {
 				$prior      = $before['option']['value'];
 				$setting    = $review['controller']->get_setting( $review['request']['group_id'], $review['id'] );
@@ -764,6 +768,29 @@ final class Bhranti_Commerce {
 				return $response->get_data();
 			}
 		);
+	}
+
+	/**
+	 * Apply the shared authored-content checks to native catalog descriptions.
+	 *
+	 * @param array $review Reviewed request.
+	 * @param array $before Existing native state.
+	 * @return true|WP_Error
+	 */
+	private static function content_quality( $review, $before ) {
+		if ( ! class_exists( 'Bhranti_Content_Quality' ) || ! in_array( $review['kind'], array( 'product', 'category' ), true ) ) {
+			return true;
+		}
+		$prior = 'category' === $review['kind'] ? ( $before['term'] ?? array() ) : ( $before['props'] ?? array() );
+		foreach ( array( 'description', 'short_description' ) as $field ) {
+			if ( isset( $review['params'][ $field ] ) && is_string( $review['params'][ $field ] ) ) {
+				$result = Bhranti_Content_Quality::validate( $review['params'][ $field ], $prior[ $field ] ?? '' );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+		}
+		return true;
 	}
 
 	/**

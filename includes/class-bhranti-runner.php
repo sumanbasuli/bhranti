@@ -389,7 +389,7 @@ final class Bhranti_Runner {
 			return false;
 		}
 		$method = $command['args']['method'] ?? 'GET';
-		return ! in_array( $command['tool'], array( 'wp_request', 'plugin_request' ), true ) || ! is_string( $method ) || 'GET' !== strtoupper( $method );
+		return ! in_array( $command['tool'], array( 'wp_request', 'plugin_request', 'form_request' ), true ) || ! is_string( $method ) || 'GET' !== strtoupper( $method );
 	}
 
 	/**

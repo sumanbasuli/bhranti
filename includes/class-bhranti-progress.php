@@ -53,6 +53,12 @@ final class Bhranti_Progress {
 		if ( 'commerce_request' === $tool ) {
 			$data = array_replace( $data, Bhranti_Commerce::progress( $command, $requester_id, $actor_id ) );
 		}
+		if ( 'form_request' === $tool ) {
+			$form = Bhranti_Forms::progress( $command, $requester_id, $actor_id );
+			if ( is_array( $form ) ) {
+				$data = array_replace( $data, $form );
+			}
+		}
 		if ( 'plugin_request' === $tool ) {
 			$data['summary'] = 'GET' === $method ? __( 'Reading installed plugin information', 'bhranti' ) : ( 'DELETE' === $method ? __( 'Requesting approval to uninstall a plugin', 'bhranti' ) : __( 'Installing or changing a WordPress plugin', 'bhranti' ) );
 		}
@@ -93,7 +99,7 @@ final class Bhranti_Progress {
 				}
 			}
 		}
-		if ( 'commerce_request' !== $tool && isset( $args['params'] ) && is_array( $args['params'] ) ) {
+		if ( ! in_array( $tool, array( 'commerce_request', 'form_request' ), true ) && isset( $args['params'] ) && is_array( $args['params'] ) ) {
 			$data['details'] = array_values( array_intersect( array_keys( $args['params'] ), array( 'title', 'content', 'excerpt', 'status', 'featured_media', 'alt_text', 'caption', 'description', 'slug', 'parent', 'menu_order', 'categories', 'tags', 'template', 'styles', 'settings' ) ) );
 		}
 		if ( is_string( $intent ) && '' !== trim( $intent ) ) {

@@ -248,7 +248,7 @@ final class Bhranti_Actions {
 				),
 			),
 		);
-		return $catalog + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
+		return $catalog + ( class_exists( 'Bhranti_Forms' ) ? Bhranti_Forms::catalog() : array() ) + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
 	}
 
 	/**
@@ -274,6 +274,9 @@ final class Bhranti_Actions {
 		}
 		if ( is_array( $command ) && 'commerce_request' === ( $command['tool'] ?? '' ) ) {
 			return Bhranti_Commerce::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
+		}
+		if ( is_array( $command ) && 'form_request' === ( $command['tool'] ?? '' ) ) {
+			return Bhranti_Forms::execute( $command, $requester_id, $session_id );
 		}
 		if ( is_array( $command ) && 'generate_image' === ( $command['tool'] ?? '' ) ) {
 			return Bhranti_Media::execute( $command, $requester_id, $session_id );
@@ -351,6 +354,17 @@ final class Bhranti_Actions {
 		if ( is_wp_error( $policy ) ) {
 			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
 			return $policy;
+		}
+		if ( class_exists( 'Bhranti_Content_Quality' ) ) {
+			foreach ( array( 'content', 'excerpt', 'caption', 'description' ) as $field ) {
+				if ( isset( $command['args']['params'][ $field ] ) && is_string( $command['args']['params'][ $field ] ) ) {
+					$quality = Bhranti_Content_Quality::validate( $command['args']['params'][ $field ], self::raw_value( $before[ $field ] ?? '' ) );
+					if ( is_wp_error( $quality ) ) {
+						self::audit( 'action_blocked', __( 'New content needs accessibility corrections before saving.', 'bhranti' ), $session_id, $details + array( 'code' => $quality->get_error_code() ), $requester_id, $actor_id );
+						return $quality;
+					}
+				}
+			}
 		}
 		$preserved = self::preserves_existing_content( $review, $before, $actor_id );
 		if ( is_wp_error( $preserved ) ) {
@@ -532,6 +546,9 @@ final class Bhranti_Actions {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
+		}
+		if ( 0 === strpos( $action_id, 'form_' ) ) {
+			return Bhranti_Forms::rollback( $action_id, $requester_id, $session_id );
 		}
 		if ( 0 === strpos( $action_id, 'task_' ) ) {
 			return Bhranti_Settings::task_rollback( $action_id, $requester_id, $session_id );

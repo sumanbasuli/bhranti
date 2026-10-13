@@ -39,6 +39,8 @@ $bhranti_remove_site_data = static function () {
 	} while ( 100 === $bhranti_session_count );
 	// Preserve the generated attachments while removing the plugin's requester markers.
 	delete_post_meta_by_key( 'bhranti_generated_media' );
+	// Keep native contact forms and submissions, removing only Bhranti's ownership marker.
+	delete_post_meta_by_key( '_bhranti_form_definition' );
 
 	$bhranti_actor_id = (int) get_option( 'bhranti_actor_id' );
 	$bhranti_actor    = get_userdata( $bhranti_actor_id );
@@ -56,6 +58,7 @@ $bhranti_remove_site_data = static function () {
 	delete_option( 'bhranti_settings_lock' );
 	delete_option( 'bhranti_plugins_lock' );
 	delete_option( 'bhranti_commerce_lock' );
+	delete_option( 'bhranti_forms_lock' );
 	if ( get_option( 'bhranti_role_owned' ) ) {
 		remove_role( 'bhranti_agent' );
 		delete_option( 'bhranti_role_owned' );
