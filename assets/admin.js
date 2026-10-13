@@ -14,6 +14,7 @@
 	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null, siteControl = null;
+	let pendingAction = null, stopRunKey = '';
 	const settingsEvents = new Map();
 	let triggerFingerprint = '';
 	function rememberOpen(open) { if (settings.isAdmin) { try { if (open) window.sessionStorage.setItem(openStorageKey, '1'); else window.sessionStorage.removeItem(openStorageKey); } catch (error) { /* Storage can be unavailable in private browsing. */ } } }
@@ -62,7 +63,16 @@
 	async function request(path, method = 'GET', data) {
 		if (!wp.apiFetch) return Promise.reject(new Error(__('WordPress could not load the request tools. Reload this page to try again.', 'bhranti')));
 		const options = { path: apiPath + path, method, ...(data === undefined ? {} : { data }) };
-		if (method !== 'GET') return wp.apiFetch(options);
+		if (method !== 'GET') {
+			const controller = new AbortController(); let timer;
+			try {
+				// Aborting a response cannot undo the server operation. Reconcile by GET; never replay this request.
+				return await Promise.race([
+					Promise.resolve().then(() => wp.apiFetch({ ...options, signal: controller.signal })),
+					new Promise((resolve, reject) => { timer = window.setTimeout(() => { reject(Object.assign(new Error(__('The response took too long. Checking the saved task before continuing.', 'bhranti')), { code: 'bhranti_response_timeout' })); controller.abort(); }, 240000); }),
+				]);
+			} finally { window.clearTimeout(timer); }
+		}
 		let reconnecting = false;
 		try {
 			for (let attempt = 0; attempt < 3; attempt++) {
@@ -84,8 +94,11 @@
 		if (node && state.progress) { const seconds = Math.floor((Date.now() - state.progress.started) / 1000); node.textContent = sprintf(__('%ds', 'bhranti'), seconds); node.setAttribute('aria-label', sprintf(__('Elapsed request time: %d seconds', 'bhranti'), seconds)); }
 	}
 	async function runRequest(path, data, label) {
+		const action = /\/execute$/.test(path) && currentRun() && currentRun().phase === 'prepared' && data.run_id === currentRun().id && data.prepared_step === currentRun().step ? { key: resultKey(), step: data.prepared_step } : null;
+		if (action) pendingAction = action;
 		state.progress = { label, started: Date.now() }; render(); progressTimer = window.setInterval(updateElapsed, 1000);
-		try { return await request(path, 'POST', data); }
+		try { const result = await request(path, 'POST', data); if (pendingAction === action) pendingAction = null; return result; }
+		catch (error) { if (pendingAction === action && ['bhranti_unsaved_changes', 'bhranti_editor_busy', 'bhranti_busy', 'bhranti_run_missing'].includes(error.code)) pendingAction = null; throw error; }
 		finally { window.clearInterval(progressTimer); progressTimer = null; state.progress = null; }
 	}
 	const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -117,6 +130,12 @@
 	}
 	function currentRun() { return state.session && state.session.run; }
 	function activeRun() { const run = currentRun(); return run && ['running', 'awaiting_confirmation'].includes(run.status); }
+	function actionInFlight(run) { return !!(run && (run.phase === 'action' || pendingAction && pendingAction.key === resultKey() && pendingAction.step === run.step)); }
+	function reconcileActionControl() {
+		const run = currentRun();
+		if (pendingAction && (!run || pendingAction.key !== resultKey() || run.status !== 'running' || run.step > pendingAction.step || !['prepared', 'action'].includes(run.phase))) pendingAction = null;
+		if (stopRunKey && stopRunKey !== resultKey() || run && !activeRun()) { state.stopRequested = false; state.pausedForEditor = false; stopRunKey = ''; }
+	}
 	function editorIsOpen() {
 		if (/\/(?:post|post-new|site-editor)\.php$/.test(window.location.pathname) || ['post', 'page', 'site-editor'].includes((settings.context || {}).screen)) return true;
 		try {
@@ -175,8 +194,8 @@
 	function syncPostControl() {
 		const run = currentRun(), snapshot = nativeEditorSnapshot(), editor = document.querySelector('#editor.block-editor__container'), frame = editor && editor.querySelector('.interface-interface-skeleton');
 		const key = snapshot && resultKey() + ':' + snapshot.type + ':' + snapshot.id;
-		const inFlight = run && run.phase === 'action' && editorControl && editorControl.key === key;
-		if (pageSuspended || !run || run.status !== 'running' || run.interrupted || (state.error || state.editorError) && !inFlight || state.pausedForEditor || !state.open && run.phase !== 'action' || !snapshot || snapshot.dirty || snapshot.saving || !editor || !frame) { releaseEditorControl(); return; }
+		const inFlight = actionInFlight(run) && editorControl && editorControl.key === key;
+		if (pageSuspended || !run || run.status !== 'running' || run.interrupted || (state.error || state.editorError) && !inFlight || state.pausedForEditor || !state.open && !inFlight || !snapshot || snapshot.dirty || snapshot.saving || !editor || !frame) { releaseEditorControl(); return; }
 		const focused = document.activeElement, blocks = wp.data.select('core/block-editor');
 		const gesturing = blocks && (typeof blocks.isDraggingBlocks === 'function' && blocks.isDraggingBlocks() || typeof blocks.isMultiSelecting === 'function' && blocks.isMultiSelecting());
 		if (gesturing || snapshot.editing && (!focused || focused.tagName !== 'IFRAME' || !editor.contains(focused))) { releaseEditorControl(); return; }
@@ -229,7 +248,7 @@
 		Object.assign(siteControl.overlay.style, { top: top + 'px', left: left + 'px', width: Math.max(0, right - left) + 'px', height: Math.max(0, bottom - top) + 'px' });
 	}
 	function syncSiteControl() {
-		const run = currentRun(), key = resultKey(), inFlight = run && run.phase === 'action' && siteControl && siteControl.key === key;
+		const run = currentRun(), key = resultKey(), inFlight = actionInFlight(run) && siteControl && siteControl.key === key;
 		const postType = (settings.context || {}).post_type;
 		const postEditor = nativeEditorSnapshot() || /\/(?:post|post-new)\.php$/.test(window.location.pathname) && (!postType || ['post', 'page'].includes(postType));
 		const proven = run && (run.next_action || ['action', 'tool'].includes(run.phase) || (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id));
@@ -500,7 +519,7 @@
 			if (event.type === 'action' && event.success === true && event.run_id === run.id && ['write', 'rollback'].includes(event.operation) && event.target && event.target.type === 'bhranti_settings' && safeTarget(event.target)) window.dispatchEvent(new CustomEvent('bhranti:settings-changed'));
 		});
 	}
-	function markExistingEvents() { syncEditorControl(); observeEditorChanges(); observeSettingsChanges(); collectResults(); (state.session && state.session.events || []).forEach((event) => state.seen.add(String(event.id))); }
+	function markExistingEvents() { reconcileActionControl(); syncEditorControl(); observeEditorChanges(); observeSettingsChanges(); collectResults(); (state.session && state.session.events || []).forEach((event) => state.seen.add(String(event.id))); }
 	function safeTarget(target) {
 		if (!target || typeof target.url !== 'string' || !target.url.trim()) return null;
 		try {
@@ -588,7 +607,7 @@
 		if (state.open) { const control = root.querySelector('#bhranti-composer'); if (control && !control.disabled) control.focus(); else root.querySelector('#bhranti-close').focus(); continueRun(); }
 	}
 	function closeUnavailable() {
-		return !!(siteControl && currentRun() && currentRun().phase === 'action' && !(siteControl.opener && siteControl.opener.isConnected) && !Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a, [data-bhranti-open]')).some(triggerAvailable));
+		return !!(siteControl && actionInFlight(currentRun()) && !(siteControl.opener && siteControl.opener.isConnected) && !Array.from(document.querySelectorAll('[data-bhranti-editor-open], #wp-admin-bar-bhranti > a, [data-bhranti-open]')).some(triggerAvailable));
 	}
 	function closePanel() {
 		if (closeUnavailable()) return;
@@ -632,8 +651,12 @@
 	}
 	async function reloadAfterError(content, previousCount) {
 		if (!state.session) { if (content) state.draft = content; return; }
+		const id = state.session.id, runId = !content && currentRun() && currentRun().id;
 		try {
-			state.session = await request('/sessions/' + encodeURIComponent(state.session.id));
+			const fresh = await request('/sessions/' + encodeURIComponent(id));
+			if (pageSuspended || !state.session || state.session.id !== id || runId && (!currentRun() || currentRun().id !== runId)) return false;
+			if (!fresh || fresh.id !== id || runId && (!fresh.run || fresh.run.id !== runId)) throw new Error(__('The saved task changed. Reconnect to review it.', 'bhranti'));
+			state.session = fresh;
 			if (content && !(state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) state.draft = content;
 			markExistingEvents();
 			return true;
@@ -660,15 +683,16 @@
 	}
 	async function continueRun() {
 		if (pageSuspended || state.stepping || state.busy || state.error && !state.stopRequested || !state.open || !currentRun() || currentRun().status !== 'running') return;
+		if (!state.stopRequested && pendingAction && pendingAction.key === resultKey() && pendingAction.step === currentRun().step && currentRun().phase === 'prepared') { state.error = __('The previous action response is still unconfirmed. Reconnect to check the saved task before continuing.', 'bhranti'); render(); return; }
 		state.stepping = true; state.busy = true; collectResults(); render();
-		let waitingSince = null, observedRetryAt = null;
+		let waitingSince = null, observedRetryAt = null, cancelAttempted = false, continueStop = false;
 		try {
 			while (!pageSuspended && state.open && currentRun() && (currentRun().status === 'running' || state.stopRequested && currentRun().status === 'awaiting_confirmation')) {
 				// Let the saved canvas update before another model request occupies the server.
 				await flushEditorChanges(); if (pageSuspended || !state.open) break;
 				const id = state.session.id, runId = currentRun().id;
 				if (currentRun().interrupted && !state.stopRequested) { state.error = __('The previous request was interrupted. Stop this run and check Logs before starting again.', 'bhranti'); render(); break; }
-				if (state.stopRequested && (currentRun().interrupted || !['model', 'action', 'tool'].includes(currentRun().phase))) { state.error = ''; state.session = await request('/sessions/' + encodeURIComponent(id) + '/cancel', 'POST', { run_id: runId }); state.stopRequested = false; state.pausedForEditor = false; render(); break; }
+				if (state.stopRequested && (currentRun().interrupted || !['model', 'action', 'tool'].includes(currentRun().phase))) { state.error = ''; cancelAttempted = true; state.session = await request('/sessions/' + encodeURIComponent(id) + '/cancel', 'POST', { run_id: runId }); state.stopRequested = false; state.pausedForEditor = false; render(); break; }
 				const retryAt = Number(currentRun().retry_at) * 1000;
 				if (Number.isFinite(retryAt) && retryAt > 0 && (retryAt > Date.now() || observedRetryAt !== retryAt)) {
 					if (retryAt > Date.now()) { await wait(Math.min(1000, retryAt - Date.now())); if (!state.open || pageSuspended) break; render(); if (state.stopRequested || retryAt > Date.now()) continue; }
@@ -719,8 +743,16 @@
 				if (state.stopRequested) continue;
 				if (revealNewTarget(previousEvents, runId)) break;
 			}
-		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError() && currentRun() && currentRun().status !== 'running') state.error = ''; }
-		finally { state.busy = false; state.stepping = false; if (!activeRun()) { state.stopRequested = false; state.pausedForEditor = false; } render(); focusComposer(); if (!state.open) scheduleBackgroundObservation(); }
+		} catch (error) {
+			state.error = errorMessage(error);
+			if (await reloadAfterError() && currentRun()) {
+				if (currentRun().status !== 'running') state.error = '';
+				// A lost execute may never reach WordPress. Honour this run's explicit Stop through native locked cancellation once.
+				continueStop = !cancelAttempted && state.stopRequested && stopRunKey === resultKey() && currentRun().status === 'running' && currentRun().phase === 'prepared';
+			}
+		}
+		finally { state.busy = false; state.stepping = false; reconcileActionControl(); render(); focusComposer(); if (!state.open) scheduleBackgroundObservation(); }
+		if (continueStop) continueRun();
 	}
 	async function resumeTask() {
 		const run = currentRun();
@@ -810,7 +842,7 @@
 		if (run.status === 'running') {
 			const actions = element('div', 'bhranti-run-controls');
 			if (state.pausedForEditor) { const resume = button(__('Resume', 'bhranti'), 'bhranti-inline-button', resumeRun, 'bhranti-resume-run'); resume.disabled = state.busy || state.stepping; actions.appendChild(resume); }
-			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }, 'bhranti-stop'); stop.prepend(icon('stop')); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
+			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; stopRunKey = resultKey(); state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }, 'bhranti-stop'); stop.prepend(icon('stop')); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
 		}
 		return status;
 	}

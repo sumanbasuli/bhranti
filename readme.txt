@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.20
+Stable tag: 0.4.21
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -97,7 +97,7 @@ Completed operations remain in the audit log. An interrupted operation is not au
 
 = Does it stream replies? =
 
-The installed native WordPress AI Client returns a completed text result. Bhranti displays that result without simulated typing. Live token streaming requires support from the native client and connector transport. Prepared actions and request elapsed time remain visible. Sidebar status reads have a 20-second timeout per attempt and recover temporary connection failures with up to two delayed retries. Site-changing requests are not automatically replayed. Native text planning uses a scoped 120-second timeout and image generation uses 180 seconds.
+The installed native WordPress AI Client returns a completed text result. Bhranti displays that result without simulated typing. Live token streaming requires support from the native client and connector transport. Prepared actions and request elapsed time remain visible. Sidebar status reads have a 20-second timeout per attempt and recover temporary connection failures with up to two delayed retries. Site-changing requests have a four-minute response deadline and are not automatically replayed. After a missing response, Bhranti reads the saved task state before continuing. Native text planning uses a scoped 120-second timeout and image generation uses 180 seconds.
 
 = Will saved changes appear in my open editor? =
 
@@ -112,6 +112,10 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.21 =
+* Recover missing action responses by reading the saved task checkpoint, preserving completed work and refusing uncertain action replay.
+* Keep site control until WordPress confirms handover, and preserve the owning task during Stop and reconnect.
 
 = 0.4.20 =
 * Preflight native image formats and upload limits, request supported output formats and convert bounded images locally without a second generation.
