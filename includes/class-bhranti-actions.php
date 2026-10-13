@@ -360,7 +360,7 @@ final class Bhranti_Actions {
 				if ( isset( $command['args']['params'][ $field ] ) && is_string( $command['args']['params'][ $field ] ) ) {
 					$quality = Bhranti_Content_Quality::validate( $command['args']['params'][ $field ], self::raw_value( $before[ $field ] ?? '' ) );
 					if ( is_wp_error( $quality ) ) {
-						self::audit( 'action_blocked', __( 'New content needs accessibility corrections before saving.', 'bhranti' ), $session_id, $details + array( 'code' => $quality->get_error_code() ), $requester_id, $actor_id );
+						self::audit( 'action_blocked', __( 'New content needs authored-content corrections before saving.', 'bhranti' ), $session_id, $details + array( 'code' => $quality->get_error_code() ), $requester_id, $actor_id );
 						return $quality;
 					}
 				}

@@ -121,6 +121,7 @@ final class Bhranti_Content_Quality {
 			foreach ( $block['innerBlocks'] ?? array() as $child ) {
 				$blocks[] = $child;
 			}
+			self::group_border( $block, $issues );
 			if ( ! empty( $block['innerBlocks'] ) || ! in_array( $block['blockName'], array( 'core/paragraph', 'core/heading', 'core/button', 'core/preformatted', 'core/verse' ), true ) ) {
 				continue;
 			}
@@ -151,6 +152,44 @@ final class Bhranti_Content_Quality {
 			}
 		}
 		return $issues;
+	}
+
+	/**
+	 * Check one native Group save contract, not a general block serializer.
+	 *
+	 * Only opaque custom hex colors on the native outer wrapper are reviewed.
+	 * Presets, side-specific colors and other blocks need native editor review.
+	 *
+	 * @param array $block Parsed inert block.
+	 * @param array $issues Internal issue map, by reference.
+	 */
+	private static function group_border( $block, &$issues ) {
+		$color = $block['attrs']['style']['border']['color'] ?? null;
+		if ( 'core/group' !== $block['blockName'] || ! self::hex( $color ) || ! empty( $block['attrs']['borderColor'] ) ) {
+			return;
+		}
+		$type   = WP_Block_Type_Registry::get_instance()->get_registered( 'core/group' );
+		$border = $type->supports['__experimentalBorder'] ?? false;
+		if ( true !== $border && ( ! is_array( $border ) || empty( $border['color'] ) ) ) {
+			return;
+		}
+		foreach ( array( 'border', '__experimentalBorder' ) as $feature ) {
+			$skip = $type->supports[ $feature ]['__experimentalSkipSerialization'] ?? false;
+			if ( is_array( $skip ) ? in_array( 'color', $skip, true ) : $skip ) {
+				return;
+			}
+		}
+		// No context or selector: the native engine computes classes without storing CSS.
+		$styles = wp_style_engine_get_styles( array( 'border' => array( 'color' => $color ) ) );
+		if ( ! in_array( 'has-border-color', explode( ' ', $styles['classnames'] ?? '' ), true ) ) {
+			return;
+		}
+		$reader = new WP_HTML_Tag_Processor( $block['innerHTML'] );
+		$tag    = $block['attrs']['tagName'] ?? 'div';
+		if ( ! is_string( $tag ) || ! $reader->next_tag() || strtoupper( $tag ) !== $reader->get_tag() || ! $reader->has_class( 'wp-block-group' ) || $reader->has_class( 'has-border-color' ) ) {
+			return;
+		}
+		self::add_issue( $issues, 'group_border_class_missing', array( self::hex( $color ), $reader->get_tag(), $reader->get_attribute( 'id' ) ) );
 	}
 
 	/**
@@ -326,18 +365,19 @@ final class Bhranti_Content_Quality {
 	 */
 	private static function error( $codes ) {
 		$labels = array(
-			'image_alt_missing'    => __( 'Images need an alt attribute; use empty alt only for decoration', 'bhranti' ),
-			'duplicate_id'         => __( 'Explicit HTML IDs must be unique', 'bhranti' ),
-			'link_name_missing'    => __( 'Links need an accessible name, including image-only links', 'bhranti' ),
-			'button_name_missing'  => __( 'Buttons need an accessible name', 'bhranti' ),
-			'text_contrast_low'    => __( 'Known text/background colors need at least 3:1 contrast; explicitly smaller text needs 4.5:1. Verify theme-sized text after rendering', 'bhranti' ),
-			'content_review_limit' => __( 'The content exceeds the bounded authored-content review limit', 'bhranti' ),
+			'image_alt_missing'          => __( 'Images need an alt attribute; use empty alt only for decoration', 'bhranti' ),
+			'duplicate_id'               => __( 'Explicit HTML IDs must be unique', 'bhranti' ),
+			'link_name_missing'          => __( 'Links need an accessible name, including image-only links', 'bhranti' ),
+			'button_name_missing'        => __( 'Buttons need an accessible name', 'bhranti' ),
+			'text_contrast_low'          => __( 'Known text/background colors need at least 3:1 contrast; explicitly smaller text needs 4.5:1. Verify theme-sized text after rendering', 'bhranti' ),
+			'group_border_class_missing' => __( 'Core Group blocks with a custom border color need has-border-color on their saved wp-block-group wrapper', 'bhranti' ),
+			'content_review_limit'       => __( 'The content exceeds the bounded authored-content review limit', 'bhranti' ),
 		);
 		$codes  = array_slice( array_values( array_unique( $codes ) ), 0, 10 );
 		return new WP_Error(
 			'bhranti_content_quality',
-			/* translators: %s: A bounded list of predefined accessibility repair labels. */
-			sprintf( __( 'Fix these authored-content accessibility checks before saving: %s.', 'bhranti' ), implode( '; ', array_intersect_key( $labels, array_flip( $codes ) ) ) ),
+			/* translators: %s: A bounded list of predefined content repair labels. */
+			sprintf( __( 'Fix these authored-content checks before saving: %s.', 'bhranti' ), implode( '; ', array_intersect_key( $labels, array_flip( $codes ) ) ) ),
 			array(
 				'status' => 422,
 				'issues' => $codes,

@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.26
+Stable tag: 0.4.27
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -114,6 +114,10 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.27 =
+* Check the native saved wrapper class for new Core Group custom border colors before saving; preserve unchanged legacy issues.
+* Ground the correction in the native WordPress style engine without rendering blocks or rewriting saved content.
 
 = 0.4.26 =
 * Give design tasks explicit native typography roles and composition checks rather than relying on theme defaults.

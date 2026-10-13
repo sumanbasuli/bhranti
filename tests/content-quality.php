@@ -7,8 +7,18 @@
 $core_root = getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Studio/bhranti-2';
 define( 'ABSPATH', rtrim( $core_root, '/' ) . '/' );
 define( 'WPINC', 'wp-includes' );
+define( 'WP_DEBUG', false );
 require ABSPATH . WPINC . '/class-wp-error.php';
 require ABSPATH . WPINC . '/plugin.php';
+require ABSPATH . WPINC . '/functions.php';
+require ABSPATH . WPINC . '/formatting.php';
+require ABSPATH . WPINC . '/kses.php';
+require ABSPATH . WPINC . '/class-wp-block-type.php';
+require ABSPATH . WPINC . '/class-wp-block-type-registry.php';
+foreach ( array( 'engine', 'engine-css-declarations', 'engine-css-rule' ) as $class ) {
+	require ABSPATH . WPINC . '/style-engine/class-wp-style-' . $class . '.php';
+}
+require ABSPATH . WPINC . '/style-engine.php';
 require ABSPATH . WPINC . '/class-wp-block-parser.php';
 require ABSPATH . WPINC . '/blocks.php';
 require ABSPATH . WPINC . '/class-wp-token-map.php';
@@ -17,12 +27,13 @@ foreach ( array( 'attribute-token', 'span', 'doctype-info', 'text-replacement', 
 	require ABSPATH . WPINC . '/html-api/class-wp-html-' . $class . '.php';
 }
 function __( $text, $domain = 'default' ) { return $text; }
-function wp_json_encode( $value ) { return json_encode( $value ); }
 function is_wp_error( $value ) { return $value instanceof WP_Error; }
-function _doing_it_wrong( $function, $message, $version ) { throw new RuntimeException( 'Unexpected native API misuse: ' . $function ); }
 function wp_remote_request() { throw new RuntimeException( 'HTTP forbidden.' ); }
 function wp_ai_client_prompt() { throw new RuntimeException( 'AI forbidden.' ); }
+add_action( 'doing_it_wrong_run', static function( $function ) { throw new RuntimeException( 'Unexpected native API misuse: ' . $function ); } );
 add_filter( 'pre_render_block', static function() { throw new RuntimeException( 'Rendered block callbacks forbidden.' ); } );
+$group_metadata = json_decode( file_get_contents( ABSPATH . WPINC . '/blocks/group/block.json' ), true );
+$group_type = WP_Block_Type_Registry::get_instance()->register( 'core/group', array( 'supports' => $group_metadata['supports'], 'attributes' => $group_metadata['attributes'] ) );
 require dirname( __DIR__ ) . '/includes/class-bhranti-content-quality.php';
 $checks = 0;
 function cq_check( $condition, $message ) {
@@ -49,6 +60,55 @@ function cq_block( $name, $attributes, $html ) {
 function cq_color( $foreground, $extra = 'font-size:16px;', $text = 'Readable text' ) {
 	return '<p style="color:' . $foreground . ';background-color:#fff;' . $extra . '">' . $text . '</p>';
 }
+
+$group_attributes = array( 'style' => array( 'border' => array( 'color' => '#ccd8dd', 'width' => '1px', 'style' => 'solid', 'radius' => '8px' ) ) );
+$group_child = '<!-- wp:paragraph --><p>A card.</p><!-- /wp:paragraph -->';
+$group_wrapper = '<div class="wp-block-group" style="border-color:#ccd8dd;border-style:solid;border-width:1px;border-radius:8px">' . $group_child . '</div>';
+$group_missing = cq_block( 'group', $group_attributes, $group_wrapper );
+$group_valid = str_replace( 'class="wp-block-group"', 'class="wp-block-group has-border-color"', $group_missing );
+cq_check( 'has-border-color' === wp_style_engine_get_styles( array( 'border' => array( 'color' => '#ccd8dd' ) ) )['classnames'], 'Installed native style engine supplies the Group border class.' );
+cq_pass( $group_valid );
+$group_result = cq_error( $group_missing, array( 'group_border_class_missing' ) );
+cq_check( false !== strpos( $group_result->get_error_message(), 'has-border-color' ) && false === strpos( $group_result->get_error_message(), '#ccd8dd' ), 'Repair message names the native class without exposing authored color or content.' );
+cq_error( cq_block( 'group', array(), '<div class="wp-block-group">' . $group_missing . '</div>' ), array( 'group_border_class_missing' ) );
+cq_error( str_replace( '<p>A card.</p>', '<p class="has-border-color">A card.</p>', $group_missing ), array( 'group_border_class_missing' ) );
+cq_pass( $group_missing . '<p>Unrelated new text.</p>', $group_missing );
+cq_pass( str_replace( 'A card.', 'Revised card text.', $group_missing ), $group_missing );
+cq_pass( str_replace( 'class="wp-block-group"', 'class="wp-block-group extra-theme-class"', $group_missing ), $group_missing );
+cq_error( $group_missing . $group_missing, array( 'group_border_class_missing' ), $group_missing );
+cq_error( str_replace( '#ccd8dd', '#ddeeff', $group_missing ), array( 'group_border_class_missing' ), $group_missing );
+cq_pass( $group_valid, $group_missing );
+$section_attributes = $group_attributes + array( 'tagName' => 'section' );
+$section_wrapper = str_replace( array( '<div', '</div>' ), array( '<section', '</section>' ), $group_wrapper );
+cq_error( cq_block( 'group', $section_attributes, $section_wrapper ), array( 'group_border_class_missing' ) );
+cq_pass( cq_block( 'group', $section_attributes, str_replace( 'class="wp-block-group"', 'class="wp-block-group has-border-color"', $section_wrapper ) ) );
+cq_pass( cq_block( 'vendor/group', $group_attributes, $group_wrapper ) );
+cq_pass( cq_block( 'columns', $group_attributes, '<div class="wp-block-columns"></div>' ) );
+cq_pass( cq_block( 'group', array(), $group_wrapper ) );
+cq_pass( cq_block( 'group', array( 'borderColor' => 'theme-preset' ), $group_wrapper ) );
+cq_pass( cq_block( 'group', $group_attributes + array( 'borderColor' => 'theme-preset' ), $group_wrapper ) );
+cq_pass( cq_block( 'group', array( 'style' => array( 'border' => array( 'top' => array( 'color' => '#ccd8dd' ) ) ) ), $group_wrapper ) );
+cq_pass( str_replace( '#ccd8dd', 'var(--theme-border)', $group_missing ) );
+cq_pass( str_replace( '#ccd8dd', 'rgba(0,0,0,0.5)', $group_missing ) );
+cq_pass( cq_block( 'group', $group_attributes, '<custom-wrapper>' . $group_child . '</custom-wrapper>' ) );
+$original_supports = $group_type->supports;
+foreach ( array( 'border', '__experimentalBorder' ) as $feature ) {
+	foreach ( array( true, array( 'color' ) ) as $skip ) {
+		$group_type->supports = $original_supports;
+		$group_type->supports[ $feature ]['__experimentalSkipSerialization'] = $skip;
+		cq_pass( $group_missing );
+	}
+}
+$group_type->supports = $original_supports;
+$group_type->supports['__experimentalBorder']['__experimentalSkipSerialization'] = array( 'width' );
+cq_error( $group_missing, array( 'group_border_class_missing' ) );
+$group_type->supports['__experimentalBorder'] = false;
+cq_pass( $group_missing );
+$group_type->supports['__experimentalBorder'] = array( 'width' => true );
+cq_pass( $group_missing );
+$group_type->supports['__experimentalBorder'] = true;
+cq_error( $group_missing, array( 'group_border_class_missing' ) );
+$group_type->supports = $original_supports;
 
 cq_pass( '<p>A useful café website.</p><img src="image.jpg" alt="The clinic reception">' );
 cq_pass( '<img src="decoration.jpg" alt="">' );
