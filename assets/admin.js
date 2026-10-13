@@ -14,7 +14,7 @@
 	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null, siteControl = null;
-	let pendingAction = null, stopRunKey = '';
+	let pendingAction = null, stopRunKey = '', blockedObservation = null;
 	const settingsEvents = new Map();
 	let triggerFingerprint = '';
 	function rememberOpen(open) { if (settings.isAdmin) { try { if (open) window.sessionStorage.setItem(openStorageKey, '1'); else window.sessionStorage.removeItem(openStorageKey); } catch (error) { /* Storage can be unavailable in private browsing. */ } } }
@@ -385,19 +385,34 @@
 	}
 	function scheduleBackgroundObservation(initial = false) {
 		window.clearTimeout(backgroundTimer); backgroundTimer = null;
-		if (!settings.backgroundEnabled || pageSuspended || state.open || !initial && (!currentRun() || currentRun().status !== 'running' || !currentRun().background)) return;
+		const run = currentRun();
+		if (blockedObservation && (!run || blockedObservation.key !== resultKey() || run.status !== 'running')) blockedObservation = null;
+		if (state.open && state.pausedForEditor && run && run.status === 'running' && !blockedObservation) blockedObservation = { key: resultKey(), runId: run.id, step: run.step, started: Date.now(), stopped: false };
+		if (blockedObservation && !blockedObservation.stopped && Date.now() - blockedObservation.started >= 600000) { blockedObservation.stopped = true; state.connectionError = __('Latest task status is unavailable. Reconnect to check the saved progress.', 'bhranti'); if (state.open) render(); }
+		if (!settings.backgroundEnabled || pageSuspended || state.open && (!blockedObservation || blockedObservation.stopped) || !initial && (!run || run.status !== 'running' || !run.background)) return;
 		backgroundTimer = window.setTimeout(observeBackground, initial ? 0 : 4000);
 	}
 	async function observeBackground() {
 		backgroundTimer = null;
-		const id = state.session && state.session.id || savedSession();
-		if (state.open || pageSuspended || backgroundReading || !id || !/^[1-9]\d*$/.test(String(id))) return;
+		const id = state.session && state.session.id || savedSession(), observation = state.open ? blockedObservation : null;
+		if (state.open && (!observation || observation.stopped || observation.key !== resultKey()) || pageSuspended || backgroundReading || !id || !/^[1-9]\d*$/.test(String(id))) return;
 		if (state.busy || state.stepping) { scheduleBackgroundObservation(); return; }
 		backgroundReading = true;
 		try {
 			const session = await request('/sessions/' + encodeURIComponent(id));
-			if (!state.open && !pageSuspended && String(state.session && state.session.id || savedSession()) === String(id)) { state.session = session; markExistingEvents(); syncTrigger(); }
-		} catch (error) { state.connectionError = __('Latest task status is unavailable. Reopen Bhranti to reconnect.', 'bhranti'); syncTrigger(); }
+			if (pageSuspended || String(state.session && state.session.id || savedSession()) !== String(id)) return;
+			if (observation) {
+				if (!state.open || state.busy || state.stepping || blockedObservation !== observation || observation.key !== resultKey()) return;
+				const run = session && session.run;
+				if (!session || String(session.id) !== String(id) || !run || run.id !== observation.runId || !Number.isSafeInteger(run.step) || run.step < currentRun().step || !['running', 'complete', 'failed', 'cancelled', 'awaiting_input', 'awaiting_confirmation'].includes(run.status)) { observation.stopped = true; state.connectionError = __('The saved task changed. Reconnect to review it.', 'bhranti'); render(); return; }
+				const advanced = run.step > observation.step || run.status !== 'running';
+				// A same-step prepared response cannot prove handover of an observed native write.
+				if (!advanced && currentRun().phase === 'action' && run.phase === 'prepared') return;
+				state.session = session;
+				if (advanced) { state.pausedForEditor = false; state.editorError = ''; editorSync.generation++; observation.step = run.step; observation.started = Date.now(); }
+				markExistingEvents(); render(); revealNewTarget(new Set(), observation.runId);
+			} else if (!state.open) { state.session = session; markExistingEvents(); syncTrigger(); }
+		} catch (error) { if (observation && (pageSuspended || blockedObservation !== observation || observation.key !== resultKey())) return; const status = Number(error && error.data && error.data.status); if (observation && status >= 400 && status < 500) observation.stopped = true; state.connectionError = __('Latest task status is unavailable. Reopen Bhranti to reconnect.', 'bhranti'); if (observation && state.open) render(); else syncTrigger(); }
 		finally { backgroundReading = false; scheduleBackgroundObservation(); }
 	}
 	async function resumeRun() {
@@ -407,7 +422,7 @@
 		try { await reportEditor(true, true); if (editorSummary().dirty) { state.pausedForEditor = true; return; } state.pausedForEditor = false; }
 		catch (error) { state.pausedForEditor = true; notify(state.editorError || errorMessage(error)); }
 		finally { state.busy = false; render(); }
-		if (!state.pausedForEditor) continueRun();
+		if (!state.pausedForEditor) { blockedObservation = null; continueRun(); }
 	}
 	function runtimeContext() {
 		const context = { ...(settings.context || {}), unsaved_changes: editorState().unsaved_changes };
@@ -684,7 +699,7 @@
 	async function continueRun() {
 		if (pageSuspended || state.stepping || state.busy || state.error && !state.stopRequested || !state.open || !currentRun() || currentRun().status !== 'running') return;
 		if (!state.stopRequested && pendingAction && pendingAction.key === resultKey() && pendingAction.step === currentRun().step && currentRun().phase === 'prepared') { state.error = __('The previous action response is still unconfirmed. Reconnect to check the saved task before continuing.', 'bhranti'); render(); return; }
-		state.stepping = true; state.busy = true; collectResults(); render();
+		blockedObservation = null; state.stepping = true; state.busy = true; collectResults(); render();
 		let waitingSince = null, observedRetryAt = null, cancelAttempted = false, continueStop = false;
 		try {
 			while (!pageSuspended && state.open && currentRun() && (currentRun().status === 'running' || state.stopRequested && currentRun().status === 'awaiting_confirmation')) {
@@ -751,7 +766,7 @@
 				continueStop = !cancelAttempted && state.stopRequested && stopRunKey === resultKey() && currentRun().status === 'running' && currentRun().phase === 'prepared';
 			}
 		}
-		finally { state.busy = false; state.stepping = false; reconcileActionControl(); render(); focusComposer(); if (!state.open) scheduleBackgroundObservation(); }
+		finally { state.busy = false; state.stepping = false; reconcileActionControl(); render(); focusComposer(); scheduleBackgroundObservation(); }
 		if (continueStop) continueRun();
 	}
 	async function resumeTask() {

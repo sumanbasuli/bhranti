@@ -15,10 +15,11 @@ if ( ! $forms_root || 0 !== strpos( $forms_root, '/private/tmp/bhranti-forms-nat
 }
 $GLOBALS['forms_qa_http'] = 0;
 $GLOBALS['forms_qa_mail'] = 0;
+$GLOBALS['forms_qa_cf7'] = 'assets-absent' !== ( $argv[1] ?? '' );
 $GLOBALS['forms_qa_flamingo'] = true;
 $GLOBALS['wp_filter']['option_active_plugins'][10][] = array(
 	'function' => static function () {
-		return array_merge( array( 'bhranti/bhranti.php', 'contact-form-7/wp-contact-form-7.php' ), $GLOBALS['forms_qa_flamingo'] ? array( 'flamingo/flamingo.php' ) : array() );
+		return array_merge( array( 'bhranti/bhranti.php' ), $GLOBALS['forms_qa_cf7'] ? array( 'contact-form-7/wp-contact-form-7.php' ) : array(), $GLOBALS['forms_qa_flamingo'] ? array( 'flamingo/flamingo.php' ) : array() );
 	},
 	'accepted_args' => 1,
 );
@@ -47,7 +48,18 @@ foreach ( array( 'Bhranti_Forms' => 'class-bhranti-forms.php', 'Bhranti_Actions'
 		throw new RuntimeException( 'Copy the current staged plugin into the isolated QA runtime before testing.' );
 	}
 }
-if ( realpath( ABSPATH ) !== $forms_root || ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON || '6.2.2' !== WPCF7_VERSION || '2.6.4' !== FLAMINGO_VERSION ) {
+if ( realpath( ABSPATH ) !== $forms_root || ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+	throw new RuntimeException( 'Unexpected isolated runtime.' );
+}
+if ( ! $GLOBALS['forms_qa_cf7'] ) {
+	do_action( 'wp_enqueue_scripts' );
+	if ( class_exists( 'WPCF7_ContactForm', false ) || wp_style_is( 'bhranti-forms', 'registered' ) || wp_style_is( 'bhranti-forms', 'enqueued' ) || $GLOBALS['forms_qa_http'] || $GLOBALS['forms_qa_mail'] ) {
+		throw new RuntimeException( 'Absent native plugin must not register or enqueue form CSS.' );
+	}
+	echo "PASS absent native form dependency: no stylesheet, HTTP or mail.\n";
+	exit;
+}
+if ( '6.2.2' !== WPCF7_VERSION || '2.6.4' !== FLAMINGO_VERSION ) {
 	throw new RuntimeException( 'Unexpected isolated runtime or official form plugin versions.' );
 }
 
@@ -119,6 +131,18 @@ $forms_definition = array(
 );
 
 try {
+	forms_check( 10 === has_filter( 'wpcf7_form_class_attr', array( 'Bhranti_Forms', 'form_class' ) ) && 20 === has_action( 'wp_enqueue_scripts', array( 'Bhranti_Forms', 'enqueue' ) ), 'main plugin registers native class and later frontend asset hooks' );
+	do_action( 'wp_enqueue_scripts' );
+	$style = wp_styles()->registered['bhranti-forms'] ?? null;
+	forms_check( $style && wp_style_is( 'bhranti-forms', 'enqueued' ) && array( 'contact-form-7' ) === $style->deps && plugins_url( 'assets/forms.css', BHRANTI_FILE ) === $style->src && BHRANTI_VERSION === $style->ver, 'managed CSS is registered with native URL/version and follows CF7 base assets' );
+	wp_dequeue_style( 'contact-form-7' );
+	wp_dequeue_style( 'bhranti-forms' );
+	wp_deregister_style( 'bhranti-forms' );
+	Bhranti_Forms::enqueue();
+	forms_check( array() === wp_styles()->registered['bhranti-forms']->deps && ! wp_style_is( 'contact-form-7', 'enqueued' ), 'sites disabling native base CSS are not forced to load it' );
+	$absent_output = array(); $absent_exit = 0;
+	exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __FILE__ ) . ' assets-absent', $absent_output, $absent_exit );
+	forms_check( 0 === $absent_exit && 0 === strpos( implode( "\n", $absent_output ), 'PASS absent native form dependency' ), 'fresh native request without CF7 loads no Bhranti form stylesheet' );
 	$GLOBALS['forms_user'] = wp_insert_user( array( 'user_login' => 'bhranti-forms-qa-' . wp_generate_uuid4(), 'user_pass' => wp_generate_password( 40 ), 'user_email' => 'forms-qa@example.invalid', 'role' => 'administrator' ) );
 	forms_check( ! is_wp_error( $GLOBALS['forms_user'] ), 'isolated human fixture' );
 	wp_set_current_user( $GLOBALS['forms_user'] );
@@ -219,9 +243,27 @@ try {
 	$config = new WPCF7_ConfigValidator( $native );
 	$config->validate();
 	forms_check( ! $config->collect_error_messages(), 'native configuration validator accepts generated definition' );
+	$render_meta = get_post_meta( $form_id );
+	$render_content = get_post( $form_id )->post_content;
 	$html = do_shortcode( $created['data']['shortcode'] );
 	forms_check( false !== strpos( $html, '<form ' ) && false !== strpos( $html, 'name="your-name"' ) && false !== strpos( $html, 'type="email"' ) && false !== strpos( $html, '<select ' ) && false !== strpos( $html, 'type="submit"' ), 'native shortcode renders actual fields and submit control' );
 	forms_check( false !== strpos( $html, 'aria-required="true"' ), 'native required-field accessibility' );
+	$rendered_form = new WP_HTML_Tag_Processor( $html );
+	forms_check( $rendered_form->next_tag( 'FORM' ) && $rendered_form->has_class( 'bhranti-managed-form' ) && $rendered_form->has_class( 'wpcf7-form' ), 'native managed form receives only the additive presentation class' );
+	$custom_html = do_shortcode( '[contact-form-7 id="' . $form_id . '" html_class="bhranti-managed-form qa-existing"]' );
+	$custom_form = new WP_HTML_Tag_Processor( $custom_html );
+	$custom_form->next_tag( 'FORM' );
+	forms_check( $custom_form->has_class( 'qa-existing' ) && 1 === substr_count( $custom_form->get_attribute( 'class' ), 'bhranti-managed-form' ), 'native custom classes are preserved without duplicating the managed class' );
+	forms_check( $render_meta === get_post_meta( $form_id ) && $render_content === get_post( $form_id )->post_content, 'rendering presentation leaves native settings, fingerprints and saved content unchanged' );
+	$ordinary = WPCF7_ContactForm::get_template();
+	$ordinary->set_title( $forms_marker . ' ordinary native form' );
+	$ordinary->save();
+	$ordinary_markup = do_shortcode( $ordinary->shortcode() );
+	$ordinary_form = new WP_HTML_Tag_Processor( $ordinary_markup );
+	forms_check( $ordinary_form->next_tag( 'FORM' ) && ! $ordinary_form->has_class( 'bhranti-managed-form' ) && $ordinary_form->has_class( 'wpcf7-form' ), 'unmanaged native forms retain their original classes' );
+	update_post_meta( $ordinary->id(), '_bhranti_form_definition', array( 'requester_id' => 0 ) );
+	$ordinary_form = new WP_HTML_Tag_Processor( do_shortcode( $ordinary->shortcode() ) );
+	forms_check( $ordinary_form->next_tag( 'FORM' ) && ! $ordinary_form->has_class( 'bhranti-managed-form' ), 'a marker without an owning human never enables managed presentation' );
 
 	$updated_definition = $forms_definition;
 	$updated_definition['confirmation'] = 'Your request is waiting for staff confirmation.';

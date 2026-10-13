@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bhranti
  * Description: A WordPress-aware AI workspace with an admin-bar chat panel, reviewed API actions, and activity logs. Uses WordPress AI connectors.
- * Version: 0.4.22
+ * Version: 0.4.23
  * Requires at least: 7.0
  * Requires PHP: 7.4
  * Author: Suman Basuli
@@ -15,7 +15,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'BHRANTI_VERSION', '0.4.22' );
+define( 'BHRANTI_VERSION', '0.4.23' );
 define( 'BHRANTI_FILE', __FILE__ );
 // Plugin deletion is opt-in in Settings and always needs an explicit human approval.
 define( 'BHRANTI_ALLOW_IRREVERSIBLE_PLUGIN_DELETION', true );
@@ -44,6 +44,7 @@ require_once __DIR__ . '/includes/class-bhranti-settings.php';
 
 Bhranti_Privacy::register();
 Bhranti_Actions::register();
+Bhranti_Forms::register();
 Bhranti_Panel::register();
 Bhranti_Settings::register();
 Bhranti_Memory::register();

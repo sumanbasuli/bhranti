@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.22
+Stable tag: 0.4.23
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,8 @@ Routine actions default on, including directory plugin installation and activati
 The WooCommerce integration searches, creates and edits simple products and product categories, assigns existing Media Library images, and manages selected currency, catalog, inventory and store-page settings. New products default to draft; moving a product to Trash requires the human approval button. Supported changes retain conflict-safe Undo. For a requested store, Bhranti can use the existing native installer to add WooCommerce and ask for product facts, prices, shipping and payment choices. Payment account connections stay in native human setup. Orders, customer data and financial transactions are outside this integration.
 
 Built-in WordPress guidance covers blocks, templates, shared template parts, homepages, media and store workflows. It guides every connected model to discover existing state, make a focused change and verify the saved result. Bhranti handles supported technical setup and asks for business decisions in plain language. Model capabilities still vary.
+
+Bundled design guidance prefers core and installed blocks, complete visitor journeys and WCAG 2.2 AA requirements. Authored-content checks reject mechanically known new defects; they do not certify rendered-site conformance. Existing working forms are preferred. A reviewed Contact Form 7 adapter can create labelled request forms with an explicitly chosen notification destination; dashboard-only storage requires Flamingo and disables native mail. Native form configuration is audited; unchanged managed updates support Undo, while form creation has no automatic deletion Undo. Page embedding retains its separate content restoration.
 
 Supported operations include posts, pages, registered content using core REST controllers, comments, navigation/menu items, template customizations, global styles, media metadata, native AI image generation, installed-theme discovery, existing terms/menus, selected site settings, and reviewed plugin listing, WordPress.org installation, activation/deactivation and explicitly approved inactive-plugin uninstallation. Bhranti and its native AI/connector dependencies are protected from disruption. Unsupported operations include arbitrary source code, core/plugin/theme files, account/role/credential/security changes, unreviewed third-party routes, arbitrary media upload or file replacement, irreversible content deletion, arbitrary plugin ZIP/URL uploads, deletion of existing templates, and new taxonomy terms/classic menus outside the reviewed product-category integration.
 
@@ -112,6 +114,10 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.4.23 =
+* Give Bhranti-created native request forms responsive controls, generous targets and readable focus and validation states without changing other site forms.
+* Reconcile saved task progress after an editor-safety read fails, without repeating an action.
 
 = 0.4.22 =
 * Bundle provider-neutral WordPress design guidance for complete professional site layouts and WCAG 2.2 AA acceptance requirements.

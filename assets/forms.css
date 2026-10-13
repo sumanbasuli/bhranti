@@ -1,0 +1,114 @@
+/* Frontend presentation only for Contact Form 7 forms created by Bhranti. */
+.wpcf7-form.bhranti-managed-form {
+	max-width: 100%;
+	font: inherit;
+	line-height: 1.5;
+}
+
+.wpcf7-form.bhranti-managed-form p {
+	margin: 0 0 1.25em;
+}
+
+.wpcf7-form.bhranti-managed-form label {
+	display: block;
+	font-weight: 500;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-form-control-wrap {
+	display: block;
+	margin-top: 0.375em;
+}
+
+.wpcf7-form.bhranti-managed-form input[type="text"],
+.wpcf7-form.bhranti-managed-form input[type="email"],
+.wpcf7-form.bhranti-managed-form select,
+.wpcf7-form.bhranti-managed-form textarea {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	min-height: 44px;
+	padding: 0.625em 0.75em;
+	border: 1px solid #757575;
+	border-radius: 4px;
+	background: #fff;
+	color: #1e1e1e;
+	font: inherit;
+	line-height: 1.5;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-submit {
+	box-sizing: border-box;
+	max-width: 100%;
+	min-height: 44px;
+	padding: 0.625em 1.25em;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: #1e1e1e;
+	color: #fff;
+	font: inherit;
+	font-weight: 600;
+	line-height: 1.5;
+	cursor: pointer;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-submit:hover:not(:disabled) {
+	background: #2c3338;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-form-control:focus-visible {
+	outline: 3px solid #3858e9;
+	outline-offset: 3px;
+	box-shadow: 0 0 0 3px #fff;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-form-control:disabled {
+	border-color: #a7aaad;
+	background: #dcdcde;
+	color: #50575e;
+	opacity: 1;
+	cursor: not-allowed;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-form-control.wpcf7-not-valid {
+	border-color: #b32d2e;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-not-valid-tip {
+	margin-top: 0.375em;
+	padding: 0.25em 0.5em;
+	background: #fff;
+	color: #b32d2e;
+	font-size: 0.875em;
+	font-weight: 400;
+}
+
+.wpcf7-form.bhranti-managed-form .wpcf7-response-output {
+	box-sizing: border-box;
+	margin: 1em 0;
+	padding: 0.75em 1em;
+	border-radius: 4px;
+	background: #fff;
+	color: #1e1e1e;
+	overflow-wrap: anywhere;
+}
+
+.wpcf7-form.bhranti-managed-form.init .wpcf7-response-output,
+.wpcf7-form.bhranti-managed-form.resetting .wpcf7-response-output,
+.wpcf7-form.bhranti-managed-form.submitting .wpcf7-response-output {
+	display: none;
+}
+
+.wpcf7-form.bhranti-managed-form.sent .wpcf7-response-output {
+	border-color: #008a20;
+}
+
+.wpcf7-form.bhranti-managed-form.failed .wpcf7-response-output,
+.wpcf7-form.bhranti-managed-form.aborted .wpcf7-response-output {
+	border-color: #b32d2e;
+}
+
+.wpcf7-form.bhranti-managed-form.invalid .wpcf7-response-output,
+.wpcf7-form.bhranti-managed-form.unaccepted .wpcf7-response-output,
+.wpcf7-form.bhranti-managed-form.spam .wpcf7-response-output {
+	border-color: #996800;
+}

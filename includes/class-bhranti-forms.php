@@ -11,6 +11,42 @@ defined( 'ABSPATH' ) || exit;
 /** Keep form design separate from submissions, mail transport and executable code. */
 final class Bhranti_Forms {
 
+	/** Register presentation hooks without changing native form definitions. */
+	public static function register() {
+		add_filter( 'wpcf7_form_class_attr', array( __CLASS__, 'form_class' ) );
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ), 20 );
+	}
+
+	/**
+	 * Mark only forms created through the reviewed adapter for scoped styling.
+	 *
+	 * @param string $classes Native form classes.
+	 * @return string
+	 */
+	public static function form_class( $classes ) {
+		if ( ! is_string( $classes ) || ! self::native_class( 'WPCF7_ContactForm', 'contact-form-7/includes/contact-form.php' ) ) {
+			return $classes;
+		}
+		$form = WPCF7_ContactForm::get_current();
+		if ( ! $form || ! $form->id() ) {
+			return $classes;
+		}
+		$managed = get_post_meta( $form->id(), '_bhranti_form_definition', true );
+		if ( is_array( $managed ) && (int) ( $managed['requester_id'] ?? 0 ) > 0 && ! in_array( 'bhranti-managed-form', preg_split( '/\s+/', $classes ), true ) ) {
+			$classes .= ' bhranti-managed-form';
+		}
+		return $classes;
+	}
+
+	/** Enqueue after native assets, respecting sites that disable CF7's base CSS. */
+	public static function enqueue() {
+		if ( is_admin() || ! self::availability()['available'] ) {
+			return;
+		}
+		$dependencies = wp_style_is( 'contact-form-7', 'enqueued' ) ? array( 'contact-form-7' ) : array();
+		wp_enqueue_style( 'bhranti-forms', plugins_url( 'assets/forms.css', BHRANTI_FILE ), $dependencies, BHRANTI_VERSION );
+	}
+
 	/** Describe the reviewed native form operations to any connected model. */
 	public static function catalog() {
 		return array(

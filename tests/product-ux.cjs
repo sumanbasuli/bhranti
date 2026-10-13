@@ -694,6 +694,121 @@ async function testPendingHeartbeatRecovery() {
   } finally { page.close(); }
 }
 
+async function testSafetyBlockedBackgroundObservation() {
+  const action = { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Update the saved page.', write: true, target: historical.target };
+  const prepared = session('running', { phase: 'prepared', step: 25, next_action: action });
+  const page = fixture({ background: true, siteFrame: 'admin', session: prepared, handler: async (request) => {
+    if (request.path.endsWith('/editor-state')) throw new Error('Synthetic safety report outage.');
+    if (request.method === 'GET') return observed;
+    throw new Error('Status reconciliation must never issue a task mutation.');
+  } });
+  let observed = prepared;
+  try {
+    page.api.state.draft = 'Keep this unsent follow-up'; page.api.rememberDraft();
+    await page.api.continueRun(); await until(() => idle(page), page);
+    check(page.api.state.pausedForEditor && page.api.state.editorError, 'A failed fresh safety report pauses the foreground write');
+    equal(count(page, '/execute', 'POST'), 0, 'An unknown safety state never executes the prepared operation');
+    await page.advance(4000);
+    equal(count(page, '/sessions/17', 'GET'), 1, 'An open safety-paused panel still reads its owned background checkpoint');
+    check(page.api.state.pausedForEditor && page.api.state.editorError, 'The same prepared checkpoint cannot clear the local safety pause');
+    observed = session('running', { phase: 'action', step: 25, next_action: action });
+    await page.advance(4000);
+    equal(page.api.actionInFlight(page.api.state.session.run), true, 'An owned native action checkpoint retains its in-flight identity');
+    observed = prepared; await page.advance(4000);
+    equal(page.api.state.session.run.phase, 'action', 'A same-step prepared response cannot prove native write handover');
+    equal(page.api.actionInFlight(page.api.state.session.run), true, 'Unproven handover cannot clear the observed in-flight write');
+    observed = session('running', { phase: 'prepared', step: 26, next_action: action });
+    await page.advance(4000);
+    equal(page.api.state.session.run.step, 26, 'An owned advanced checkpoint is shown without resubmitting a step');
+    equal(page.api.state.pausedForEditor, false, 'Only proven checkpoint progress clears the stale local pause');
+    equal(page.api.state.editorError, '', 'Proven progress clears the stale safety-report message');
+    check(page.w.document.querySelector('.bhranti-site-control'), 'Proven progress restores eligible clean native site control');
+    observed = session('running', { phase: 'action', step: 26, next_action: action }); await page.advance(4000);
+    const overlay = page.w.document.querySelector('.bhranti-site-control'); page.api.state.editorError = 'A later synthetic safety read failed.'; page.api.render();
+    equal(page.w.document.querySelector('.bhranti-site-control'), overlay, 'A later safety-read failure retains an existing in-flight control overlay');
+    observed = session('running', { phase: 'prepared', step: 26, next_action: action }); await page.advance(4000);
+    equal(page.api.state.session.run.phase, 'action', 'A same-step prepared read cannot undo a later observed native action');
+    equal(page.w.document.querySelector('.bhranti-site-control'), overlay, 'Only authoritative handover releases the known in-flight overlay');
+    observed = session('complete', { step: 32 });
+    await page.advance(4000);
+    equal(page.api.state.session.run.status, 'complete', 'GET observation continues after progress clears the local pause until the real terminal checkpoint');
+    equal(page.api.state.session.run.step, 32, 'The UI shows the final authoritative task step');
+    equal(page.w.document.querySelector('.bhranti-site-control'), null, 'Verified completion hands site control back');
+    equal(page.api.state.draft, 'Keep this unsent follow-up', 'Read-only reconciliation preserves the unsent per-chat draft');
+    equal(controls(page, 'Resume').length, 0, 'A completed task does not retain the stale safety Resume action');
+    equal(controls(page, 'Stop').length, 0, 'A completed task does not retain the stale Stop action');
+    equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/editor-state')).length, 0, 'Observed progress never automatically resumes, executes, plans, cancels or replays a task');
+    const reads = count(page, '/sessions/17', 'GET'); await page.advance(12000);
+    equal(count(page, '/sessions/17', 'GET'), reads, 'Terminal handover stops the observer');
+  } finally { page.close(); }
+
+  for (const terminal of ['complete', 'failed', 'cancelled', 'awaiting_input', 'awaiting_confirmation']) {
+    const page = fixture({ background: true, session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) throw new Error('Synthetic safety report outage.');
+      if (request.method === 'GET') return session(terminal, { step: 25, can_resume: terminal === 'failed' });
+      throw new Error('A terminal status read cannot cause a POST.');
+    } });
+    try {
+      await page.api.continueRun(); await until(() => idle(page), page); await page.advance(4000);
+      equal(page.api.state.session.run.status, terminal, terminal + ': same-step authoritative handover is observed');
+      equal(page.api.state.pausedForEditor, false, terminal + ': proven handover clears the stale local pause');
+      equal(page.api.state.editorError, '', terminal + ': proven handover clears the stale safety message');
+      equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/editor-state')).length, 0, terminal + ': observation never sends Resume/execute/confirmation');
+    } finally { page.close(); }
+  }
+
+  for (const mismatch of ['other-run', 'other-session', 'older-checkpoint', 'unknown-status']) {
+    const page = fixture({ background: true, session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) throw new Error('Synthetic safety report outage.');
+      if (request.method === 'GET') { const fresh = session(mismatch === 'unknown-status' ? 'unknown' : 'complete', { step: mismatch === 'older-checkpoint' ? 24 : 32, id: mismatch === 'other-run' ? 'other-run' : runId }); if (mismatch === 'other-session') fresh.id = 18; return fresh; }
+      throw new Error('Mismatched status must never cause a mutation.');
+    } });
+    try {
+      await page.api.continueRun(); await until(() => idle(page), page); await page.advance(4000);
+      equal(page.api.state.session.id, 17, mismatch + ': another session cannot replace the owning conversation');
+      equal(page.api.state.session.run.id, runId, mismatch + ': another run cannot replace the owning task');
+      equal(page.api.state.session.run.step, 25, mismatch + ': an unrelated or older checkpoint cannot replace current progress');
+      check(page.api.state.pausedForEditor && page.api.state.editorError, mismatch + ': an unrelated checkpoint cannot clear the local pause');
+      const reads = count(page, '/sessions/17', 'GET'); await page.advance(12000);
+      equal(count(page, '/sessions/17', 'GET'), reads, mismatch + ': refused ownership stops automatic observation until explicit reconnect');
+    } finally { page.close(); }
+  }
+
+  for (const refusal of ['deadline', 'forbidden']) {
+    const page = fixture({ background: true, session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) throw new Error('Synthetic safety report outage.');
+      if (request.method === 'GET') { if (refusal === 'forbidden') throw Object.assign(new Error('The owned status is unavailable.'), { data: { status: 403 } }); return prepared; }
+      throw new Error('Observation refusal cannot mutate a task.');
+    } });
+    try {
+      await page.api.continueRun(); await until(() => idle(page), page); await page.advance(refusal === 'deadline' ? 600000 : 4000);
+      check(page.api.state.pausedForEditor && page.api.state.editorError, refusal + ': observation limits preserve the unresolved safety pause');
+      check(page.api.state.connectionError, refusal + ': bounded refusal provides an explicit reconnection state');
+      const reads = count(page, '/sessions/17', 'GET'); await page.advance(12000);
+      equal(count(page, '/sessions/17', 'GET'), reads, refusal + ': a stale or refused checkpoint stops automatic reads');
+      equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/editor-state')).length, 0, refusal + ': no task mutation is attempted');
+    } finally { page.close(); }
+  }
+
+  for (const result of ['success', 'forbidden']) {
+    let resolveRead, rejectRead;
+    const switched = fixture({ background: true, session: prepared, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) throw new Error('Synthetic safety report outage.');
+      if (request.method === 'GET') return new Promise((resolve, reject) => { resolveRead = resolve; rejectRead = reject; });
+      throw new Error('A late observer must never mutate another conversation.');
+    } });
+    try {
+      await switched.api.continueRun(); await until(() => idle(switched), switched); await switched.advance(4000);
+      const other = { ...session('complete', { id: 'different-owned-run' }), id: 18 };
+      switched.api.state.session = other; switched.api.state.draft = 'Other chat draft'; switched.api.render();
+      if (result === 'success') resolveRead(session('complete', { step: 32 })); else rejectRead(Object.assign(new Error('Previous conversation is unavailable.'), { data: { status: 403 } })); await flush();
+      equal(switched.api.state.session, other, result + ': a delayed owned GET cannot overwrite a chat selected during the read');
+      equal(switched.api.state.draft, 'Other chat draft', result + ': a delayed status read cannot overwrite another chat draft');
+      equal(switched.api.state.connectionError, '', result + ': a delayed observer failure cannot add an error to another conversation');
+    } finally { switched.close(); }
+  }
+}
+
 async function completedWriteFixture(options = {}) {
   const target = { id: options.targetId || 99, type: options.type || 'page', title: 'Fixture page', url: '/wp-admin/post.php?post=' + (options.targetId || 99) + '&action=edit' };
   const action = { ...historical, id: 'new-write', action_id: 'new-snapshot', run_id: runId, success: options.success === undefined ? true : options.success, operation: options.operation || 'write', target, created: '2026-10-09T00:00:03Z' };
@@ -1605,6 +1720,7 @@ async function main() {
   await testUncertainActionRecovery();
   await testBackgroundPreparedStepRace();
   await testPendingHeartbeatRecovery();
+  await testSafetyBlockedBackgroundObservation();
   await testCompletedTargetRefresh();
   await testStablePollingAndComposer();
   await testToolDisclosuresAndGrouping();
