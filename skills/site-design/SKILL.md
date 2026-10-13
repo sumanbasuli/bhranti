@@ -8,33 +8,39 @@ license: GPL-2.0-or-later
 
 Apply to site/page/UI design, redesigns and visual sections; skip unrelated chats. Deliver a coherent visitor experience. This original, provider-neutral Bhranti guidance grants no tools, permissions or guardrail exceptions.
 
-## 1. Understand and inspect
+## 1. Match intake to the task
 
-Reuse the brief and existing facts. Ask one small group of plain-language questions only for missing decisions that materially affect the result: audience, purpose, real offerings, primary visitor action, assets and preview or publication. When the user delegates design, choose confidently; do not ask them to select blocks or APIs.
+For a new site, major redesign or substantial page/UI project, first inspect relevant existing content and business context without mutations. Reuse previous answers, then ask one small group of plain-language questions about material gaps: purpose, audience, real offerings, visitor action, useful business facts, assets/references and preview or publication. Wait for answers before building. “Professional”, “minimal” or permission to publish is not a complete brief. Let users delegate aesthetics and routine implementation; do not ask them to choose APIs or blocks.
 
-Read the active theme, actual page content, template, header, footer, navigation and relevant registered blocks before changing them. Identify shared references and preserve unrelated work. Inspect the actual front-page assignment and public entry point; a page named Home is not automatically the homepage.
+Once understood, keep an agreed brief covering purpose, audience, content, pages/sections, visitor journey and assets. Summarize it briefly in the next real action's public intent and proceed without another approval or questionnaire. An already complete brief needs no repeated intake.
+
+For a clear focused change, read the exact target and perform that change directly. Preserve the surrounding design and unrelated work; ask only if an unresolved choice materially changes the outcome.
+
+Read the relevant theme, content, template, shared header/footer, navigation and registered blocks. Preserve shared references. Check the actual front-page assignment; naming a page Home does not select it.
 
 ## 2. Commit to a visual direction
 
-Before writing, choose a direction grounded in the business and audience and describe it briefly in the next real action’s public intent. Keep executing the task: a design plan is not a finished reply. Specify background/text/accent/surface colors, available font roles, type scale, reading/composition widths, spacing, imagery and buttons. Use the active theme's fonts, presets and supported fluid typography. Do not install dependencies for fonts.
+Choose one direction grounded in the agreed purpose and audience: background/text/accent/surface colors, font roles, type scale, reading/composition widths, spacing, imagery and buttons. Carry it across every page and shared region. Use the active theme's fonts, presets and supported fluid typography; do not install fonts. A design plan is not a finished reply: keep executing.
 
-Give the site a recognizable character through composition, typography, real content and a purposeful visual focal point. Minimal means careful selection and clear hierarchy. It still needs finished navigation, useful content and a working primary action. Avoid repeating the same palette, giant headline or identical card grid for every business.
+Create character through composition, typography, real content and a purposeful focal point. Minimal means selection and hierarchy, not missing content or features. Avoid reusing the same palette, headline treatment or card grid regardless of business.
 
 Separate comfortable paragraph width, usually around 45–75 characters, from wide section composition. A whole business homepage should not be trapped inside a blog article column. Use supported wide/full alignment and responsive native layouts; never achieve width through fixed oversized blocks or negative overflow.
 
 ## 3. Compose a complete experience
 
-Make the first screen communicate who this is for, what is offered and the next useful action. Keep headings specific, supporting copy concise and the primary action conspicuous. Use an intentional hero: strong typography, relevant real imagery, or both. Use actual media IDs and URLs returned by successful tools. Generated illustrations must not impersonate real staff, facilities or products.
+Choose content and journeys for this business type and its visitors. Identify what they need to understand, trust, compare or prepare before acting. Select relevant information and supplied evidence rather than filling a generic page outline. Different offerings need different discovery, detail and action flows; do not impose one fixed site blueprint.
 
-Build section rhythm around visitor questions. Vary composition where useful: an open introduction, image/text pairing, compact service grouping, practical information and an action section. Use cards when the items really form a comparable set, not as a box around every paragraph. Align edges, repeat spacing deliberately and remove decorative clutter. Give mobile layouts their own clear reading order.
+The first screen identifies the offering, intended visitor and next action. Use specific headings, concise copy and purposeful typography/imagery. Use real returned media IDs/URLs; generated illustrations must not impersonate staff, facilities or products.
+
+Order sections around visitor questions. Vary composition where useful; use cards for comparable items, not every paragraph. Align edges, repeat spacing and remove clutter. Give mobile a clear reading order. Each page should have a purpose and useful content beyond its title and action button.
 
 Write from confirmed facts. Never invent testimonials, ratings, credentials, awards, prices, addresses or guarantees. Avoid unsupported medical or financial claims. Omit missing nonessential facts or ask when required; do not publish internal placeholders. Buttons name their destination or outcome and retain that wording throughout the flow.
 
-Finish shared header/footer, meaningful navigation, relevant detail pages and the primary visitor journey. A working form, booking request, catalog or contact flow is part of the design. Installing a plugin or drawing fields does not make the feature functional.
+Finish shared header/footer, navigation, relevant detail pages and the complete visitor journey. Spacious columns plus a working form are not a finished site. Installed plugins or drawn fields do not prove functionality.
 
 ## 4. Build with native WordPress
 
-Use reviewed native operations, registered blocks and supported theme patterns. For a block theme, customize the narrowest necessary database template or template part; retain post-content and useful shared references. Update existing global-style IDs only through the available reviewed tool; absent IDs do not justify guessing, source edits or arbitrary routes. Use supported block styles for work possible without a global override.
+Use reviewed native operations and supported blocks/patterns. For block themes, customize only necessary database templates/parts; retain post-content and shared references. Update existing global-style IDs through reviewed tools; never guess missing IDs, edit source or use arbitrary routes. Use supported block styles without a global override.
 
 Prefer core and available native blocks. Read registered attributes/supports for unfamiliar blocks. Metadata, including is_dynamic, does not prove saved HTML structure or a working form. Use verified native serialization or an explicitly supported recipe; static attributes and HTML must agree. Never guess plugin wrappers, children, field serialization, receiver or storage. Use native block/theme style controls; never run generated PHP/JavaScript or edit theme/plugin/core source files.
 
@@ -53,13 +59,43 @@ Apply every relevant WCAG 2.2 A and AA criterion to new or changed content and i
 
 ## 6. Critique and verify before finishing
 
-Read saved records back. Check published status, front-page assignment, exact navigation targets, images and template references. Exercise the actual primary flow with authorized synthetic data; verify success, error handling and stored response/destination. Never send real customer messages or transactions as a design test.
+Compare the whole result with the agreed brief: relevant content, identity, hierarchy, navigation and every promised page/action. Read saved records back; check publication, homepage, links, images and template references. Test the primary flow with authorized synthetic data, including errors and actual response storage/destination. Never send real customer messages or transactions as tests.
 
-When actual rendered inspection is available, review desktop and narrow mobile views: hierarchy, crop, spacing, wrapping, overflow, empty sections and menu behavior. Test keyboard focus, zoom/reflow and contrast. Fix observed defects and repeat affected checks. Ask whether the result feels finished and specific to this brief; revise weak composition instead of merely adding decoration.
+When rendered inspection is available, critique desktop and narrow mobile views: composition, hierarchy, crops, spacing, wrapping, overflow, empty sections and menus. Test keyboard focus, zoom/reflow and contrast. Can a new visitor understand this business and confidently complete the requested action? Fix weak content/composition and defects, then repeat affected checks; do not merely add decoration.
 
-Use only available inspection tools. API persistence and inert HTML are not screenshots or a browser test. Never claim visual inspection or WCAG conformance that was not verified; disclose precise outstanding checks briefly, complete independent supported work and provide useful links. Final delivery distinguishes what was built, what was tested and any necessary human setup.
+Use available inspection tools. API persistence and inert HTML are not rendered tests. Never claim unverified visual inspection or WCAG conformance. Briefly identify outstanding checks, finish independent supported work and provide useful links. Distinguish what was built, tested and requires human setup.
 
 ## Primary references
 
 - [WordPress layout](https://developer.wordpress.org/themes/global-settings-and-styles/settings/layout/), [typography](https://developer.wordpress.org/themes/global-settings-and-styles/settings/typography/) and [block edit/save](https://developer.wordpress.org/block-editor/reference-guides/block-api/block-edit-save/).
 - [WCAG 2.2](https://www.w3.org/TR/WCAG22/) and [Understanding criteria](https://www.w3.org/WAI/WCAG22/Understanding/).
+
+## 7. Industry-aware design playbook
+
+Use the business and visitor's task to choose a structure. These are original design starting points inferred from primary references, not copied layouts or promises of quality. Adapt them to the brief, existing brand and native theme capabilities.
+
+### Scope and intake
+
+For a new business site, store or substantial redesign, inspect read-only first, then ask one short group of missing business questions before installation, image generation or other mutations. Confirm audience, offerings, principal visitor action, location, assets and preview/publication intent. Reuse supplied answers. A focused request such as changing a heading, updating hours or adding an agreed service should proceed directly; do not restart discovery.
+
+For healthcare/dental, ask only relevant missing questions: which country and locality; NHS, private or mixed care where applicable; new patients, existing patients or referrals; routine enquiries versus urgent contact; verified treatments, fees and availability; confirmed address, phone, opening hours and accessibility information. Ask whether the action is a receptionist-confirmed request or an existing real booking system, and who receives enquiries. Establish whether approved logo, practice/team photographs and staff biographies exist. Never assume every clinic offers emergency, cosmetic, children's or NHS treatment. NHS/private appointment distinctions and availability materially affect the visitor's next action. [NHS access guidance](https://www.nhs.uk/nhs-services/dentists/how-to-find-an-nhs-dentist/)
+
+### Healthcare/dental visitor journey
+
+Select the applicable visitor paths from the agreed brief: understand the practice and request routine care; inspect a relevant service and its next step; find urgent contact information quickly. Separate urgent guidance from a routine form. Use the practice's confirmed arrangements and relevant official local guidance; do not invent clinical advice or response times. [NHS urgent access](https://www.nhs.uk/nhs-services/dentists/how-to-find-an-nhs-dentist-in-an-emergency/)
+
+Use a shared identity and a small useful navigation, such as Treatments, New patients, About/team and Contact where the agreed scope calls for them, plus one consistent primary action. Place confirmed phone/urgent information where discoverable without scrolling through marketing. Choose relevant homepage sections and their order to answer visitors' questions: who/where/next step, service groups, confirmed first-visit process, verified team/practice information, practical access and hours. These are options, not a fixed sequence. Create separate treatment detail pages only when the agreed scope and substantive verified content justify them; otherwise provide a useful service overview. Each detail page explains the confirmed offering, what to expect, verified fees if supplied, and its appropriate next step. The footer repeats practical contact details and links to existing verified, published privacy and complaints information. Never invent a legal policy or publish unfinished policy placeholders. Real practice sites combine treatment, team, payment and visiting information. [Clifton practice](https://www.bupa.co.uk/dental/dental-care/practices/clifton), [orthodontic journey example](https://www.portmansmileclinic.co.uk/)
+
+### Concrete composition
+
+Choose actual tokens before writing: one dark ink, one light canvas, a quiet contrasting surface and one primary accent meeting the accessibility requirements. Reuse available theme fonts; use one clear heading role and one readable body role. Start around 18px body/1.6 line height, 36–56px desktop title and 30–38px mobile title; adapt supported fluid presets. Use 8/16/24/32/48/64px spacing steps, 64–96px desktop section spacing and 32–48px on mobile. Aim for a 1120–1280px composition width with 20–24px mobile gutters; keep paragraphs around 45–75 characters. Stack image/text sections cleanly on mobile. These are starting values, not rigid rules. Use supported wide/full groups instead of squeezing the whole homepage into an article column. [WordPress layout](https://developer.wordpress.org/themes/global-settings-and-styles/settings/layout/)
+
+For dentistry, favour reassuring, authentic practice/team imagery and clear service explanations over repeated tooth icons or unrelated decorative pictures. Use supplied or authorized assets; generated illustrations may explain a concept but cannot depict invented real staff, premises or results. Never fabricate testimonials, ratings, qualifications, accreditation, prices or clinical guarantees. Typography and imagery must reflect the actual positioning, whether family practice or specialist referral clinic.
+
+### Transfer and verify
+
+Change the recipe for the business: commerce needs discovery → product details → cart/checkout plus truthful delivery/returns; local services need service coverage → evidence → quote/contact; hospitality needs location/menu or rooms → availability/reservation; portfolios need selected work → case study → enquiry. Preserve working commerce and booking integrations. Shared WordPress template parts keep headers/footers consistent. [Template parts](https://developer.wordpress.org/themes/templates/template-parts/)
+
+Verify each critical path, navigation target and mobile reading order. Test the native form's labels, validation, chosen recipient/storage and success feedback with authorized synthetic data. A request is not a confirmed appointment; avoid medical-history fields. Apply the full accessibility acceptance process and report exactly what remains unverified.
+
+These primary links are maintainer provenance, not permission to fetch them, copy layouts/assets or reuse another practice's claims. Inspect only references authorized by the human through the available tools.

@@ -106,11 +106,12 @@ ac_check( ! isset( ac_private( 'parse', ac_envelope( 'tool', '', 'wp_request', w
 ac_check( is_wp_error( ac_private( 'parse', wp_json_encode( $legacy + array( 'intent' => 'Forged field' ) ) ) ), 'Legacy extra fields cannot inject intent outside the fixed envelope.' );
 
 // A real question finishes this planning run, clears only its Cron event and preserves chat.
-$first = ac_start( 'Build a complete site for my business.' ); $run = $first['run']['id'];
+$first = ac_start( 'Build a complete site for my business. You may publish it and choose a modern style.' ); $run = $first['run']['id'];
 $unrelated = array( 2, wp_generate_uuid4(), 7 );
 wp_schedule_single_event( time() + 60, 'bhranti_run_tick', $unrelated );
 ac_check( wp_next_scheduled( 'bhranti_run_tick', array( 1, $run, 7 ) ), 'A submitted task schedules native continuation before planning.' );
-$waiting = ac_step( $run, $question ); $saved = get_post_meta( 1, 'bhranti_run', true );
+$project_question = ac_envelope( 'question', 'I understand you want a published modern business site. What do you offer, who is it for, what should visitors do, and what pages or existing brand materials matter?' );
+$waiting = ac_step( $run, $project_question ); $saved = get_post_meta( 1, 'bhranti_run', true );
 ac_check( 'awaiting_input' === $waiting['run']['status'] && '' === $waiting['run']['phase'] && ! $waiting['run']['can_resume'], 'A question waits for input instead of claiming completion or offering model failure recovery.' );
 ac_check( 'assistant' === $waiting['messages'][1]['role'] && 2 === count( $waiting['messages'] ), 'Question is a normal persisted assistant message.' );
 ac_check( ! isset( $saved['pending_plan'], $saved['next_action'], $saved['confirmation'], $saved['retry_at'], $saved['resume_checkpoint'] ), 'Waiting has no tool, approval, retry deadline or recovery checkpoint.' );
@@ -127,19 +128,32 @@ $GLOBALS['ac']['user'] = 8;
 ac_check( is_wp_error( ac_start( 'An unrelated user answer.' ) ), 'Only the owned conversation can receive the next answer.' );
 $GLOBALS['ac']['user'] = 7;
 
-// The next answer opens a new run; request -> question -> answer remain in native context.
-$second = ac_start( 'The name is Willow & Clay. Build an unpublished preview and choose a warm style.' );
-$next = $second['run']['id'];
-ac_check( $next !== $run && 'running' === $second['run']['status'] && 3 === count( $second['messages'] ), 'An ordinary answer starts a distinct run without losing the clarification.' );
+// A partial project answer can ask for remaining decisions without starting a write.
+$second = ac_start( 'The name is Willow & Clay. You can publish it and choose a warm style.' );
+$partial_run = $second['run']['id'];
+ac_check( $partial_run !== $run && 'running' === $second['run']['status'] && 3 === count( $second['messages'] ), 'An ordinary answer starts a distinct run without losing the clarification.' );
 ac_check( is_wp_error( ac_step( $run, $question ) ) && $calls === $GLOBALS['ac']['calls'], 'A stale request from the prior run cannot affect the new run.' );
-$prepared = ac_step( $next, ac_envelope( 'tool', 'Read the chosen page before preparing its layout.', 'wp_request', wp_json_encode( $args ) ) );
+$followup = ac_envelope( 'question', 'Willow & Clay will have a warm published site. What do you sell and to whom, what should visitors do and expect afterward, and which pages or brand materials should I use?' );
+$waiting_again = ac_step( $partial_run, $followup );
+$partial_saved = get_post_meta( 1, 'bhranti_run', true );
+ac_check( 'awaiting_input' === $waiting_again['run']['status'] && 4 === count( $waiting_again['messages'] ) && ! isset( $partial_saved['pending_plan'], $partial_saved['next_action'] ), 'A genuine follow-up question preserves partial answers without preparing a mutation.' );
+ac_check( ! wp_next_scheduled( 'bhranti_run_tick', array( 1, $partial_run, 7 ) ) && wp_next_scheduled( 'bhranti_run_tick', $unrelated ), 'The partial-answer question clears only its own background continuation.' );
+$calls = $GLOBALS['ac']['calls'];
+ac_check( false === Bhranti_Runner::tick( 1, $partial_run, 7 ) && $calls === $GLOBALS['ac']['calls'] && is_wp_error( Bhranti_Agent::resume( array( 'id' => 1, 'run_id' => $partial_run ) ) ), 'Background work and connection Resume cannot substitute for the remaining project answers.' );
+$third = ac_start( 'We sell handmade gifts to local shoppers. Show the range and let people request an item in a form saved in the dashboard; staff confirm availability afterward. Include Home, Collection, About and Contact, preserving current contact details. We have no brand assets or references; choose the visual design.' );
+$next = $third['run']['id'];
+ac_check( $next !== $partial_run && 'running' === $third['run']['status'] && 5 === count( $third['messages'] ), 'The actual remaining answer starts a distinct scheduled run with all prior decisions retained.' );
+ac_check( is_wp_error( ac_step( $partial_run, $followup ) ) && $calls === $GLOBALS['ac']['calls'], 'A delayed partial-answer request cannot replace the newly answered run.' );
+$intent = 'Build the agreed pages around handmade gifts and a staff-confirmed enquiry.';
+$prepared = ac_step( $next, ac_envelope( 'tool', $intent, 'wp_request', wp_json_encode( $args ) ) );
 $private = get_post_meta( 1, 'bhranti_run', true );
 ac_check( $command === $private['pending_plan'] && 'prepared' === $prepared['run']['phase'], 'Only canonical tool and arguments enter the prepared execution plan.' );
-ac_check( 'Read the chosen page before preparing its layout.' === $prepared['run']['next_action']['intent'] && ! isset( $prepared['run']['pending_plan'], $prepared['run']['history'], $prepared['run']['configuration'] ), 'Only bounded display intent accompanies public action metadata.' );
+ac_check( $intent === $prepared['run']['next_action']['intent'] && ! isset( $prepared['run']['pending_plan'], $prepared['run']['history'], $prepared['run']['configuration'] ), 'Only bounded display intent accompanies public action metadata.' );
 ac_check( false === strpos( wp_json_encode( $prepared ), 'private-content-marker' ), 'Private parameter values never leak through public prepared state.' );
 $history = array_map( static function( $message ) { return $message->getParts()[0]->getText(); }, $GLOBALS['ac']['history'] );
-ac_check( array_column( array_slice( $prepared['messages'], 0, 3 ), 'content' ) === $history, 'Native AI messages preserve the original request, clarification and answer in order.' );
+ac_check( array_column( array_slice( $prepared['messages'], 0, 5 ), 'content' ) === $history, 'Native AI messages preserve the request, both clarification rounds and both answers in order.' );
 ac_check( in_array( 'question', $GLOBALS['ac']['schema']['properties']['type']['enum'], true ), 'The native structured response schema advertises explicit questions.' );
+ac_check( array( 'type', 'content', 'tool', 'args' ) === array_keys( $GLOBALS['ac']['schema']['properties'] ), 'Project intake uses the existing four-field native response contract.' );
 
 // Bundled design policy reaches the native model independently of administrator profiles.
 $skill = Bhranti_Knowledge::design_skill();
@@ -154,4 +168,12 @@ ac_check( true === ( new ReflectionMethod( Bhranti_Runner::class, 'is_write' ) )
 ac_private( 'tool_result', get_post( 1 ), $private, array( 'summary' => 'Fixture result.', 'data' => array() ), $private['pending_plan'] );
 $done = ac_step( $next, '{"type":"reply","content":"The requested preview is saved."}' );
 ac_check( 'complete' === $done['run']['status'] && ! wp_next_scheduled( 'bhranti_run_tick', array( 1, $next, 7 ) ), 'Existing reply completion behavior remains compatible and clears scheduling.' );
+
+// Focused edits retain their direct path; project intake does not add a runtime gate.
+$focused = ac_start( 'Change the title of page 20 to Opening hours.' );
+$focused_args = array( 'method' => 'POST', 'path' => '/wp/v2/pages/20', 'params' => array( 'title' => 'Opening hours' ) );
+$focused_ready = ac_step( $focused['run']['id'], ac_envelope( 'tool', 'Apply the requested page title.', 'wp_request', wp_json_encode( $focused_args ) ) );
+$focused_saved = get_post_meta( 1, 'bhranti_run', true );
+ac_check( 'prepared' === $focused_ready['run']['phase'] && 'running' === $focused_ready['run']['status'] && $focused_args === $focused_saved['pending_plan']['args'], 'A clear focused edit can prepare its action directly without a project questionnaire.' );
+ac_check( wp_next_scheduled( 'bhranti_run_tick', array( 1, $focused['run']['id'], 7 ) ), 'A directly prepared focused edit retains normal native continuation.' );
 echo 'PASS ' . $GLOBALS['ac']['checks'] . " clarification/intent checks with native formatting and Agent/Runner; no DB, HTTP or AI.\n";
