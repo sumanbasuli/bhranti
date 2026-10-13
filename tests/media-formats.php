@@ -108,17 +108,22 @@ $prompt = new ReflectionMethod( 'Bhranti_Media', 'image_prompt' );
 // An isolated native registry contains only this local provider. No real connector is registered.
 final class Media_Format_Provider extends AbstractProvider {
 	public static $formats = array( 'image/png', 'image/jpeg', 'image/webp' );
+	public static $images = true;
+	public static $discovery_failure = false;
 	protected static function createProviderMetadata(): ProviderMetadata { return new ProviderMetadata( 'media-format-offline', 'Offline media format test', ProviderTypeEnum::server(), null, null ); }
 	protected static function createModel( ModelMetadata $metadata, ProviderMetadata $provider ): ModelInterface { return new Media_Format_Model( $metadata, $provider ); }
 	protected static function createProviderAvailability(): ProviderAvailabilityInterface { return new class implements ProviderAvailabilityInterface { public function isConfigured(): bool { return true; } }; }
 	protected static function createModelMetadataDirectory(): ModelMetadataDirectoryInterface {
 		return new class implements ModelMetadataDirectoryInterface {
-			public function listModelMetadata(): array { return array( $this->getModelMetadata( 'offline-image' ) ); }
+			public function listModelMetadata(): array {
+				if ( Media_Format_Provider::$discovery_failure ) { throw new \WordPress\AiClient\Providers\Http\Exception\NetworkException( 'Synthetic offline metadata interruption.' ); }
+				return array( $this->getModelMetadata( 'offline-image' ) );
+			}
 			public function hasModelMetadata( string $id ): bool { return 'offline-image' === $id; }
 			public function getModelMetadata( string $id ): ModelMetadata {
-				$options = array( new SupportedOption( OptionEnum::inputModalities(), array( array( ModalityEnum::text() ) ) ), new SupportedOption( OptionEnum::outputModalities(), array( array( ModalityEnum::image() ) ) ) );
-				if ( Media_Format_Provider::$formats ) { $options[] = new SupportedOption( OptionEnum::outputMimeType(), Media_Format_Provider::$formats ); $options[] = new SupportedOption( OptionEnum::outputFileType(), array( FileTypeEnum::inline() ) ); }
-				return new ModelMetadata( $id, 'Offline image', array( CapabilityEnum::imageGeneration() ), $options );
+				$options = array( new SupportedOption( OptionEnum::inputModalities(), array( array( ModalityEnum::text() ) ) ), new SupportedOption( OptionEnum::outputModalities(), array( array( Media_Format_Provider::$images ? ModalityEnum::image() : ModalityEnum::text() ) ) ) );
+				if ( Media_Format_Provider::$images && Media_Format_Provider::$formats ) { $options[] = new SupportedOption( OptionEnum::outputMimeType(), Media_Format_Provider::$formats ); $options[] = new SupportedOption( OptionEnum::outputFileType(), array( FileTypeEnum::inline() ) ); }
+				return new ModelMetadata( $id, 'Offline image', array( Media_Format_Provider::$images ? CapabilityEnum::imageGeneration() : CapabilityEnum::textGeneration() ), $options );
 			}
 		};
 	}
@@ -151,6 +156,17 @@ $count = count( Media_Format_Model::$calls );
 $unsupported = $prompt->invoke( null, array( 'prompt' => 'Offline rejected request.' ), Bhranti_Media::capabilities( 1, 11 ) );
 media_format_check( is_wp_error( $unsupported ) && $count === count( Media_Format_Model::$calls ), 'Native connector prevention remains authoritative during format selection' );
 remove_filter( 'wp_ai_client_prevent_prompt', $blocked );
+Media_Format_Provider::$images = false;
+$count = count( Media_Format_Model::$calls );
+$unsupported = $prompt->invoke( null, array( 'prompt' => 'Offline text-only connector.' ), Bhranti_Media::capabilities( 1, 11 ) );
+media_format_check( is_wp_error( $unsupported ) && 'bhranti_image_support' === $unsupported->get_error_code() && 422 === $unsupported->get_error_data()['status'] && $count === count( Media_Format_Model::$calls ), 'A native text-only model is confirmed unavailable without generating or fabricating an image' );
+Media_Format_Provider::$images = true;
+Media_Format_Provider::$discovery_failure = true;
+$unknown = $prompt->invoke( null, array( 'prompt' => 'Offline capability lookup failure.' ), Bhranti_Media::capabilities( 1, 11 ) );
+media_format_check( is_wp_error( $unknown ) && 'bhranti_image_discovery' === $unknown->get_error_code() && 502 === $unknown->get_error_data()['status'] && $count === count( Media_Format_Model::$calls ), 'An actual native metadata exception is unknown capability, never a permanent unsupported result or an image request' );
+Media_Format_Provider::$discovery_failure = false;
+$recovered = $prompt->invoke( null, array( 'prompt' => 'Offline fresh capability recovery.' ), Bhranti_Media::capabilities( 1, 11 ) );
+media_format_check( $recovered instanceof WP_AI_Client_Prompt_Builder && $count === count( Media_Format_Model::$calls ), 'A fresh successful native capability check recovers without cached unsupported state or automatic generation' );
 foreach ( array( array( 'image/png' ), array() ) as $advertised_formats ) {
 	Media_Format_Provider::$formats = $advertised_formats;
 	$count = count( Media_Format_Model::$calls );

@@ -32,6 +32,8 @@ Choose content and journeys for this business type and its visitors. Identify wh
 
 The first screen identifies the offering, intended visitor and next action. Use specific headings, concise copy and purposeful typography/imagery. Use real returned media IDs/URLs; generated illustrations must not impersonate staff, facilities or products.
 
+If the current native connector explicitly lacks image-generation support, reuse suitable approved Media Library images or ask for the needed logo, practice/team photos or other relevant assets. A chat reference attachment is not a saved site image; ask for a native Media Library upload when it must appear on the site. Continue independent work while waiting. If images are unavailable, agree a deliberate layout using typography instead. Never invent image URLs, fake real photography or treat a temporary provider error as permanent lack of support.
+
 Order sections around visitor questions. Vary composition where useful; use cards for comparable items, not every paragraph. Align edges, repeat spacing and remove clutter. Give mobile a clear reading order. Each page should have a purpose and useful content beyond its title and action button.
 
 Write from confirmed facts. Never invent testimonials, ratings, credentials, awards, prices, addresses or guarantees. Avoid unsupported medical or financial claims. Omit missing nonessential facts or ask when required; do not publish internal placeholders. Buttons name their destination or outcome and retain that wording throughout the flow.
@@ -59,6 +61,8 @@ Apply every relevant WCAG 2.2 A and AA criterion to new or changed content and i
 
 ## 6. Critique and verify before finishing
 
+Professional design is an acceptance requirement alongside functionality. Judge the whole composition: deliberate header/navigation, clear hierarchy between headings, supporting copy and actions, and section rhythm beyond repeated equal text columns. Every large image needs a role in the brief; decoration cannot replace purposeful imagery or strong composition through typography. Each section adds specific, confirmed information rather than repeating generic reassurance. Reuse facts, ask only for material gaps and never manufacture trust evidence. Check native controls, errors and confirmation for visual consistency. Identify the weakest visible areas, improve them and repeat affected checks before calling the site finished.
+
 Compare the whole result with the agreed brief: relevant content, identity, hierarchy, navigation and every promised page/action. Read saved records back; check publication, homepage, links, images and template references. Test the primary flow with authorized synthetic data, including errors and actual response storage/destination. Never send real customer messages or transactions as tests.
 
 When rendered inspection is available, critique desktop and narrow mobile views: composition, hierarchy, crops, spacing, wrapping, overflow, empty sections and menus. Test keyboard focus, zoom/reflow and contrast. Can a new visitor understand this business and confidently complete the requested action? Fix weak content/composition and defects, then repeat affected checks; do not merely add decoration.
@@ -75,8 +79,6 @@ Use available inspection tools. API persistence and inert HTML are not rendered 
 Use the business and visitor's task to choose a structure. These are original design starting points inferred from primary references, not copied layouts or promises of quality. Adapt them to the brief, existing brand and native theme capabilities.
 
 ### Scope and intake
-
-For a new business site, store or substantial redesign, inspect read-only first, then ask one short group of missing business questions before installation, image generation or other mutations. Confirm audience, offerings, principal visitor action, location, assets and preview/publication intent. Reuse supplied answers. A focused request such as changing a heading, updating hours or adding an agreed service should proceed directly; do not restart discovery.
 
 For healthcare/dental, ask only relevant missing questions: which country and locality; NHS, private or mixed care where applicable; new patients, existing patients or referrals; routine enquiries versus urgent contact; verified treatments, fees and availability; confirmed address, phone, opening hours and accessibility information. Ask whether the action is a receptionist-confirmed request or an existing real booking system, and who receives enquiries. Establish whether approved logo, practice/team photographs and staff biographies exist. Never assume every clinic offers emergency, cosmetic, children's or NHS treatment. NHS/private appointment distinctions and availability materially affect the visitor's next action. [NHS access guidance](https://www.nhs.uk/nhs-services/dentists/how-to-find-an-nhs-dentist/)
 

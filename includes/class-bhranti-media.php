@@ -27,7 +27,7 @@ final class Bhranti_Media {
 		}
 		return array(
 			'generate_image' => array(
-				'description' => 'Generate one image with the configured native WordPress image provider and save it to the Media Library. Use the returned attachment id and url in a reviewed post/page update. Supply a descriptive prompt, optional plain-text title and alt_text, and optional format png/jpeg/webp. Current WordPress upload and image-editor support is checked before generation. A bounded raster may be converted or resized locally to meet the current upload limit, without another AI request. Supports only inline PNG, JPEG or WebP images, not remote URLs or uploads. Image generation may be unavailable with the current connector. A saved image remains in Media Library after page-content rollback; there is no automatic media deletion or undo. Never repeat a completed image generation just because a later page edit fails.',
+				'description' => 'Generate one image with the configured native WordPress image provider and save it to the Media Library. Use the returned attachment id and url in a reviewed post/page update. Supply a descriptive prompt, optional plain-text title and alt_text, and optional format png/jpeg/webp. Current WordPress upload and image-editor support is checked before generation. A bounded raster may be converted or resized locally to meet the current upload limit, without another AI request. Supports only inline PNG, JPEG or WebP images, not remote URLs or uploads. Image generation may be unavailable with the current connector. If the native check returns bhranti_image_support, do not repeat the unsupported request: reuse suitable user-approved Media Library images or ask one concise question for the needed images, suggesting Media → Add New when they must be placed on the site. Chat reference attachments provide visual context and are not automatically saved as usable Media Library assets. Continue independent authorized work before waiting if it does not depend on the missing images. A discovery or provider failure does not prove permanent lack of image support. Never fabricate photos, attachment IDs or URLs. A saved image remains in Media Library after page-content rollback; there is no automatic media deletion or undo. Never repeat a completed image generation just because a later page edit fails.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -123,9 +123,9 @@ final class Bhranti_Media {
 			$image = self::error( 'bhranti_image_exception', __( 'Native image generation failed.', 'bhranti' ), 502 );
 		}
 		if ( is_wp_error( $image ) ) {
-			if ( 'bhranti_image_support' === $image->get_error_code() ) {
+			if ( in_array( $image->get_error_code(), array( 'bhranti_image_support', 'bhranti_image_discovery' ), true ) ) {
 				$details['code'] = $image->get_error_code();
-				self::audit( 'media_blocked', $image->get_error_message(), $session_id, $details, $requester_id, $actor_id );
+				self::audit( 'bhranti_image_support' === $details['code'] ? 'media_blocked' : 'media_failed', $image->get_error_message(), $session_id, $details, $requester_id, $actor_id );
 				return $image;
 			}
 			$codes           = array( 'prompt_network_error', 'prompt_client_error', 'prompt_upstream_server_error', 'prompt_token_limit_reached', 'prompt_invalid_argument', 'prompt_builder_error', 'prompt_prevented', 'bhranti_image_exception' );
@@ -292,7 +292,11 @@ final class Bhranti_Media {
 				continue;
 			}
 			$builder = wp_ai_client_prompt( $args['prompt'] )->as_output_mime_type( $mime )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-			if ( true !== $builder->is_supported_for_image_generation() ) {
+			$support = $builder->is_supported_for_image_generation();
+			if ( ! is_bool( $support ) ) {
+				return self::discovery_error();
+			}
+			if ( ! $support ) {
 				continue;
 			}
 			$inline = wp_ai_client_prompt( $args['prompt'] )->as_output_mime_type( $mime )->as_output_file_type( FileTypeEnum::inline() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
@@ -301,11 +305,21 @@ final class Bhranti_Media {
 		// Older providers may generate images without advertising an output-format option.
 		// Their one result must still pass the same native raster preparation and limits.
 		$builder = wp_ai_client_prompt( $args['prompt'] )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-		if ( true !== $builder->is_supported_for_image_generation() ) {
-			return self::error( 'bhranti_image_support', __( 'The native connector does not currently expose image generation for this request. No image generation was requested.', 'bhranti' ), 422 );
+		$support = $builder->is_supported_for_image_generation();
+		if ( ! is_bool( $support ) ) {
+			return self::discovery_error();
+		}
+		if ( ! $support ) {
+			return self::error( 'bhranti_image_support', __( 'Image generation is not available for this request. Choose suitable images from your Media Library or upload them through Media → Add New, then tell Bhranti which to use. No image was generated.', 'bhranti' ), 422 );
 		}
 		$inline = wp_ai_client_prompt( $args['prompt'] )->as_output_file_type( FileTypeEnum::inline() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
 		return true === $inline->is_supported_for_image_generation() ? $inline : $builder;
+	}
+
+	/** Keep a failed native capability lookup distinct from confirmed unavailability. */
+	private static function discovery_error() {
+		// Native support checks can return the builder after a caught metadata exception.
+		return self::error( 'bhranti_image_discovery', __( 'WordPress could not check image generation right now. You can use suitable Media Library images or upload your own instead. No image generation was requested.', 'bhranti' ), 502 );
 	}
 
 	/**
