@@ -10,7 +10,7 @@
 	let noticeSequence = 0, lastTrigger = null, contextFingerprint = '', progressTimer = null, heartbeatTimer = null, backgroundTimer = null, heartbeatRequest = null, heartbeatQueued = false, heartbeatFingerprint = '', backgroundReading = false, pageSuspended = false, interacting = false, composing = false, renderPending = false, interactionTimer = null, pageFormDirty = false, streamSession = null;
 	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
 	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
-	const scrollPositions = new Map(), disclosureStates = new Map();
+	const scrollPositions = new Map(), disclosureStates = new Map(), referenceRemovals = new Map();
 	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null, siteControl = null;
@@ -127,6 +127,28 @@
 	function restoreDraft(id) {
 		const key = draftKey(id); if (state.drafts.has(key)) return state.drafts.get(key);
 		try { return (window.sessionStorage.getItem(key) || '').slice(0, 12000); } catch (error) { return ''; }
+	}
+	function retainedReferenceImage() {
+		const run = currentRun(), reference = run && run.reference_image;
+		return run && run.status === 'awaiting_input' && reference && typeof reference.message_id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(reference.message_id) ? reference : null;
+	}
+	function referenceRemovalKey(id) { return draftKey(id) + ':discard-reference'; }
+	function referenceImageRemoved() {
+		const reference = retainedReferenceImage(); if (!reference || !state.session) return false;
+		const key = referenceRemovalKey(state.session.id);
+		if (!referenceRemovals.has(key)) { try { referenceRemovals.set(key, window.sessionStorage.getItem(key)); } catch (error) { /* In-memory removal still survives chat switches. */ } }
+		return referenceRemovals.get(key) === reference.message_id;
+	}
+	function removeReferenceImage() {
+		if (state.busy || state.loading || state.capturing || activeRun()) return;
+		const reference = retainedReferenceImage(); if (!reference || !state.session) return;
+		const key = referenceRemovalKey(state.session.id); referenceRemovals.set(key, reference.message_id);
+		try { window.sessionStorage.setItem(key, reference.message_id); } catch (error) { /* No image data is persisted in browser storage. */ }
+		render();
+	}
+	function clearReferenceRemoval(id) {
+		const key = referenceRemovalKey(id); referenceRemovals.delete(key);
+		try { window.sessionStorage.removeItem(key); } catch (error) { /* The in-memory state is still reset. */ }
 	}
 	function currentRun() { return state.session && state.session.run; }
 	function activeRun() { const run = currentRun(); return run && ['running', 'awaiting_confirmation'].includes(run.status); }
@@ -513,7 +535,8 @@
 	function attachedContext() {
 		const context = runtimeContext();
 		if (state.screenshot) context.screenshot = state.screenshot;
-		if (!state.attachPage) return { unsaved_changes: !!context.unsaved_changes, ...(state.screenshot ? { screenshot: state.screenshot } : {}) };
+		if (referenceImageRemoved()) context.discard_reference_image = true;
+		if (!state.attachPage) return { unsaved_changes: !!context.unsaved_changes, ...(state.screenshot ? { screenshot: state.screenshot } : {}), ...(context.discard_reference_image ? { discard_reference_image: true } : {}) };
 		context.rendered_page = renderedPage();
 		if (!state.attachBlock) delete context.selected_block;
 		return context;
@@ -664,7 +687,10 @@
 		if (state.busy || state.loading || state.capturing || activeRun()) return;
 		rememberDraft(); state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; state.error = ''; state.menu = false; state.seen.clear(); rememberSession(null); render(); root.querySelector('#bhranti-composer').focus();
 	}
-	async function reloadAfterError(content, previousCount) {
+	function acceptedSubmission(session, content, previousCount, previousRunId) {
+		return !!(session && session.run && typeof session.run.id === 'string' && session.run.id && session.run.id !== previousRunId && (session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content));
+	}
+	async function reloadAfterError(content, previousCount, previousRunId) {
 		if (!state.session) { if (content) state.draft = content; return; }
 		const id = state.session.id, runId = !content && currentRun() && currentRun().id;
 		try {
@@ -672,7 +698,7 @@
 			if (pageSuspended || !state.session || state.session.id !== id || runId && (!currentRun() || currentRun().id !== runId)) return false;
 			if (!fresh || fresh.id !== id || runId && (!fresh.run || fresh.run.id !== runId)) throw new Error(__('The saved task changed. Reconnect to review it.', 'bhranti'));
 			state.session = fresh;
-			if (content && !(state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) state.draft = content;
+			if (content && !acceptedSubmission(state.session, content, previousCount, previousRunId)) state.draft = content;
 			markExistingEvents();
 			return true;
 		} catch (error) { if (content) state.draft = content; state.error = __('Connection interrupted. Reconnect to check the saved task before continuing.', 'bhranti'); return false; }
@@ -686,13 +712,13 @@
 	async function sendMessage() {
 		const content = state.draft.trim();
 		if (!content || state.busy || state.loading || state.capturing || state.error || activeRun()) return;
-		state.busy = true; state.draft = ''; rememberDraft(); state.stopRequested = false; state.pausedForEditor = false; render(); let previousCount = 0;
+		state.busy = true; state.draft = ''; rememberDraft(); state.stopRequested = false; state.pausedForEditor = false; render(); let previousCount = 0, previousRunId = null;
 		try {
 			if (!state.session) state.session = await request('/sessions', 'POST', {});
-			rememberSession(state.session.id); previousCount = (state.session.messages || []).length;
+			rememberSession(state.session.id); previousCount = (state.session.messages || []).length; previousRunId = currentRun() && currentRun().id || null;
 			state.session.messages = (state.session.messages || []).concat({ role: 'user', content, created: new Date().toISOString() }); render();
-			state.session = await request('/sessions/' + encodeURIComponent(state.session.id) + '/messages', 'POST', { content, context: attachedContext(), agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null));
-		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount) && (state.session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content)) { state.error = ''; state.screenshot = null; state.screenshots.delete(draftKey(null)); } }
+			state.session = await request('/sessions/' + encodeURIComponent(state.session.id) + '/messages', 'POST', { content, context: attachedContext(), agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id);
+		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount, previousRunId) && acceptedSubmission(state.session, content, previousCount, previousRunId)) { state.error = ''; state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id); } }
 		finally { await refreshWorkspaceQuietly(); state.busy = false; rememberDraft(); render(); }
 		markExistingEvents(); continueRun(); focusComposer();
 	}
@@ -799,7 +825,7 @@
 		if (state.busy || state.loading || state.capturing || activeRun() || !state.session) return;
 		if (!window.confirm(__('Delete this conversation permanently? Site actions and their audit records are not undone by deleting a chat.', 'bhranti'))) return;
 		state.busy = true; render();
-		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); state.drafts.delete(key); state.screenshots.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
+		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); clearReferenceRemoval(state.session.id); state.drafts.delete(key); state.screenshots.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
 		catch (error) { notify(errorMessage(error)); }
 		finally { state.busy = false; render(); }
 	}
@@ -982,6 +1008,10 @@
 		const labels = { page: __('Page', 'bhranti'), post: __('Post', 'bhranti'), wp_template: __('Template', 'bhranti'), wp_template_part: __('Template Part', 'bhranti') };
 		if (state.attachPage) { const label = labels[context.post_type] || (context.title ? context.title : __('Current page', 'bhranti')); const chip = contextChip(label, 'context', () => { state.attachPage = false; render(); }, 'bhranti-remove-context'); chip.title = context.title || context.url || ''; chips.appendChild(chip); }
 		if (state.attachPage && state.attachBlock && context.selected_block) { let label = context.selected_block.name; if (wp.blocks && wp.blocks.getBlockType) { const type = wp.blocks.getBlockType(label); if (type) label = type.title; } chips.appendChild(contextChip(label, 'block', () => { state.attachBlock = false; render(); }, 'bhranti-remove-block')); }
+		if (!state.screenshot && retainedReferenceImage() && !referenceImageRemoved()) {
+			const remove = iconButton(__('Remove reference image', 'bhranti'), 'bhranti-chip-remove', removeReferenceImage, 'close', 'bhranti-remove-reference-image'); remove.disabled = state.busy || state.loading || state.capturing || !!activeRun();
+			chips.appendChild(element('span', 'bhranti-context-chip', icon('image'), element('span', '', __('Reference image', 'bhranti')), remove));
+		}
 		const input = root.querySelector('#bhranti-composer') || element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; if (input.value !== state.draft) input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-composer-hint bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun();
 		const sendingBlocked = () => state.busy || state.loading || state.capturing || !!state.error || !!activeRun() || !state.draft.trim();
 		const send = iconButton(__('Send message', 'bhranti'), 'bhranti-send-button', sendMessage, 'send', 'bhranti-send'); send.disabled = sendingBlocked();
@@ -1025,7 +1055,7 @@
 		root.querySelectorAll('details[data-bhranti-disclosure]').forEach((node) => { if (String(node.open) !== node.dataset.openAtRender) { disclosureStates.set(node.dataset.bhrantiDisclosure, node.open); node.dataset.openAtRender = String(node.open); } });
 		if (!state.busy && !state.stepping && !activeRun() && state.workspace.agents && !state.workspace.agents.some((agent) => agent.id === state.agentId)) state.agentId = 'bhranti';
 		const context = runtimeContext(), retry = currentRun() && currentRun().status === 'running' ? Math.max(0, Math.ceil(Number(currentRun().retry_at) - Date.now() / 1000)) : 0;
-		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, closeUnavailable(), context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
+		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, referenceImageRemoved(), state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, closeUnavailable(), context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
 		if (fingerprint === renderedFingerprint) { syncTrigger(); return; }
 		renderedFingerprint = fingerprint;
 		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = ['bhranti-composer', 'bhranti-chat-search'].includes(focusId) ? [focused.selectionStart, focused.selectionEnd] : null;
@@ -1042,7 +1072,7 @@
 		const close = iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'); close.disabled = closeUnavailable(); if (close.disabled) close.title = __('Available after the current change finishes', 'bhranti'); trailing.appendChild(close);
 		const brand = element('h2', 'bhranti-brand', __('Bhranti', 'bhranti')); brand.id = 'bhranti-panel-title';
 		const header = element('header', 'bhranti-header', controls, brand, trailing); header.id = 'bhranti-header';
-		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, relevant saved preferences and verified image facts, inspected public reference pages, attached rendered-page HTML/text, editor context and any screenshot or reference image you choose with your configured WordPress AI provider. Images are prepared in your browser and shared only when you send. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
+		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, relevant saved preferences and verified image facts, inspected public reference pages, attached rendered-page HTML/text, editor context and any screenshot or reference image you choose with your configured WordPress AI provider. Images are prepared in your browser and shared only when you send. A chosen reference stays with the same task through its questions and answers until removed or replaced. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
 		if (!(state.workspace.ai || {}).available && state.initialized) details.appendChild(element('p', '', __('No AI provider is configured. Use WordPress connectors in the Bhranti menu.', 'bhranti')));
 		const streamNode = conversation(), dock = activeRun() ? element('div', 'bhranti-task-dock', runStatus()) : null; if (dock) dock.id = 'bhranti-task-dock';
 		const jump = iconButton(__('Jump to latest', 'bhranti'), 'bhranti-jump-latest', (event) => { const stream = root.querySelector('.bhranti-stream'); if (stream) { stream.scrollTop = stream.scrollHeight; scrollPositions.set(String(state.session && state.session.id || 'new'), { top: stream.scrollTop, bottom: true }); } event.currentTarget.hidden = true; const input = root.querySelector('#bhranti-composer'); if (input && !input.disabled) input.focus(); else root.querySelector('#bhranti-close').focus(); }, 'down', 'bhranti-jump-latest'); jump.appendChild(element('span', '', __('Jump to latest', 'bhranti'))); jump.hidden = !position || position.bottom;

@@ -1,4 +1,4 @@
-# Expert WordPress workflow, 0.5.1
+# Expert WordPress workflow, 0.5.2
 
 Reference: https://github.com/anomalyco/opencode at commit f1632d052de5ee0cffe28a34dc1a5346a6bf7136 (read-only dev source inspection, 2026-10-14). No OpenCode runtime, provider routing, source execution or credentials are embedded. These are original WordPress adaptations.
 
@@ -9,5 +9,7 @@ Bhranti uses native WordPress actors, APIs, guardrails, audit and recovery. Subs
 Specialist documents load on demand from five fixed, bounded, packaged files: site-design baseline, design-composition, wordpress-support, content-operations and commerce-workflow. No caller-selected filesystem paths or executable documents. The method is brief, grounded native discovery, deliberate composition, representative page, connected visitor journey, saved-state check and honest critique. Native image metadata inspection happens only when needed; known missing image support leads to an upload/existing-media question, while metadata failure stays unknown.
 
 Selected specialist methods remain available after settled-history compaction. Imagery is a deliberate part of the brief: search native Media Library assets, choose the appropriate Image/Cover/Media & Text/Gallery/featured-image role, and generate suitable new assets when native support permits it. Aspect-ratio selection negotiates the requested shape, a supported common shape in the same orientation, or the native default before one generation; results preserve actual dimensions. Native section-wrapper block spacing removes unwanted seams between adjoining surfaces without resetting internal text spacing or global site styles.
+
+Design relevance is judged against the actual offering, audience and visitor decision. Domain subject matter, authentic evidence, explanatory illustrations and decorative atmosphere have distinct jobs; generic abstract polish cannot replace necessary meaning or trust. Supplied visual references are analyzed into useful layout/type/spacing/imagery/action patterns and adapted to the confirmed site brief. One chosen reference remains bound to its original human message across same-task intake answers, with explicit removal/replacement and private export/erasure; it is never a claim about the current rendered page or a saved site asset.
 
 Inspection can describe reviewed native parameters or saved block outlines and exact bounded sections without dynamic rendering. Media discovery keeps native public URLs/dimensions and excludes private image metadata. These capabilities do not constitute rendered browser inspection, visual assessment, native JS validity or a WCAG certificate. All prior confirmation, dirty-editor, native connector and scheduling rules remain authoritative.

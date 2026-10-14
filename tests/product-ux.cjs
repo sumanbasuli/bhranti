@@ -29,6 +29,7 @@ function fixture(options = {}) {
   const html = options.siteFrame ? '<!doctype html>' + nativeBar + frameMarkup + '<div id="bhranti-app" hidden></div>' : '<!doctype html><div id="wp-admin-bar-bhranti"><a href="#">Bhranti</a></div><div id="wpbody-content"><form id="native-form"><input id="native-field" value="Unsaved native text"></form></div><div id="bhranti-app" hidden></div>';
   const dom = new JSDOM(html, { url: options.url || 'https://bhranti.wp.local/wp-admin/edit.php?post_type=page', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
+  Object.entries(options.sessionStorage || {}).forEach(([key, value]) => w.sessionStorage.setItem(key, value));
   let now = 1791500000000, sequence = 0;
   const timers = new Map(), requests = [], notices = [], subscriptions = [];
   let localDirty = false, localSaving = false, localGesture = false, remoteEditor = { dirty: false, active: false, write_blocked: false, stale_dirty: false };
@@ -61,7 +62,7 @@ function fixture(options = {}) {
       if (options.settingsForm === 'clean') { mount.dataset.bhrantiDirty = 'false'; mount.dataset.bhrantiBusy = 'false'; }
     }
   }
-  w.bhrantiSettings = { autoOpen: false, isAdmin: options.isAdmin !== false, userId: 1, backgroundEnabled: !!options.background, connectorsUrl: 'https://bhranti.wp.local/wp-admin/options-connectors.php', settingsUrl: '/wp-admin/admin.php?page=bhranti', context: { screen: options.editor ? 'page' : 'edit-page', ...(options.context || {}) } };
+  w.bhrantiSettings = { autoOpen: false, isAdmin: options.isAdmin !== false, userId: options.userId || 1, backgroundEnabled: !!options.background, connectorsUrl: 'https://bhranti.wp.local/wp-admin/options-connectors.php', settingsUrl: '/wp-admin/admin.php?page=bhranti', context: { screen: options.editor ? 'page' : 'edit-page', ...(options.context || {}) } };
   const workspace = { sessions: [{ id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], user: { name: 'Fixture requester' }, ai: { available: true } };
   let handler = options.handler || (async (request) => {
     if (request.path.endsWith('/workspace')) return workspace;
@@ -301,7 +302,7 @@ async function testReferenceImageContext() {
       if (request.path.endsWith('/workspace')) return { sessions: [], agents: [], ai: { available: true } };
       const result = session('complete');
       if (request.path.endsWith('/messages')) { attempted = request; if (acknowledgement !== 'success') throw new Error('The native response was lost.'); result.messages.push({ role: 'user', content: request.data.content }); return result; }
-      if (request.method === 'GET') { if (acknowledgement === 'lost-accepted') result.messages.push({ role: 'user', content: attempted.data.content }); return result; }
+      if (request.method === 'GET') { if (acknowledgement === 'lost-accepted') { result.messages.push({ role: 'user', content: attempted.data.content }); result.run.id = '90000000-1000-4000-8000-100000000019'; } return result; }
       throw new Error('Unexpected mutation in image submission fixture.');
     } });
     try {
@@ -328,6 +329,161 @@ async function testReferenceImageContext() {
     equal(page.api.state.screenshots.has(page.api.draftKey(17)), false, 'Deleting a conversation removes its private pending attachment');
     equal(page.api.state.screenshot, otherImage, 'New chat restores only its own draft attachment after deletion');
   } finally { page.close(); }
+}
+
+async function testReferenceContinuation() {
+  const reference = { message_id: '90000000-1000-4000-8000-100000000071', width: 1600, height: 900, mime_type: 'image/jpeg' };
+  const secondReference = { ...reference, message_id: '90000000-1000-4000-8000-100000000072' };
+  const waiting = (id = 17, image = reference) => ({ ...session('awaiting_input', { reference_image: image }), id });
+  const readHandler = async (request) => {
+    if (request.path.endsWith('/workspace')) return { sessions: [{ id: 17 }, { id: 18 }], ai: { available: true } };
+    if (request.method === 'GET' && /\/sessions\/(17|18)$/.test(request.path)) { const id = Number(request.path.split('/').pop()); return waiting(id, id === 17 ? reference : secondReference); }
+    throw new Error('Unexpected retained reference request: ' + request.method + ' ' + request.path);
+  };
+  const page = fixture({ session: waiting(), handler: readHandler }); let stored;
+  try {
+    const remove = () => page.w.document.getElementById('bhranti-remove-reference-image');
+    check(remove() && remove().getAttribute('aria-label') === 'Remove reference image', 'A paused same-task reference has a compact, accessible remove control');
+    equal(remove().parentElement.textContent, 'Reference image', 'The retained image is not falsely labelled a newly captured page screenshot');
+    equal(page.w.document.querySelectorAll('.bhranti-screenshot img').length, 0, 'Metadata-only continuation does not inflate a second image preview');
+    equal(page.requests.length, 0, 'A retained reference chip makes no upload, image-byte fetch or provider request');
+    check(page.w.document.getElementById('bhranti-disclosure').textContent.includes('A chosen reference stays with the same task through its questions and answers until removed or replaced.'), 'AI Details discloses same-task reference retention');
+    check(!('screenshot' in page.api.attachedContext()) && !('discard_reference_image' in page.api.attachedContext()), 'Default continuation sends neither the old bytes nor an implicit discard instruction');
+    for (const key of ['busy', 'loading', 'capturing']) {
+      page.api.state[key] = true; page.api.render();
+      check(remove().disabled, 'Reference removal is disabled while ' + key);
+      remove().click(); page.api.removeReferenceImage();
+      check(!page.api.referenceImageRemoved(), 'A pending ' + key + ' operation cannot change the next message context');
+      page.api.state[key] = false; page.api.render();
+    }
+    page.api.state.draft = 'First answer still being written'; page.api.rememberDraft();
+    remove().click();
+    equal(remove(), null, 'Explicit removal immediately hides only the retained chip');
+    equal(page.api.state.draft, 'First answer still being written', 'Removing a reference preserves unsent answer text');
+    equal(page.w.sessionStorage.getItem(page.api.referenceRemovalKey(17)), reference.message_id, 'Pending removal persists only the exact reference UUID, without image bytes');
+    page.api.state.attachPage = false;
+    equal(page.api.attachedContext().discard_reference_image, true, 'Explicit reference removal survives opting out of current-page context');
+    await page.api.openSession(18);
+    check(remove(), 'A separate chat retains its own reference chip');
+    check(!('discard_reference_image' in page.api.attachedContext()), 'Removal cannot leak to another chat');
+    page.api.state.draft = 'Independent second answer'; page.api.rememberDraft();
+    await page.api.openSession(17);
+    equal(page.api.state.draft, 'First answer still being written', 'Chat switching retains the first answer draft');
+    equal(remove(), null, 'Chat switching preserves the first chat’s pending reference removal');
+    page.api.newChat();
+    equal(remove(), null, 'A new chat cannot inherit a prior reference');
+    check(!('discard_reference_image' in page.api.attachedContext()), 'A new chat cannot inherit a discard instruction');
+    await page.api.openSession(17);
+    stored = Object.fromEntries(Array.from({ length: page.w.sessionStorage.length }, (_, index) => page.w.sessionStorage.key(index)).filter((key) => key.includes(':draft:')).map((key) => [key, page.w.sessionStorage.getItem(key)]));
+  } finally { page.close(); }
+  const reloaded = fixture({ session: waiting(), handler: readHandler, sessionStorage: stored });
+  try {
+    reloaded.api.rememberSession(17); reloaded.api.state.initialized = false; await reloaded.api.openPanel();
+    equal(reloaded.api.state.draft, 'First answer still being written', 'Reload restores the unsent answer alongside the pending removal');
+    equal(reloaded.w.document.getElementById('bhranti-remove-reference-image'), null, 'Reload does not silently restore an explicitly removed reference');
+    equal(reloaded.api.attachedContext().discard_reference_image, true, 'Reload preserves the exact pending discard flag');
+    reloaded.api.state.session = waiting(17, secondReference); reloaded.api.render();
+    check(reloaded.w.document.getElementById('bhranti-remove-reference-image'), 'A replaced server reference is not discarded by an old UUID marker');
+    check(!('discard_reference_image' in reloaded.api.attachedContext()), 'Stale removal never applies to a different reference message');
+    reloaded.api.state.session = waiting();
+    reloaded.setHandler(async (request) => request.method === 'DELETE' ? { deleted: true } : readHandler(request));
+    await reloaded.api.deleteChat();
+    equal(reloaded.w.sessionStorage.getItem(reloaded.api.referenceRemovalKey(17)), null, 'Explicit conversation deletion resets only its pending reference removal');
+  } finally { reloaded.close(); }
+  const otherUser = fixture({ session: waiting(), sessionStorage: stored, userId: 2 });
+  try {
+    check(otherUser.w.document.getElementById('bhranti-remove-reference-image'), 'A different logged-in user cannot inherit a prior user’s discard marker');
+    check(!('discard_reference_image' in otherUser.api.attachedContext()), 'Per-user draft scoping also protects retained-reference removal');
+  } finally { otherUser.close(); }
+  for (const status of ['running', 'complete', 'incomplete', 'cancelled', 'failed', 'awaiting_confirmation']) {
+    const inactive = fixture({ session: session(status, { reference_image: reference }) });
+    try {
+      equal(inactive.w.document.getElementById('bhranti-remove-reference-image'), null, status + ': only awaiting-input state may expose an inherited reference');
+      inactive.api.removeReferenceImage();
+      check(!('discard_reference_image' in inactive.api.attachedContext()), status + ': stale public metadata cannot generate a discard command');
+    } finally { inactive.close(); }
+  }
+  const invalid = fixture({ session: waiting(17, { ...reference, message_id: '<not-an-owned-message>' }) });
+  try { equal(invalid.w.document.getElementById('bhranti-remove-reference-image'), null, 'An invalid reference identity is never offered as a removable retained image'); }
+  finally { invalid.close(); }
+
+  for (const discarded of [false, true]) {
+    const attachment = fixture({ session: waiting() });
+    try {
+      if (discarded) attachment.api.removeReferenceImage();
+      const fresh = { mime_type: 'image/jpeg', data: '/9j/2Q==' };
+      attachment.api.state.screenshot = fresh; attachment.api.render();
+      equal(attachment.w.document.getElementById('bhranti-remove-reference-image'), null, 'A freshly chosen image hides the older retained chip');
+      equal(attachment.api.attachedContext().screenshot, fresh, 'Only the newly chosen image bytes are sent as replacement context');
+      equal(attachment.api.attachedContext().discard_reference_image, discarded ? true : undefined, 'Replacement preserves an explicit discard choice without inventing one');
+      controls(attachment, 'Remove image')[0].click();
+      equal(!!attachment.w.document.getElementById('bhranti-remove-reference-image'), !discarded, 'Removing a new unsent image restores only a retained reference that was not explicitly removed');
+    } finally { attachment.close(); }
+  }
+
+  for (const mode of ['normal', 'rejected', 'accepted-after-response-loss', 'inherit']) {
+    const answer = 'Use the attached reference for this confirmed brief.';
+    const accepted = { ...session('complete', { id: '90000000-1000-4000-8000-100000000019' }), messages: [message, { role: 'user', content: answer }] };
+    const sending = fixture({ session: waiting(), handler: async (request) => {
+      if (request.path.endsWith('/messages')) {
+        if (mode === 'rejected' || mode === 'accepted-after-response-loss') throw Object.assign(new Error('The response was lost.'), { data: { status: 400 } });
+        return accepted;
+      }
+      if (request.method === 'GET' && request.path.endsWith('/sessions/17') && mode === 'accepted-after-response-loss') return accepted;
+      return readHandler(request);
+    } });
+    try {
+      sending.api.state.draft = answer; sending.api.rememberDraft();
+      if (mode !== 'inherit') sending.api.removeReferenceImage();
+      await sending.api.sendMessage();
+      const submissions = sending.requests.filter((request) => request.path.endsWith('/messages'));
+      equal(submissions.length, 1, mode + ': answering submits exactly once without automatic mutation replay');
+      equal(submissions[0].data.context.discard_reference_image, mode === 'inherit' ? undefined : true, mode + ': the actual submitted context carries only the explicit removal decision');
+      check(!('screenshot' in submissions[0].data.context), mode + ': metadata-only retained images are not reuploaded from the browser');
+      if (mode === 'rejected') {
+        equal(sending.api.state.draft, answer, 'A rejected answer restores its unsent text');
+        equal(sending.w.sessionStorage.getItem(sending.api.referenceRemovalKey(17)), reference.message_id, 'A failed send preserves pending removal rather than restoring the discarded image');
+        check(sending.api.referenceImageRemoved(), 'The failed answer remains detached from the same retained reference');
+        sending.setHandler(async (request) => request.path.endsWith('/messages') ? accepted : readHandler(request));
+        await sending.api.reconnectChat();
+        equal(sending.api.state.draft, answer, 'Reconnecting a failed send retains its draft answer');
+        await sending.api.sendMessage();
+        equal(count(sending, '/messages', 'POST'), 2, 'Only an explicit second Send retries the answer');
+      }
+      equal(sending.w.sessionStorage.getItem(sending.api.referenceRemovalKey(17)), null, mode + ': an accepted answer clears its old pending removal marker');
+      equal(sending.api.state.draft, '', mode + ': accepted answers clear only their submitted draft');
+      equal(sending.api.state.error, '', mode + ': successful or authoritatively reconciled answers do not leave stale errors');
+    } finally { sending.close(); }
+  }
+  for (const replacement of [false, true]) {
+    const answer = 'Keep this answer after partial storage failure.';
+    const partiallySaved = waiting(); partiallySaved.messages = [message, { role: 'user', content: answer }];
+    const sending = referenceImageFixture({ session: waiting(), handler: async (request) => {
+      if (request.path.endsWith('/messages')) throw Object.assign(new Error('WordPress could not save the new task.'), { code: 'bhranti_storage', data: { status: 500 } });
+      if (request.method === 'GET' && request.path.endsWith('/sessions/17')) return partiallySaved;
+      return readHandler(request);
+    } });
+    try {
+      sending.api.removeReferenceImage();
+      if (replacement) await sending.api.attachReferenceImage(referenceFile());
+      const chosen = sending.api.state.screenshot;
+      sending.api.state.draft = answer; sending.api.rememberDraft();
+      await sending.api.sendMessage(); await until(() => idle(sending), sending);
+      equal(count(sending, '/messages', 'POST'), 1, 'A partial message save never automatically resends the answer');
+      equal(sending.api.state.session.run.id, runId, 'Failed run storage retains the previous waiting run identity');
+      equal(sending.api.state.draft, answer, 'Appended text without a new run restores the exact answer draft');
+      check(sending.api.state.error, 'Partial storage keeps the recovery warning until the user reconnects');
+      equal(sending.w.sessionStorage.getItem(sending.api.referenceRemovalKey(17)), reference.message_id, 'A partial message save cannot clear the explicit image-removal choice');
+      check(sending.api.referenceImageRemoved(), 'The removed reference cannot silently reappear after failed task persistence');
+      equal(sending.api.state.screenshot, chosen, 'An unaccepted replacement image stays in its draft');
+      equal(sending.w.document.getElementById('bhranti-remove-reference-image'), null, 'Recovery never shows the reference that the user removed');
+      await sending.api.reconnectChat(); await until(() => idle(sending), sending);
+      equal(sending.api.state.draft, answer, 'Read-only reconnect preserves an answer whose task was not accepted');
+      equal(sending.api.state.screenshot, chosen, 'Read-only reconnect preserves the unaccepted replacement');
+      check(sending.api.referenceImageRemoved(), 'Read-only reconnect keeps the pending removal until another explicit Send');
+      equal(count(sending, '/messages', 'POST'), 1, 'Reconnect performs no replay of the failed task start');
+    } finally { sending.close(); }
+  }
 }
 
 async function testAwaitingInputAndIntent() {
@@ -531,7 +687,7 @@ async function testSubmissionAcknowledgement() {
   for (const accepted of [false, true]) {
     const text = 'One exact new fixture submission ' + accepted;
     let reads = 0;
-    const acknowledged = session('running', { phase: 'model' }); acknowledged.messages.push({ role: 'user', content: text, created: '2026-10-09T00:00:03Z' });
+    const acknowledged = session('running', { id: '90000000-1000-4000-8000-100000000019', phase: 'model' }); acknowledged.messages.push({ role: 'user', content: text, created: '2026-10-09T00:00:03Z' });
     const completed = { ...acknowledged, run: { ...acknowledged.run, status: 'complete', phase: '' } };
     const page = fixture({ handler: async (request) => {
       if (request.path.endsWith('/workspace')) return { sessions: [{ id: 17, title: 'Fixture' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
@@ -546,7 +702,7 @@ async function testSubmissionAcknowledgement() {
       equal(count(page, '/step', 'POST'), 0, 'Submission reconciliation cannot fabricate a new planning call');
       equal(count(page, '/execute', 'POST'), 0, 'Submission reconciliation cannot fabricate a prepared action');
       if (accepted) {
-        equal(page.api.state.error, '', 'Only a fresh persisted user message proves an accepted submission');
+        equal(page.api.state.error, '', 'A fresh persisted user message and different server run prove an accepted submission');
         equal(page.api.state.draft, '', 'Acknowledged submission is not restored as a duplicate draft');
         equal(page.api.state.session.run.status, 'complete', 'An accepted task reconciles to actual server completion');
       } else {
@@ -1733,6 +1889,7 @@ async function testDurableTaskPresentation() {
 async function main() {
   await testTransportBoundaries();
   await testReferenceImageContext();
+  await testReferenceContinuation();
   await testAwaitingInputAndIntent();
   await testPollingOutage();
   await testNoncriticalAndExpiredChat();

@@ -30,6 +30,7 @@ final class Bhranti_Media { public static function catalog() { return array(); }
 final class BhrantiIncompletePrompt {
     public function using_system_instruction( $value ) { return $this; }
     public function as_json_response( $value ) { return $this; }
+    public function as_output_modalities( ...$modalities ) { return $this; }
     public function using_request_options( $value ) { return $this; }
     public function generate_text() { ++$GLOBALS['ir_calls']; return $GLOBALS['ir_reply']; }
 }

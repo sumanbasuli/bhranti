@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.5.1
+Stable tag: 0.5.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,8 @@ Site-wide prompt, agent and skill settings remain until replaced or uninstalled.
 
 Work plans and server-recorded action references belong to the private conversation. They are included in native personal-data export and removed with that conversation or native erasure. Relevant checkpoints, a bounded summary of settled work and recent exact results can be sent to the native provider instead of resending all older tool output. Receipt archives are limited to 100 runs and 4 MB of archived receipts per conversation; reaching the bound asks for a new conversation rather than discarding records. A saved-state check only proves the relevant fields were read after the recorded write; it does not certify visual quality, visitor flows or WCAG conformance.
 
+One chosen reference image stays bound to its original human message through the same task's question-and-answer intake. The composer shows a retained Reference image chip; remove it before sending an answer to exclude it, or attach a new image to replace it. The image is shared through the native connector during that continuation, remains bounded private run data, and is included in conversation export and erasure. Completed/cancelled tasks and new conversations do not silently carry it into new requests. It is not a fresh screenshot or an automatic Media Library upload.
+
 Private memory stores explicitly requested language, tone, design and workflow preferences and bounded verified image facts in encrypted, owner-scoped files under wp-content/bhranti-memory. Files are data only, never included or executed. Native local filesystem and crypto support are required; chat can continue without memory if unavailable. Settings provides review/reset; native personal-data export, erasure and uninstall cover memory. Preferences remain until forgotten or erased. Capability observations expire after one day and never override fresh native checks. Changing WordPress authentication salts makes old memory unreadable but still resettable.
 
 Conversations, run context, tool results, rollback snapshots and audit records are stored in this WordPress database until deleted or erased. The UI lists the latest 50 conversations and latest 100 timeline events; the separate audit log retains paginated records without that timeline limit. A conversation accepts 200 messages; each submitted message may contain 12,000 characters. Assistant replies show sanitized static HTML previews for standard WordPress images, tables and text formatting. Block delimiters are hidden; dynamic block callbacks are never executed. Raw response content remains available through Copy response. Per-tab editor protection stores only a UUID, editor/dirty flags and expiry. Clean closed tabs expire after two minutes; dirty markers remain until cleared or explicitly resumed. These markers support native export, erasure and uninstall. Background queue entries contain only conversation/run/requester identifiers. Unsent drafts are stored separately per chat in this browser tab’s session storage; attached screenshots stay in browser memory until sent or removed. Sent screenshots are bounded to 2 MiB and become native AI image message parts.
@@ -118,6 +120,12 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.5.2 =
+* Ground design content and imagery in the offering, audience and visitor decisions rather than decorative style alone.
+* Analyze supplied visual references and adapt their defining qualities to real site content and native blocks.
+* Preserve a chosen reference image through the same task's question-and-answer intake, bound to its original human message.
+* Show the retained reference in the composer with an explicit removal control before the next answer is sent.
 
 = 0.5.1 =
 * Negotiate optional image aspect ratios through native metadata before one generation and report actual saved dimensions.

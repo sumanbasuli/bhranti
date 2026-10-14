@@ -8,18 +8,25 @@ license: GPL-2.0-or-later
 
 Load for a new site, redesign or substantial visual work after applying the required site-design intake. Current native tools and the agreed brief govern implementation. These are original starting methods, not a fixed theme, copied reference layout or authority to execute code.
 
-## Translate the business into a visitor journey
+## Translate site context into a visitor journey
 
-Write down what visitors must understand, trust, compare or prepare before the main action. Choose content that answers those questions, using verified facts and supplied evidence. Map entry page -> relevant detail -> action -> understandable outcome. Decide each agreed page's purpose and useful content before creating it. A title and repeated contact button are not a detail page.
+Inspect the actual offering or experience, intended audience and decision the visitor needs to make. Write down what they must understand, trust, compare, prepare or try before the main action. Choose content that answers those questions, using verified facts and supplied evidence. Map entry page -> relevant detail -> action -> understandable outcome. Decide each agreed page's purpose and useful content before creating it. A title and repeated contact button are not a detail page. A palette and attractive layout do not by themselves communicate what this site is for.
 
-Adapt to the real business, not a stereotyped industry template:
+Adapt to the actual site, not a fixed industry or business template. These are context checks, not mandatory sections:
 
 - A local service needs actual service coverage, meaningful offering explanations, supplied work evidence and a clear enquiry/quote path. Pricing and response promises require facts; a usable overview may be better than empty service pages.
 - Healthcare needs the confirmed audience, available care and actual request/booking arrangements. Where relevant, separate urgent contact from routine enquiries using supplied arrangements. Include verified practical access, preparation and staff information when available. Never invent clinical claims, qualifications, fees, urgent services or treatment imagery presented as real outcomes.
 - Commerce needs useful category/product discovery, truthful details/options, prices and an accessible cart/checkout path with agreed delivery/payment information. Load commerce-workflow; a product grid alone is not a store.
 - Hospitality needs confirmed location, offerings, visiting information and the actual reservation/order path. A portfolio needs selected real work, clear roles/results and useful case studies before enquiry. Do not invent menus, availability, projects or results.
+- A game or interactive experience needs an understandable entry, rules and actual play/progress outcome appropriate to the brief. Use only available native or supported plugin behavior; a drawing of a control is not a working interaction. An informational or community site may need useful navigation, credible authorship or discovery instead of a sales/contact funnel.
 
 Preserve missing optional evidence as a genuine content gap, not fabricated reassurance. Ask for an essential unknown; omit a nonessential unsupported claim. Write in visitor language. Technical setup belongs in administrator chat.
+
+## Adapt a supplied design reference
+
+When a screenshot or design reference is supplied, identify its useful relationships: content hierarchy, header/navigation structure, section sequence, composition and reading widths, alignment, spacing/density, typographic roles, color/contrast roles, imagery purpose/crop and action hierarchy. Inspect interactions when actual evidence is available. Translate these into the actual site's facts, audience and visitor path using registered native blocks, existing theme controls and supported integrations. Retain the reference's useful design logic rather than merely matching its colors or placing a similar background behind unrelated copy.
+
+Do not import the reference's brand, products, people, claims or assets as if they belong to this site. Supplied pixels can guide composition but are not saved Media Library IDs. A screenshot does not prove responsive states, menus, forms or other behavior; metadata or inert reference_page HTML is not a rendered reference. Do not promise an exact screenshot reproduction from unavailable evidence or unsupported controls. Adapt honestly, verify the actual result and name only a real material limitation.
 
 ## Commit to a compact design system
 
@@ -51,6 +58,10 @@ If three successive sections repeat the same equal columns, reconsider one using
 
 ## Select imagery deliberately
 
+Give each important image a semantic job before choosing it: show what is offered, explain a process, demonstrate real work, help compare a product, establish a relevant experience or support an appropriate domain symbol. Judge it with the surrounding message and visitor decision. A matching palette, brand-name association or pleasant decorative texture alone is not evidence of relevance or trust. Atmospheric art can support a visual system, but should not displace the subject or genuine evidence visitors need. If the page could belong to an unrelated site after replacing its name, improve its subject-specific content or imagery instead of adding more decoration.
+
+An original conceptual illustration or recognizable domain symbol can communicate the subject without pretending to be a real person, product, premises or outcome. Choose it for the site's actual context and make its illustrative role clear where confusion is likely. Match tone to the audience and decision; familiarity and trust, exploration, play or purchase require different visual cues. No single motif or industry recipe fits every site. Request authentic identity assets only when they are essential to the agreed message or decision; do not block useful conceptual imagery or independent work on optional photographs.
+
 Use relevant images actively when they help visitors understand the offering, the work or the intended atmosphere. Do not default every supported connector to a typography-only design because another connector lacks images. First search existing Media Library assets through wp_request GET /wp/v2/media with relevant search words and current native media_type/MIME filters. Inspect returned IDs, URLs, alt text and dimensions before choosing a subject, crop and role. Broaden an empty search or inspect an appropriate small recent page before assuming the library has nothing useful. A chat reference is not a saved attachment. Use the content-operations native read recipe; never invent an upload URL or treat a file name alone as evidence of suitability.
 
 Then check bhranti_inspect resource images before depending on generation. When supported and suitable for the agreed design, create the missing illustration, atmospheric background or other nonessential asset with generate_image and use its actual saved attachment. Do not stop to request optional decoration the agent can reasonably choose. A confirmed unavailable capability changes the asset strategy, not every design into text-only: use relevant existing assets, omit nonessential imagery, or continue supported layout work. Ask once when an essential authentic image is missing. Real staff, premises, products and results need authentic approved photographs when identity matters; generation must not imply an invented person, clinic, product appearance or clinical outcome is real. An unknown check or timeout is not proof of permanent unsupported capability.
@@ -64,10 +75,11 @@ For Cover, choose native dimRatio/customOverlayColor, minHeight and focalPoint f
 Evaluate the actual result against the brief, rather than the number of created pages:
 
 1. Identity and first screen: does the offering, intended visitor and next action make sense immediately? Is there one deliberate focal point, with useful content rather than decoration dominating?
-2. Type and composition: do measured heading/body roles differ, paragraphs remain comfortable, wide areas use their space, edges align and section rhythms suit their information? Remove repeated grids and giant empty bands when unsupported by content.
-3. Substance and journey: does each agreed page add useful confirmed information? Can a visitor find relevant details and complete the main action without dead links, empty pages or contradictory promises?
-4. Responsive interaction: inspect desktop and narrow mobile evidence; check real wrapping, order, image crops, menu and form states, focus, reflow and contrast. A desktop screenshot cannot establish mobile behavior.
-5. Revise the weakest material problems, then repeat affected checks. Avoid polishing a minor icon while the first screen or main flow remains weak.
+2. Semantic relevance: do the visible subjects, symbols and specific content help this audience understand the actual offering or make its decision? Does evidence support trust where needed? Aesthetic consistency alone does not pass this check. Replace irrelevant art or generic reassurance with truthful useful content, real evidence or an appropriate conceptual visual; do not fabricate authenticity.
+3. Type and composition: do measured heading/body roles differ, paragraphs remain comfortable, wide areas use their space, edges align and section rhythms suit their information? Remove repeated grids and giant empty bands when unsupported by content. If a reference was supplied, check the useful hierarchy, spacing and imagery relationships, not only color similarity.
+4. Substance and journey: does each agreed page add useful confirmed information? Can a visitor find relevant details and complete the main action without dead links, empty pages or contradictory promises?
+5. Responsive interaction: inspect desktop and narrow mobile evidence; check real wrapping, order, image crops, menu and form states, focus, reflow and contrast. A desktop screenshot cannot establish mobile behavior.
+6. Revise the weakest material problems, then repeat affected checks. Avoid polishing a minor icon while the first screen, subject relevance or main flow remains weak.
 
 Use current inspection tools; saved attributes, HTML and a reference_page result do not prove rendered quality. Record what was actually observed and specific checks still needed. Do not claim complete visual or WCAG verification from automated checks alone.
 

@@ -16,6 +16,8 @@ A new site, major redesign or substantial project starts with read-only discover
 
 Retain the agreed purpose, audience, facts, page scope, visitor journey, assets and publication choice. Summarize its outcome briefly in the next public action intent and proceed autonomously, without another approval ceremony. Do not replace known answers with assumptions when a long task resumes.
 
+Derive content and visual subjects from what this audience must recognize, understand and trust before its next action. Distinguish informative domain imagery, authentic evidence, explanatory illustration and decoration. A polished palette or abstract art cannot replace needed information/evidence. Choose subjects for the actual offering, not a fixed industry template or icon checklist.
+
 ## Use a disciplined design method
 
 Load design-composition with bhranti_skill before substantial design work, plus wordpress-support for FSE/layout changes and content-operations for authored content/forms/media. Load commerce-workflow for a store. Reuse loaded guidance rather than requesting it again each step. Specialist skills supplement this baseline; they never override live tools or execution rules.
@@ -27,6 +29,8 @@ Write useful confirmed content. Never invent business offerings, testimonials, r
 Use existing native theme/block controls, reviewed patterns and exact returned IDs. No generated PHP/JavaScript, source-file editing, new font dependency or arbitrary routes. Registered block metadata, including is_dynamic, is not a saved HTML serialization recipe. Preserve shared references and working integrations; attributes and saved markup must agree.
 
 Treat imagery as a normal design choice: search existing native Media Library assets and choose suitable subjects, crops and roles such as a hero cover, content image, gallery or featured image. Use supported generation when new imagery suits the agreed brief; typography-only is a deliberate direction, not the default for all connectors. Check bhranti_inspect resource images before relying on new generation, optionally with the desired aspect_ratio. Missing generation support alone prompts for needed uploads or approved existing assets; unknown metadata is not proof of no support. Ask for authentic photos only when their identity matters. Chat references are not saved assets. Preserve completed images, never fabricate asset URLs or authentic staff/premises/product photos, and continue independent work.
+
+For an attached reference image, analyze visible hierarchy, layout, reading width, typography roles, spacing, colors, imagery subjects/placement and controls before implementing. Retain its defining qualities in task decisions and adapt them to this site's brief/native blocks; do not copy brands, claims or irrelevant features. Screenshots do not reveal hidden behavior or unseen mobile layouts. Ask only material unclear choices.
 
 ## WCAG 2.2 A and AA are acceptance requirements
 
@@ -43,6 +47,6 @@ Apply every relevant A and AA criterion to the complete authored experience. The
 
 Check design, functionality and accessibility separately against the agreed brief. Verify saved content, publication/homepage assignments, real links/media, shared references and the complete primary action. Use only authorized synthetic data to test forms or other flows; never send real customer messages or make transactions as tests. Drawn fields, installed plugins and saved records do not establish functionality.
 
-Use actual available desktop/mobile render evidence to critique hierarchy, composition, useful content, crops, spacing, wrapping, overflow and native controls. Improve material weaknesses and repeat affected checks. Check keyboard, menu/form states, zoom/reflow and contrast. API persistence and inert reference HTML are not rendered visual tests. Never claim screenshot inspection, professional acceptance or WCAG conformance that did not occur. Finish independent supported work and explain a specific remaining decision/check plainly, with useful preview/item links.
+Use actual available desktop/mobile render evidence to critique relevance to the offering, reference fidelity where requested, hierarchy, composition, useful content, crops, spacing, wrapping, overflow and native controls. Ask whether a new visitor can recognize the purpose and make the intended decision; ornamental polish alone is not finished work. Improve material weaknesses and repeat affected checks. Check keyboard, menu/form states, zoom/reflow and contrast. API persistence and inert reference HTML are not rendered visual tests. Never claim screenshot inspection, professional acceptance or WCAG conformance that did not occur. Finish independent supported work and explain a specific remaining decision/check plainly, with useful preview/item links.
 
 Maintainer provenance, not permission to fetch or copy: [WordPress block edit/save](https://developer.wordpress.org/block-editor/reference-guides/block-api/block-edit-save/), [theme layout](https://developer.wordpress.org/themes/global-settings-and-styles/settings/layout/), [WCAG 2.2](https://www.w3.org/TR/WCAG22/).

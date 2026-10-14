@@ -46,7 +46,7 @@ function wp_get_theme() { return new class { public function get( $key ) { retur
 function wp_count_posts( $type ) { return (object) array( 'publish' => 0 ); }
 function get_translations_for_domain( $domain ) { return new class { public function translate( $text ) { return $text; } }; }
 function wp_get_connectors() { return array( 'fixture' => array( 'type' => 'ai_provider' ) ); }
-function wp_ai_client_prompt( $history ) { $GLOBALS['ac']['history'] = $history; return new BhrantiClarificationPrompt(); }
+function wp_ai_client_prompt( $history ) { $GLOBALS['ac']['history'] = $history; return new BhrantiClarificationPrompt( $history ); }
 final class BhrantiClarificationRegistry {
     public static function defaultRegistry() { return new self(); }
     public function hasProvider( $id ) { return 'fixture' === $id; }
@@ -55,9 +55,20 @@ final class BhrantiClarificationRegistry {
 class_alias( 'BhrantiClarificationRegistry', 'WordPress\\AiClient\\AiClient' );
 require ABSPATH . 'wp-includes/php-ai-client/autoload.php';
 final class BhrantiClarificationPrompt {
+    private $history;
+    public function __construct( $history ) { $this->history = $history; }
     public function using_system_instruction( $text ) { $GLOBALS['ac']['instruction'] = $text; return $this; }
     public function as_json_response( $schema ) { $GLOBALS['ac']['schema'] = $schema; return $this; }
+    public function as_output_modalities( ...$modalities ) { return $this; }
     public function using_request_options( $options ) { return $this; }
+    public function is_supported_for_text_generation() {
+        $files = 0; foreach ( $this->history as $message ) { foreach ( $message->getParts() as $part ) { $files += (int) $part->getType()->isFile(); } }
+        $GLOBALS['ac']['support_checks'][] = array( 'history' => $this->history, 'instruction' => $GLOBALS['ac']['instruction'], 'schema' => $GLOBALS['ac']['schema'], 'files' => $files );
+        $kind = $files ? 'image' : 'text';
+        $support = array_key_exists( $kind, $GLOBALS['ac']['vision_support'] ?? array() ) ? $GLOBALS['ac']['vision_support'][ $kind ] : true;
+        if ( $support instanceof Throwable ) { throw $support; }
+        return $support;
+    }
     public function generate_text() { ++$GLOBALS['ac']['calls']; return $GLOBALS['ac']['reply']; }
 }
 final class Bhranti_Settings { public static function profile( $id ) { return array( 'id' => $id, 'max_steps' => 128 ); } public static function all() { return array( 'permissions' => array() ); } }
