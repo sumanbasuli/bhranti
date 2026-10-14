@@ -1704,6 +1704,32 @@ async function testSettingsActionBridgeProof() {
   } finally { page.close(); }
 }
 
+async function testDurableTaskPresentation() {
+  const page = fixture({ siteFrame: 'admin' });
+  try {
+    page.api.state.open = true;
+    page.api.state.session = session('running', { phase: 'prepared', next_action: { tool: 'bhranti_task', method: 'GET', write: false, site_action: false, summary: 'Organizing the work plan' } });
+    page.api.state.session.task = { objective: 'Build an accessible workshop page.', outcomes: [{ id: 'draft', title: 'Create the draft', status: 'in_progress', evidence: [] }, { id: 'connect', title: '<img src=x onerror=alert(1)>', status: 'pending', evidence: [] }], checks: [{ id: 'saved', title: 'Read the saved page', status: 'read_back', evidence: ['write', 'read'] }, { id: 'mobile', title: 'Check the mobile layout', status: 'manual', evidence: [] }] };
+    page.api.render();
+    const plan = page.w.document.getElementById('bhranti-work-plan');
+    check(plan && !plan.open, 'A durable work plan is a compact optional native disclosure');
+    check(plan.textContent.includes('In progress') && plan.textContent.includes('Review needed'), 'Work states and unavailable visual checks remain visible and distinct');
+    check(plan.textContent.includes('Saved state checked') && !plan.textContent.includes('Verified'), 'A saved readback does not claim a finished visual or visitor verification');
+    check(!plan.querySelector('img') && plan.textContent.includes('<img'), 'Checkpoint text never becomes executable HTML');
+    check(!siteOverlay(page), 'Metadata-only planning cannot take control of the native admin area');
+    page.api.state.session.events.push({ id: 'skill-receipt', type: 'action', success: true, metadata_only: true, operation: 'read', run_id: runId, summary: 'Guidance loaded.' });
+    page.api.state.session.run.phase = '';
+    delete page.api.state.session.run.next_action;
+    page.api.render();
+    check(!siteOverlay(page), 'A prior specialist guidance result cannot falsely establish site control');
+    page.api.state.session.run.status = 'incomplete';
+    page.api.render();
+    check(page.w.document.getElementById('bhranti-run-status').textContent.includes('Partially complete'), 'Unfinished outcomes have an honest terminal state');
+    check(!page.w.document.querySelector('#bhranti-stop'), 'Partial completion hands control back and retains the plan');
+    equal(page.requests.length, 0, 'Rendering checkpoint evidence never changes WordPress data');
+    equal(page.api.navigation.length, 0, 'Task notes never navigate or reload the native screen');
+  } finally { page.close(); }
+}
 async function main() {
   await testTransportBoundaries();
   await testReferenceImageContext();
@@ -1745,6 +1771,7 @@ async function main() {
   await testGeneralFseControlSafety();
   await testGeneralControlWithoutExternalOpener();
   await testSettingsActionBridgeProof();
+  await testDurableTaskPresentation();
   console.log('PASS ' + checks + ' isolated product UX checks; no HTTP, AI, WordPress load or DB access');
 }
 const watchdog = setTimeout(() => { console.error('FAIL: unresolved isolated UI operation exceeded the 20-second test deadline'); process.exit(1); }, 20000);

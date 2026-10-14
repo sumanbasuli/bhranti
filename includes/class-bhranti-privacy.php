@@ -76,7 +76,7 @@ final class Bhranti_Privacy {
 				'post_type'      => 'bhranti_session',
 				'post_status'    => array_keys( get_post_stati() ),
 				'author'         => $user->ID,
-				'posts_per_page' => 20,
+				'posts_per_page' => 1,
 				'paged'          => $page,
 				'orderby'        => 'ID',
 				'order'          => 'ASC',
@@ -115,6 +115,7 @@ final class Bhranti_Privacy {
 						'value' => esc_html(
 							wp_json_encode(
 								array(
+									'task_checkpoints' => class_exists( 'Bhranti_Task' ) ? Bhranti_Task::export_data( $session->ID ) : array(),
 									'run'              => get_post_meta( $session->ID, 'bhranti_run', true ),
 									'events'           => get_post_meta( $session->ID, 'bhranti_events', true ),
 									'rollback_records' => get_post_meta( $session->ID, 'bhranti_actions', true ),
@@ -245,7 +246,7 @@ final class Bhranti_Privacy {
 
 		return array(
 			'data' => $data,
-			'done' => count( $sessions ) < 20 && count( $logs ) < 20 && count( $media ) < 20,
+			'done' => count( $sessions ) < 1 && count( $logs ) < 20 && count( $media ) < 20,
 		);
 	}
 

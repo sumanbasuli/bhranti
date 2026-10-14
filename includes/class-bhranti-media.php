@@ -27,32 +27,46 @@ final class Bhranti_Media {
 		}
 		return array(
 			'generate_image' => array(
-				'description' => 'Generate one image with the configured native WordPress image provider and save it to the Media Library. Use the returned attachment id and url in a reviewed post/page update. Supply a descriptive prompt, optional plain-text title and alt_text, and optional format png/jpeg/webp. Current WordPress upload and image-editor support is checked before generation. A bounded raster may be converted or resized locally to meet the current upload limit, without another AI request. Supports only inline PNG, JPEG or WebP images, not remote URLs or uploads. Image generation may be unavailable with the current connector. If the native check returns bhranti_image_support, do not repeat the unsupported request: reuse suitable user-approved Media Library images or ask one concise question for the needed images, suggesting Media → Add New when they must be placed on the site. Chat reference attachments provide visual context and are not automatically saved as usable Media Library assets. Continue independent authorized work before waiting if it does not depend on the missing images. A discovery or provider failure does not prove permanent lack of image support. Never fabricate photos, attachment IDs or URLs. A saved image remains in Media Library after page-content rollback; there is no automatic media deletion or undo. Never repeat a completed image generation just because a later page edit fails.',
+				'description' => 'Generate one image with the configured native WordPress image provider and save it to the Media Library. Use the returned attachment id and url in a reviewed post/page update. Supply a descriptive prompt, optional plain-text title and alt_text, optional format png/jpeg/webp, and optional aspect_ratio such as 16:9 for landscape, 2:3 for portrait or 1:1 for square. Native metadata negotiates the requested ratio, a closest supported common ratio in the same orientation, or the native default before one generation. Results report requested/selected ratios and actual dimensions; a null selection means the native default. An unsupported shape alone does not mean image generation is unavailable. Never regenerate or crop the saved original to imitate a ratio. Current WordPress upload and image-editor support is checked before generation. A bounded raster may be converted or resized locally to meet the current upload limit, without another AI request. Supports only inline PNG, JPEG or WebP images, not remote URLs or uploads. Before planning generated images for a task, use bhranti_inspect with resource images to check native capability without generating anything. Image generation may be unavailable with the current connector. When inspection confirms native_unavailable, or the generation preflight returns bhranti_image_support, do not repeat the unsupported request: reuse suitable user-approved Media Library images or ask one concise question for the needed images, suggesting Media → Add New when they must be placed on the site. Chat reference attachments provide visual context and are not automatically saved as usable Media Library assets. Continue independent authorized work before waiting if it does not depend on the missing images. A discovery or provider failure does not prove permanent lack of image support. Never fabricate photos, attachment IDs or URLs. A saved image remains in Media Library after page-content rollback; there is no automatic media deletion or undo. Never repeat a completed image generation just because a later page edit fails.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
-						'prompt'   => array(
+						'prompt'       => array(
 							'type'      => 'string',
 							'minLength' => 1,
 							'maxLength' => 2000,
 						),
-						'title'    => array(
+						'title'        => array(
 							'type'      => 'string',
 							'maxLength' => 200,
 						),
-						'alt_text' => array(
+						'alt_text'     => array(
 							'type'      => 'string',
 							'maxLength' => 500,
 						),
-						'format'   => array(
+						'format'       => array(
 							'type' => 'string',
 							'enum' => array( 'png', 'jpeg', 'webp' ),
 						),
+						'aspect_ratio' => self::aspect_ratio_schema(),
 					),
 					'required'             => array( 'prompt' ),
 					'additionalProperties' => false,
 				),
 			),
+		);
+	}
+
+	/**
+	 * Bound native ratio input independently of provider preferences or pixels.
+	 *
+	 * @return array Reusable finite argument schema.
+	 */
+	public static function aspect_ratio_schema() {
+		return array(
+			'type'      => 'string',
+			'maxLength' => 7,
+			'pattern'   => '^[1-9][0-9]{0,2}:[1-9][0-9]{0,2}$',
 		);
 	}
 
@@ -112,10 +126,12 @@ final class Bhranti_Media {
 		if ( is_wp_error( $logged ) ) {
 			return $logged;
 		}
+		$selected_format = null;
+		$selected_ratio  = null;
 		try {
 			$image = Bhranti_Workspace::ai_request(
-				static function () use ( $args, $capabilities ) {
-					$builder = self::image_prompt( $args, $capabilities );
+				static function () use ( $args, $capabilities, &$selected_format, &$selected_ratio ) {
+					$builder = self::image_prompt( $args, $capabilities, $selected_format, $selected_ratio );
 					return is_wp_error( $builder ) ? $builder : $builder->generate_image_result();
 				}
 			);
@@ -193,7 +209,88 @@ final class Bhranti_Media {
 				'height'    => $validated['height'],
 			)
 		);
+		$result['data'] += self::ratio_result( $args['aspect_ratio'] ?? null, $selected_ratio );
 		return $result;
+	}
+
+	/**
+	 * Discover current native image support without generating or saving an image.
+	 *
+	 * Called only by an explicit owned inspection tool, never sidebar startup.
+	 * The native client may retrieve model metadata; no user prompt or site data
+	 * is supplied, and neither credentials nor provider/model names are returned.
+	 *
+	 * @param int         $requester_id Human connector identity.
+	 * @param int         $actor_id Managed actor supplied by the owned tool dispatcher.
+	 * @param int         $session_id Private conversation.
+	 * @param string|null $aspect_ratio Optional requested output ratio, never a provider preference.
+	 * @return array|WP_Error Nonsecret current capability, or permission failure.
+	 */
+	public static function inspect_images( $requester_id, $actor_id, $session_id, $aspect_ratio = null ) {
+		$permission = self::permission( $requester_id, $actor_id, $session_id );
+		if ( is_wp_error( $permission ) ) {
+			return $permission;
+		}
+		if ( null !== $aspect_ratio && ! self::valid_ratio( $aspect_ratio ) ) {
+			return self::error( 'bhranti_media_invalid', __( 'Use a positive aspect ratio such as 16:9, 3:2, 2:3, 4:3 or 1:1, with at most three digits per side.', 'bhranti' ), 400 );
+		}
+		$capabilities = self::capabilities( $requester_id, $actor_id );
+		$data         = array(
+			'status'                    => 'unknown',
+			'reason'                    => 'discovery_unavailable',
+			'upload_formats'            => $capabilities['allowed_mime_types'],
+			'generation_formats'        => array(),
+			'max_generated_image_bytes' => $capabilities['max_upload_bytes'],
+			'requested_aspect_ratio'    => $aspect_ratio,
+			'selected_aspect_ratio'     => null,
+			'aspect_ratio_fallback'     => false,
+		);
+		$summary      = __( 'WordPress could not check image generation right now. This does not establish whether the connector supports images. Existing Media Library images or user uploads can be used instead.', 'bhranti' );
+		if ( is_wp_error( self::preflight( array(), $capabilities ) ) ) {
+			$data['status'] = 'unavailable';
+			$data['reason'] = 'site_media_limits';
+			$summary        = __( 'Current site media limits prevent saving generated images. This does not establish whether the connector supports images. Use suitable existing Media Library assets while the media limits are reviewed.', 'bhranti' );
+		} else {
+			$format       = null;
+			$ratio        = null;
+			$text_support = null;
+			try {
+				$builder = Bhranti_Workspace::ai_request(
+					static function () use ( $capabilities, $aspect_ratio, &$format, &$ratio, &$text_support ) {
+						$args = array( 'prompt' => 'Check whether image generation is supported.' );
+						if ( null !== $aspect_ratio ) {
+							$args['aspect_ratio'] = $aspect_ratio;
+						}
+						$builder = self::image_prompt( $args, $capabilities, $format, $ratio );
+						if ( is_wp_error( $builder ) && 'bhranti_image_support' === $builder->get_error_code() ) {
+							// Empty/missing native metadata must not be mistaken for a known
+							// text-only connector. This is another support check, not generation.
+							$text_support = wp_ai_client_prompt( 'Check whether text generation is supported.' )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 30.0 ) ) )->is_supported_for_text_generation();
+						}
+						return $builder;
+					}
+				);
+			} catch ( Throwable $error ) {
+				$builder = self::discovery_error();
+			}
+			if ( $builder instanceof WP_AI_Client_Prompt_Builder ) {
+				$data['status']             = 'available';
+				$data['reason']             = 'native_supported';
+				$data['generation_formats'] = $format ? array( $format ) : array();
+				$data                       = array_merge( $data, self::ratio_result( $aspect_ratio, $ratio ) );
+				$summary                    = $format ? __( 'Native image generation is available for this request. The listed MIME type was selected by native support checks; it is not an exhaustive format list. Generated output still needs normal media validation.', 'bhranti' ) : __( 'Native image generation is available, but no output format was advertised. Generated output still needs normal media validation and may require local conversion.', 'bhranti' );
+			} elseif ( is_wp_error( $builder ) && 'bhranti_image_support' === $builder->get_error_code() && true === $text_support ) {
+				$data['status'] = 'unavailable';
+				$data['reason'] = 'native_unavailable';
+				$summary        = __( 'The native WordPress client does not make image generation available for this request. Ask which suitable Media Library images to use, or ask the user to upload the needed images through Media → Add New. Continue work that does not depend on them. No image was generated.', 'bhranti' );
+			}
+		}
+		return array(
+			'summary'            => $summary,
+			'data'               => $data,
+			'metadata_only'      => true,
+			'rollback_available' => false,
+		);
 	}
 
 	/**
@@ -269,6 +366,9 @@ final class Bhranti_Media {
 	 * @return true|WP_Error
 	 */
 	private static function preflight( $args, $capabilities ) {
+		if ( array_key_exists( 'aspect_ratio', $args ) && ! self::valid_ratio( $args['aspect_ratio'] ) ) {
+			return self::error( 'bhranti_media_invalid', __( 'Use a positive aspect ratio such as 16:9, 3:2, 2:3, 4:3 or 1:1, with at most three digits per side.', 'bhranti' ), 400 );
+		}
 		if ( ! $capabilities['formats'] || $capabilities['max_upload_bytes'] < 1 ) {
 			return self::error( 'bhranti_media_format', __( 'WordPress cannot currently process an allowed image format within its upload limit. No image generation was requested.', 'bhranti' ), 422 );
 		}
@@ -279,41 +379,122 @@ final class Bhranti_Media {
 	}
 
 	/**
-	 * Ask the native client for a supported output type, without changing preferences.
+	 * Negotiate complete supported native output options before one generation.
 	 *
-	 * @param array $args Reviewed image arguments.
-	 * @param array $capabilities Fresh native media capabilities.
+	 * @param array       $args Reviewed image arguments.
+	 * @param array       $capabilities Fresh native media capabilities.
+	 * @param string|null $discovered_format Selected supported MIME, or null for formatless metadata.
+	 * @param string|null $discovered_ratio Selected supported ratio, or null for the native default.
 	 * @return WP_AI_Client_Prompt_Builder|WP_Error
 	 */
-	private static function image_prompt( $args, $capabilities ) {
-		$formats = $capabilities['max_upload_bytes'] <= 4194304 ? array( 'image/webp', 'image/jpeg', 'image/png' ) : array( 'image/png', 'image/webp', 'image/jpeg' );
-		foreach ( $formats as $mime ) {
+	private static function image_prompt( $args, $capabilities, &$discovered_format = null, &$discovered_ratio = null ) {
+		$discovered_format = null;
+		$discovered_ratio  = null;
+		$formats           = array();
+		$order             = $capabilities['max_upload_bytes'] <= 4194304 ? array( 'image/webp', 'image/jpeg', 'image/png' ) : array( 'image/png', 'image/webp', 'image/jpeg' );
+		foreach ( $order as $mime ) {
 			if ( ! isset( $capabilities['formats'][ $mime ] ) || ( isset( $args['format'] ) && $args['format'] !== $capabilities['formats'][ $mime ] ) ) {
 				continue;
 			}
-			$builder = wp_ai_client_prompt( $args['prompt'] )->as_output_mime_type( $mime )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-			$support = $builder->is_supported_for_image_generation();
-			if ( ! is_bool( $support ) ) {
-				return self::discovery_error();
+			$formats[] = $mime;
+		}
+		// A legacy provider may support image generation without advertising MIME or ratio options.
+		$formats[] = null;
+		foreach ( self::ratio_candidates( $args['aspect_ratio'] ?? null ) as $ratio ) {
+			foreach ( $formats as $mime ) {
+				$builder = self::image_builder( $args['prompt'], $mime, $ratio );
+				$support = $builder->is_supported_for_image_generation();
+				if ( ! is_bool( $support ) ) {
+					return self::discovery_error();
+				}
+				if ( ! $support ) {
+					continue;
+				}
+				$inline         = self::image_builder( $args['prompt'], $mime, $ratio, true );
+				$inline_support = $inline->is_supported_for_image_generation();
+				if ( ! is_bool( $inline_support ) ) {
+					return self::discovery_error();
+				}
+				$discovered_format = $mime;
+				$discovered_ratio  = $ratio;
+				return $inline_support ? $inline : $builder;
 			}
-			if ( ! $support ) {
-				continue;
+		}
+		return self::error( 'bhranti_image_support', __( 'Image generation is not available for this request. Choose suitable images from your Media Library or upload them through Media → Add New, then tell Bhranti which to use. No image was generated.', 'bhranti' ), 422 );
+	}
+
+	/**
+	 * Build one exact option combination; support checks never generate images.
+	 *
+	 * @param string      $prompt Reviewed prompt text.
+	 * @param string|null $mime Candidate output format.
+	 * @param string|null $ratio Candidate output ratio.
+	 * @param bool        $inline Whether to request inline raster output.
+	 * @return WP_AI_Client_Prompt_Builder Native public builder.
+	 */
+	private static function image_builder( $prompt, $mime, $ratio, $inline = false ) {
+		$builder = wp_ai_client_prompt( $prompt )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
+		if ( null !== $mime ) {
+			$builder = $builder->as_output_mime_type( $mime );
+		}
+		if ( null !== $ratio ) {
+			$builder = $builder->as_output_media_aspect_ratio( $ratio );
+		}
+		if ( $inline ) {
+			$builder = $builder->as_output_file_type( FileTypeEnum::inline() );
+		}
+		return $builder;
+	}
+
+	/**
+	 * Reject empty/zero/oversized ratios before touching native metadata.
+	 *
+	 * @param mixed $ratio Requested ratio.
+	 * @return bool
+	 */
+	private static function valid_ratio( $ratio ) {
+		return is_string( $ratio ) && (bool) preg_match( '/\A[1-9][0-9]{0,2}:[1-9][0-9]{0,2}\z/', $ratio );
+	}
+
+	/**
+	 * Keep fallback in the requested orientation until the native default is tried.
+	 *
+	 * @param string|null $requested Validated desired ratio.
+	 * @return array Exact, nearby common same-orientation ratios, then native default.
+	 */
+	private static function ratio_candidates( $requested ) {
+		if ( null === $requested ) {
+			return array( null );
+		}
+		list( $width, $height ) = array_map( 'intval', explode( ':', $requested ) );
+		$value                  = $width / $height;
+		$common                 = $width === $height ? array( '1:1' ) : ( $width > $height ? array( '16:9', '3:2', '4:3', '7:4' ) : array( '9:16', '2:3', '3:4', '4:7' ) );
+		usort(
+			$common,
+			static function ( $left, $right ) use ( $value ) {
+				list( $left_width, $left_height )   = array_map( 'intval', explode( ':', $left ) );
+				list( $right_width, $right_height ) = array_map( 'intval', explode( ':', $right ) );
+				return abs( $left_width / $left_height - $value ) <=> abs( $right_width / $right_height - $value );
 			}
-			$inline = wp_ai_client_prompt( $args['prompt'] )->as_output_mime_type( $mime )->as_output_file_type( FileTypeEnum::inline() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-			return true === $inline->is_supported_for_image_generation() ? $inline : $builder;
-		}
-		// Older providers may generate images without advertising an output-format option.
-		// Their one result must still pass the same native raster preparation and limits.
-		$builder = wp_ai_client_prompt( $args['prompt'] )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-		$support = $builder->is_supported_for_image_generation();
-		if ( ! is_bool( $support ) ) {
-			return self::discovery_error();
-		}
-		if ( ! $support ) {
-			return self::error( 'bhranti_image_support', __( 'Image generation is not available for this request. Choose suitable images from your Media Library or upload them through Media → Add New, then tell Bhranti which to use. No image was generated.', 'bhranti' ), 422 );
-		}
-		$inline = wp_ai_client_prompt( $args['prompt'] )->as_output_file_type( FileTypeEnum::inline() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 180.0 ) ) );
-		return true === $inline->is_supported_for_image_generation() ? $inline : $builder;
+		);
+		$candidates   = array_values( array_unique( array_merge( array( $requested ), $common ) ) );
+		$candidates[] = null;
+		return $candidates;
+	}
+
+	/**
+	 * Report selection honestly; saved dimensions remain the native authority.
+	 *
+	 * @param string|null $requested Requested ratio, or no preference.
+	 * @param string|null $selected Native negotiated ratio, or native default.
+	 * @return array Bounded nonsecret selection metadata.
+	 */
+	private static function ratio_result( $requested, $selected ) {
+		return array(
+			'requested_aspect_ratio' => $requested,
+			'selected_aspect_ratio'  => $selected,
+			'aspect_ratio_fallback'  => null !== $requested && $requested !== $selected,
+		);
 	}
 
 	/** Keep a failed native capability lookup distinct from confirmed unavailability. */

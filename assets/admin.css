@@ -113,6 +113,15 @@
 .bhranti-app .bhranti-elapsed { flex-shrink: 0; color: #a7aaad; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bhranti-app .bhranti-run-controls { display: flex; flex-shrink: 0; gap: 12px; }
 .bhranti-app .bhranti-action-preview { padding: 9px 6px 6px; margin-top: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.bhranti-app .bhranti-work-plan { margin: 12px 0; color: #c3c4c7; font-size: 12px; overflow-wrap: anywhere; }
+.bhranti-app .bhranti-plan-summary { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 4px 6px; cursor: pointer; list-style: none; }
+.bhranti-app .bhranti-plan-summary::-webkit-details-marker { display: none; }
+.bhranti-app .bhranti-work-plan[open] > .bhranti-plan-summary > .bhranti-chevron svg { transform: rotate(90deg); }
+.bhranti-app .bhranti-plan-objective { margin: 8px 6px; }
+.bhranti-app .bhranti-plan-list { margin: 8px 6px; padding: 0; list-style: none; }
+.bhranti-app .bhranti-plan-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.bhranti-app .bhranti-plan-state { flex-shrink: 0; color: #a7aaad; font-size: 11px; }
+.bhranti-app .bhranti-work-plan h3 { margin: 12px 6px 4px; font-size: 12px; }
 .bhranti-app .bhranti-action-preview h3 { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; font-weight: 500; line-height: 1.6; margin-bottom: 5px; }
 .bhranti-app .bhranti-action-preview h3 svg { width: 16px; height: 16px; margin-top: 2px; color: #a7aaad; }
 .bhranti-app .bhranti-action-preview p { margin: 5px 0; color: #c3c4c7; }

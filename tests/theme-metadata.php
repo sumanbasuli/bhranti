@@ -144,6 +144,7 @@ final class Bhranti_Audit { public static function record( ...$args ) { $GLOBALS
 require dirname( __DIR__ ) . '/includes/class-bhranti-references.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-site.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-actions.php';
+require dirname( __DIR__ ) . '/includes/class-bhranti-skills.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-knowledge.php';
 $GLOBALS['tm_type'] = new TM_Post_Type();
 $GLOBALS['tm_themes'] = array( 'active-theme' => tm_theme( 'active-theme' ), 'other-theme' => tm_theme( 'other-theme' ) );

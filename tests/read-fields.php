@@ -69,6 +69,10 @@ require dirname( __DIR__ ) . '/includes/class-bhranti-references.php';
 class WP_REST_Posts_Controller {
     public function get_item_schema() { return array( 'title' => 'page', 'properties' => array_fill_keys( array( 'title', 'status', 'content' ), array() ) ); }
     public function permission( $request ) { $GLOBALS['rf_permissions'][] = array( get_current_user_id(), $request->get_params() ); return current_user_can( 'edit_pages' ); }
+    public function get_items_permissions_check( $request ) { return $this->permission( $request ); }
+    public function get_item_permissions_check( $request ) { return $this->permission( $request ); }
+    public function update_item_permissions_check( $request ) { return $this->permission( $request ); }
+    public function delete_item_permissions_check( $request ) { return $this->permission( $request ); }
     public function get_items( $request ) { ++$GLOBALS['rf_dispatches']; return new WP_REST_Response( array( $GLOBALS['rf_record'] ) ); }
     public function get_item( $request ) { ++$GLOBALS['rf_dispatches']; return new WP_REST_Response( $GLOBALS['rf_record'] ); }
     public function update_item( $request ) { throw new RuntimeException( 'A write reached dispatch.' ); }
@@ -79,9 +83,9 @@ $GLOBALS['wp_rest_server'] = new WP_REST_Server();
 $controller = new WP_REST_Posts_Controller();
 $read_args = array( 'context' => array( 'type' => 'string', 'enum' => array( 'edit', 'view' ), 'default' => 'view' ), 'include' => array( 'type' => 'array', 'items' => array( 'type' => 'integer' ) ), 'status' => array( 'type' => 'string' ), 'per_page' => array( 'type' => 'integer' ) );
 foreach ( array( '/wp/v2/pages' => 'get_items', '/wp/v2/pages/(?P<id>[\d]+)' => 'get_item' ) as $path => $callback ) {
-    $endpoints = array( array( 'methods' => 'GET', 'callback' => array( $controller, $callback ), 'permission_callback' => array( $controller, 'permission' ), 'args' => $read_args ) );
+    $endpoints = array( array( 'methods' => 'GET', 'callback' => array( $controller, $callback ), 'permission_callback' => array( $controller, $callback . '_permissions_check' ), 'args' => $read_args ) );
     if ( 'get_item' === $callback ) {
-        foreach ( array( 'POST' => 'update_item', 'DELETE' => 'delete_item' ) as $method => $write_callback ) { $endpoints[] = array( 'methods' => $method, 'callback' => array( $controller, $write_callback ), 'permission_callback' => array( $controller, 'permission' ), 'args' => array( 'title' => array( 'type' => 'string' ) ) ); }
+        foreach ( array( 'POST' => 'update_item', 'DELETE' => 'delete_item' ) as $method => $write_callback ) { $endpoints[] = array( 'methods' => $method, 'callback' => array( $controller, $write_callback ), 'permission_callback' => array( $controller, $write_callback . '_permissions_check' ), 'args' => array( 'title' => array( 'type' => 'string' ) ) ); }
     }
     rest_get_server()->register_route( 'wp/v2', $path, $endpoints );
 }

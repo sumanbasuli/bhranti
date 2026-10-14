@@ -248,7 +248,7 @@ final class Bhranti_Actions {
 				),
 			),
 		);
-		return $catalog + ( class_exists( 'Bhranti_Forms' ) ? Bhranti_Forms::catalog() : array() ) + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
+		return $catalog + ( class_exists( 'Bhranti_Task' ) ? Bhranti_Task::catalog() : array() ) + ( class_exists( 'Bhranti_Skills' ) ? Bhranti_Skills::catalog() : array() ) + ( class_exists( 'Bhranti_Inspect' ) ? Bhranti_Inspect::catalog() : array() ) + ( class_exists( 'Bhranti_Forms' ) ? Bhranti_Forms::catalog() : array() ) + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
 	}
 
 	/**
@@ -265,6 +265,42 @@ final class Bhranti_Actions {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
+		}
+		if ( is_array( $command ) && in_array( $command['tool'] ?? '', array( 'bhranti_task', 'bhranti_skill', 'bhranti_inspect' ), true ) ) {
+			$actor_id = self::ensure_actor();
+			if ( is_wp_error( $actor_id ) ) {
+				return $actor_id;
+			}
+			if ( array_diff( array_keys( $command ), array( 'tool', 'args' ) ) || ! user_can( $requester_id, 'manage_options' ) || ! user_can( $actor_id, 'manage_options' ) || is_wp_error( rest_validate_value_from_schema( $command['args'] ?? null, self::catalog()[ $command['tool'] ]['parameters'], 'args' ) ) ) {
+				return self::error( 'bhranti_action_blocked', __( 'Use an available specialist tool with its documented fields.', 'bhranti' ), 403 );
+			}
+			if ( 'bhranti_task' === $command['tool'] ) {
+				$result = Bhranti_Task::execute( $command, $requester_id, $actor_id, $session_id );
+				return is_wp_error( $result ) ? $result : $result + array( 'metadata_only' => true );
+			}
+			if ( 'bhranti_inspect' === $command['tool'] ) {
+				$result = Bhranti_Inspect::execute( $command, $requester_id, $session_id );
+				return is_wp_error( $result ) ? $result : $result + array( 'metadata_only' => 'content' !== $command['args']['resource'] );
+			}
+			$details = array(
+				'tool' => 'bhranti_skill',
+				'name' => $command['args']['name'],
+			);
+			$logged  = self::audit( 'action_started', __( 'Loading bundled specialist guidance.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+			if ( is_wp_error( $logged ) ) {
+				return $logged;
+			}
+			$result = Bhranti_Skills::read( $command['args']['name'] );
+			$logged = self::audit( is_wp_error( $result ) ? 'action_failed' : 'action_completed', __( 'Bundled guidance lookup finished.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+			if ( is_wp_error( $logged ) ) {
+				return $logged;
+			}
+			return is_wp_error( $result ) ? $result : array(
+				'summary'            => __( 'Specialist WordPress guidance loaded.', 'bhranti' ),
+				'data'               => $result,
+				'metadata_only'      => true,
+				'rollback_available' => false,
+			);
 		}
 		if ( is_array( $command ) && in_array( $command['tool'] ?? '', array( 'plugin_request', 'plugin_search' ), true ) ) {
 			return Bhranti_Plugins::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
@@ -1019,8 +1055,151 @@ final class Bhranti_Actions {
 	/**
 	 * Locate an exact reviewed core controller and its real route schema.
 	 *
-	 * @param string $method HTTP method.
-	 * @param string $path   REST path.
+	 * @param string $path Relative native route.
+	 * @param string $method Native REST method.
+	 * @param string $field Optional exact parameter name.
+	 * @return array|WP_Error
+	 */
+	public static function route_schema( $path, $method = 'GET', $field = '' ) {
+		if ( ! is_string( $path ) || 0 !== strpos( $path, '/wp/v2/' ) || strlen( $path ) > 240 || preg_match( '/[\\\\%?#\x00-\x20]|\.\./', $path ) || ! in_array( $method, array( 'GET', 'POST', 'DELETE' ), true ) ) {
+			return self::error( 'bhranti_action_blocked', __( 'Inspect an exact reviewed WordPress core route.', 'bhranti' ), 403 );
+		}
+		$matched = self::handler( $method, $path );
+		if ( is_wp_error( $matched ) ) {
+			return $matched;
+		}
+		$endpoint   = $matched['endpoint'];
+		$controller = $endpoint['callback'][0];
+		$class      = get_class( $controller );
+		$schema     = $controller->get_item_schema();
+		$allowed    = self::write_fields( $class, $schema['title'] ?? basename( $path ), $schema );
+		$create     = 'POST' === $method && 'create_item' === $endpoint['callback'][1];
+		if ( 'GET' !== $method && ( ! $allowed || ( $create && in_array( $class, array( 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Attachments_Controller' ), true ) ) || ( 'DELETE' === $method && in_array( $class, array( 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Global_Styles_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller' ), true ) ) ) ) {
+			return self::error( 'bhranti_action_blocked', __( 'This operation is outside the supported native recovery policy.', 'bhranti' ), 403 );
+		}
+		$params = array();
+		foreach ( $endpoint['args'] ?? array() as $key => $argument ) {
+			if ( in_array( $key, array( 'force', 'password', 'meta', 'author_email', 'author_ip', 'author_user_agent', 'source', '_embed', 'id' ), true ) || ( 'GET' !== $method && ! in_array( $key, $allowed, true ) ) || ( '' !== $field && $field !== $key ) ) {
+				continue;
+			}
+			$params[ $key ] = self::schema_data( $argument );
+			if ( 'POST' === $method && 'WP_REST_Posts_Controller' === $class && in_array( $key, array( 'title', 'content', 'excerpt' ), true ) ) {
+				$params[ $key ]['input_note'] = 'Native post writes accept a plain string or an object with raw text. rendered and protected describe the response, not writable input. Prefer a plain string.';
+			}
+		}
+		if ( '' !== $field && ! $params ) {
+			return self::error( 'bhranti_action_blocked', __( 'That parameter is not available through the reviewed operation.', 'bhranti' ), 403 );
+		}
+		if ( strlen( wp_json_encode( $params ) ) > 40000 ) {
+			return self::error( 'bhranti_inspect_limit', __( 'This schema is large; select one exact parameter with field.', 'bhranti' ) );
+		}
+		return array(
+			'summary' => __( 'Reviewed native parameter schema retrieved.', 'bhranti' ),
+			'data'    => array(
+				'path'         => $path,
+				'method'       => $method,
+				'parameters'   => $params,
+				'verification' => 'Bounded parameter schema and explicit input notes only; callbacks and large/nested schema details are omitted. Both account permissions, current switches, valid values, approvals and editor safety are checked again on execution.',
+			),
+		);
+	}
+
+	/**
+	 * Read only native raw fields so content inspection cannot render dynamic blocks.
+	 *
+	 * @param string $path Exact native item route.
+	 * @param int    $requester_id Human.
+	 * @param int    $session_id Owned conversation.
+	 * @return array|WP_Error
+	 */
+	public static function inspect_source( $path, $requester_id, $session_id ) {
+		$owner = self::owner( $requester_id, $session_id );
+		if ( is_wp_error( $owner ) ) {
+			return $owner;
+		}
+		$actor_id = self::ensure_actor();
+		if ( is_wp_error( $actor_id ) ) {
+			return $actor_id;
+		}
+		$review = self::review(
+			array(
+				'tool' => 'wp_request',
+				'args' => array(
+					'method' => 'GET',
+					'path'   => $path,
+					'params' => array( 'context' => 'edit' ),
+				),
+			),
+			$requester_id,
+			$actor_id
+		);
+		if ( is_wp_error( $review ) ) {
+			return $review;
+		}
+		if ( ! in_array( $review['class'], array( 'WP_REST_Posts_Controller', 'WP_REST_Templates_Controller' ), true ) ) {
+			return self::error( 'bhranti_action_blocked', __( 'Inspect a saved post, page, navigation, pattern or template document.', 'bhranti' ), 403 );
+		}
+		$review['request']->set_param( '_fields', 'id,type,link,title.raw,content.raw' );
+		$data = self::dispatch( $review['request'], $actor_id );
+		if ( is_wp_error( $data ) ) {
+			return $data;
+		}
+		return array(
+			'data'   => self::public_data( $data, $review['class'] ),
+			'target' => self::target( $review, $data ),
+		);
+	}
+
+	/**
+	 * Remove executable callbacks and bound native schema data recursively.
+	 *
+	 * @param array $schema Native parameter schema.
+	 * @param int   $depth Nesting depth.
+	 * @return array Inert partial schema, with explicit truncation markers.
+	 */
+	private static function schema_data( $schema, $depth = 0 ) {
+		if ( ! is_array( $schema ) || $depth > 6 ) {
+			return array( 'truncated' => true );
+		}
+		$result = array();
+		foreach ( array( 'type', 'description', 'required', 'readonly', 'context', 'default', 'enum', 'format', 'minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern', 'additionalProperties' ) as $key ) {
+			if ( ! array_key_exists( $key, $schema ) ) {
+				continue;
+			}
+			$value = $schema[ $key ];
+			if ( is_scalar( $value ) || null === $value ) {
+				$result[ $key ] = is_string( $value ) ? mb_substr( sanitize_text_field( $value ), 0, 1000 ) : $value;
+			} elseif ( is_array( $value ) && count( $value ) <= 50 && count( array_filter( $value, 'is_scalar' ) ) === count( $value ) ) {
+				$result[ $key ] = array_map(
+					static function ( $item ) {
+						return is_string( $item ) ? mb_substr( sanitize_text_field( $item ), 0, 200 ) : $item;
+					},
+					$value
+				);
+			} else {
+				$result['truncated'] = true;
+			}
+		}
+		if ( isset( $schema['items'] ) ) {
+			$result['items'] = self::schema_data( $schema['items'], $depth + 1 );
+		}
+		if ( isset( $schema['properties'] ) && is_array( $schema['properties'] ) ) {
+			$result['properties'] = array();
+			foreach ( array_slice( $schema['properties'], 0, 25, true ) as $name => $property ) {
+				$result['properties'][ $name ] = self::schema_data( $property, $depth + 1 );
+			}
+			if ( count( $schema['properties'] ) > 25 ) {
+				$result['truncated'] = true;
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Match only supported native core controller handlers.
+	 *
+	 * @param string $method Native REST method.
+	 * @param string $path Relative route.
 	 * @return array|WP_Error
 	 */
 	private static function handler( $method, $path ) {
@@ -1034,10 +1213,18 @@ final class Bhranti_Actions {
 				if ( empty( $endpoint['methods'][ $method ] ) || ! is_array( $endpoint['callback'] ) || ! is_object( $endpoint['callback'][0] ) || ! in_array( get_class( $endpoint['callback'][0] ), $classes, true ) || ! in_array( $endpoint['callback'][1], array( 'get_item', 'get_items', 'create_item', 'update_item', 'delete_item', 'get_theme_item', 'get_theme_items' ), true ) ) {
 					continue;
 				}
-				$controller    = $endpoint['callback'][0];
-				$options       = $server->get_route_options( $route );
-				$public_schema = 'GET' === $method && '/wp/v2/types/(?P<type>[\w-]+)' === $route && 'WP_REST_Post_Types_Controller' === get_class( $controller ) && 'get_item' === $endpoint['callback'][1] && '__return_true' === $endpoint['permission_callback'] && array( $controller, 'get_public_item_schema' ) === ( $options['schema'] ?? null );
-				if ( ! $public_schema && ( ! is_array( $endpoint['permission_callback'] ) || $endpoint['permission_callback'][0] !== $controller ) ) {
+				$controller        = $endpoint['callback'][0];
+				$options           = $server->get_route_options( $route );
+				$public_schema     = 'GET' === $method && '/wp/v2/types/(?P<type>[\w-]+)' === $route && 'WP_REST_Post_Types_Controller' === get_class( $controller ) && 'get_item' === $endpoint['callback'][1] && '__return_true' === $endpoint['permission_callback'] && array( $controller, 'get_public_item_schema' ) === ( $options['schema'] ?? null );
+				$permission_method = $endpoint['callback'][1] . '_permissions_check';
+				// Native Settings uses its read permission check for both reading and updating.
+				if ( 'WP_REST_Settings_Controller' === get_class( $controller ) && 'update_item' === $endpoint['callback'][1] ) {
+					$permission_method = 'get_item_permissions_check';
+				}
+				if ( 'WP_REST_Search_Controller' === get_class( $controller ) && 'get_items' === $endpoint['callback'][1] ) {
+					$permission_method = 'get_items_permission_check';
+				}
+				if ( ! $public_schema && ( ! is_array( $endpoint['permission_callback'] ) || $endpoint['permission_callback'][0] !== $controller || ( $endpoint['permission_callback'][1] ?? '' ) !== $permission_method ) ) {
 					continue;
 				}
 				return array(
@@ -1119,7 +1306,7 @@ final class Bhranti_Actions {
 	private static function defaults( $endpoint ) {
 		$defaults = array();
 		foreach ( $endpoint['args'] ?? array() as $key => $schema ) {
-			if ( array_key_exists( 'default', $schema ) ) {
+			if ( isset( $schema['default'] ) ) {
 				$defaults[ $key ] = $schema['default'];
 			}
 		}
@@ -1567,7 +1754,75 @@ final class Bhranti_Actions {
 		if ( 'WP_REST_Users_Controller' === $controller_class ) {
 			$allowed = array( 'id', 'name', 'slug', 'url', 'description' );
 		}
-		return array_intersect_key( $data, array_flip( $allowed ) );
+		$public = array_intersect_key( $data, array_flip( $allowed ) );
+		return 'WP_REST_Attachments_Controller' === $controller_class ? array_merge( $public, self::media_data( $data ) ) : $public;
+	}
+
+	/**
+	 * Expose usable native upload references without image metadata or server paths.
+	 *
+	 * @param array $data Native attachment response.
+	 * @return array Bounded public media fields.
+	 */
+	private static function media_data( $data ) {
+		$public = array();
+		$url    = self::media_url( $data['source_url'] ?? null );
+		if ( $url ) {
+			$public['source_url'] = $url;
+		}
+		if ( in_array( $data['media_type'] ?? null, array( 'image', 'file' ), true ) ) {
+			$public['media_type'] = $data['media_type'];
+		}
+		if ( is_string( $data['mime_type'] ?? null ) && preg_match( '#\A[a-zA-Z0-9.+_-]{1,64}/[a-zA-Z0-9.+_-]{1,127}\z#', $data['mime_type'] ) ) {
+			$public['mime_type'] = $data['mime_type'];
+		}
+		$details = $data['media_details'] ?? null;
+		if ( ! is_array( $details ) ) {
+			return $public;
+		}
+		$safe = array();
+		foreach ( array( 'width', 'height' ) as $dimension ) {
+			if ( is_int( $details[ $dimension ] ?? null ) && $details[ $dimension ] > 0 && $details[ $dimension ] <= 32768 ) {
+				$safe[ $dimension ] = $details[ $dimension ];
+			}
+		}
+		if ( is_array( $details['sizes'] ?? null ) ) {
+			foreach ( array_slice( $details['sizes'], 0, 20, true ) as $name => $size ) {
+				if ( ! is_string( $name ) || ! preg_match( '/\A[a-zA-Z0-9_-]{1,64}\z/', $name ) || ! is_array( $size ) ) {
+					continue;
+				}
+				$item = self::media_data( array_intersect_key( $size, array_flip( array( 'source_url', 'mime_type' ) ) ) );
+				foreach ( array( 'width', 'height' ) as $dimension ) {
+					if ( is_int( $size[ $dimension ] ?? null ) && $size[ $dimension ] > 0 && $size[ $dimension ] <= 32768 ) {
+						$item[ $dimension ] = $size[ $dimension ];
+					}
+				}
+				if ( ! empty( $item['source_url'] ) ) {
+					$safe['sizes'][ $name ] = $item;
+				}
+			}
+		}
+		if ( $safe ) {
+			$public['media_details'] = $safe;
+		}
+		return $public;
+	}
+
+	/**
+	 * Keep public HTTP media URLs free of credentials, queries and fragments.
+	 *
+	 * @param mixed $value Native media URL.
+	 * @return string Safe public URL or an empty string.
+	 */
+	private static function media_url( $value ) {
+		if ( ! is_string( $value ) || strlen( $value ) > 2048 ) {
+			return '';
+		}
+		$parts = wp_parse_url( esc_url_raw( $value, array( 'http', 'https' ) ) );
+		if ( ! is_array( $parts ) || ! in_array( strtolower( $parts['scheme'] ?? '' ), array( 'http', 'https' ), true ) || empty( $parts['host'] ) || empty( $parts['path'] ) ) {
+			return '';
+		}
+		return $parts['scheme'] . '://' . $parts['host'] . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' ) . $parts['path'];
 	}
 
 	/**

@@ -33,14 +33,22 @@ final class Bhranti_Progress {
 			'navigation' => false,
 		);
 		$labels = array(
-			'site_search'    => __( 'Searching site content', 'bhranti' ),
-			'plugin_search'  => __( 'Searching the WordPress plugin directory', 'bhranti' ),
-			'generate_image' => __( 'Generating an image through WordPress AI', 'bhranti' ),
-			'open_item'      => __( 'Reading the requested WordPress item', 'bhranti' ),
-			'reference_page' => __( 'Inspecting the supplied design reference', 'bhranti' ),
+			'bhranti_task'    => __( 'Organizing the work plan', 'bhranti' ),
+			'bhranti_skill'   => __( 'Loading specialist WordPress guidance', 'bhranti' ),
+			'bhranti_inspect' => __( 'Inspecting native WordPress information', 'bhranti' ),
+			'site_search'     => __( 'Searching site content', 'bhranti' ),
+			'plugin_search'   => __( 'Searching the WordPress plugin directory', 'bhranti' ),
+			'generate_image'  => __( 'Generating an image through WordPress AI', 'bhranti' ),
+			'open_item'       => __( 'Reading the requested WordPress item', 'bhranti' ),
+			'reference_page'  => __( 'Inspecting the supplied design reference', 'bhranti' ),
 		);
 		if ( isset( $labels[ $tool ] ) ) {
 			$data['summary'] = $labels[ $tool ];
+		}
+		if ( in_array( $tool, array( 'bhranti_task', 'bhranti_skill', 'bhranti_inspect' ), true ) ) {
+			$data['write']       = false;
+			$data['site_action'] = 'bhranti_inspect' === $tool && 'content' === ( $args['resource'] ?? '' );
+			$data['method']      = 'GET';
 		}
 		if ( 'bhranti_task_limit' === $tool ) {
 			$data['path']    = '/bhranti/v1/task-limit';
@@ -62,7 +70,7 @@ final class Bhranti_Progress {
 		if ( 'plugin_request' === $tool ) {
 			$data['summary'] = 'GET' === $method ? __( 'Reading installed plugin information', 'bhranti' ) : ( 'DELETE' === $method ? __( 'Requesting approval to uninstall a plugin', 'bhranti' ) : __( 'Installing or changing a WordPress plugin', 'bhranti' ) );
 		}
-		if ( 'wp_request' === $tool || 'open_item' === $tool ) {
+		if ( 'wp_request' === $tool || 'open_item' === $tool || ( 'bhranti_inspect' === $tool && 'content' === ( $args['resource'] ?? '' ) ) ) {
 			if ( preg_match( '#\A/wp/v2/(posts|pages|media|comments|themes|templates|template-parts|menu-items|menus|settings|categories|tags|types|taxonomies|search)(?:/([^/?\#]+))?\z#', $path, $match ) ) {
 				$resources = array(
 					'posts'          => __( 'posts', 'bhranti' ),

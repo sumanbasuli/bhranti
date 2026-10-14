@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.27
+Stable tag: 0.5.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,7 +22,9 @@ Routine actions default on, including directory plugin installation and activati
 
 The WooCommerce integration searches, creates and edits simple products and product categories, assigns existing Media Library images, and manages selected currency, catalog, inventory and store-page settings. New products default to draft; moving a product to Trash requires the human approval button. Supported changes retain conflict-safe Undo. For a requested store, Bhranti can use the existing native installer to add WooCommerce and ask for product facts, prices, shipping and payment choices. Payment account connections stay in native human setup. Orders, customer data and financial transactions are outside this integration.
 
-Built-in WordPress guidance covers blocks, templates, shared template parts, homepages, media and store workflows. It guides every connected model to discover existing state, make a focused change and verify the saved result. Bhranti handles supported technical setup and asks for business decisions in plain language. Model capabilities still vary.
+Built-in WordPress guidance covers blocks, templates, shared template parts, homepages, media and store workflows. Specialist guidance for design composition, WordPress support, content operations and commerce loads when needed. Bhranti handles supported technical setup and asks for business decisions in plain language. Substantial tasks can retain a private work plan with outcomes, decisions and saved-state checks across requests. The compact Work plan disclosure distinguishes recorded actions, saved-state readbacks and reviews still needed. Model capabilities still vary.
+
+Native inspection discovers supported endpoint parameters and reads large saved block documents in bounded sections without rendering dynamic blocks. Media reads preserve public image URLs, dimensions and thumbnails without exposing private attachment metadata. Before relying on new images, Bhranti can check current native image-generation availability without requesting an image. If unavailable, it asks for suitable uploads or approved existing media; a temporary metadata failure is reported as unknown support.
 
 Bundled design guidance prefers core and installed blocks, complete visitor journeys and WCAG 2.2 AA requirements. Authored-content checks reject mechanically known new defects; they do not certify rendered-site conformance. Existing working forms are preferred. A reviewed Contact Form 7 adapter can create labelled request forms with an explicitly chosen notification destination; dashboard-only storage requires Flamingo and disables native mail. Native form configuration is audited; unchanged managed updates support Undo, while form creation has no automatic deletion Undo. Page embedding retains its separate content restoration.
 
@@ -57,6 +59,8 @@ The destination and service terms depend on the installed native connector. Comm
 Other connectors have their own terms. Bhranti never stores connector credentials. Its tools exclude credentials and security settings, and audit records exclude prompt/content bodies and raw provider errors.
 
 Site-wide prompt, agent and skill settings remain until replaced or uninstalled. Settings support 20 agents, 20 skills per agent, 16,000 characters per document and 200,000 characters for the full configuration. These instructions are included in the relevant conversation snapshots for personal-data export and erasure.
+
+Work plans and server-recorded action references belong to the private conversation. They are included in native personal-data export and removed with that conversation or native erasure. Relevant checkpoints, a bounded summary of settled work and recent exact results can be sent to the native provider instead of resending all older tool output. Receipt archives are limited to 100 runs and 4 MB of archived receipts per conversation; reaching the bound asks for a new conversation rather than discarding records. A saved-state check only proves the relevant fields were read after the recorded write; it does not certify visual quality, visitor flows or WCAG conformance.
 
 Private memory stores explicitly requested language, tone, design and workflow preferences and bounded verified image facts in encrypted, owner-scoped files under wp-content/bhranti-memory. Files are data only, never included or executed. Native local filesystem and crypto support are required; chat can continue without memory if unavailable. Settings provides review/reset; native personal-data export, erasure and uninstall cover memory. Preferences remain until forgotten or erased. Capability observations expire after one day and never override fresh native checks. Changing WordPress authentication salts makes old memory unreadable but still resettable.
 
@@ -114,6 +118,20 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.5.1 =
+* Negotiate optional image aspect ratios through native metadata before one generation and report actual saved dimensions.
+* Select suitable Media Library assets, covers, backgrounds, galleries and other native image roles as part of the agreed design.
+* Use scoped native block spacing for seamless section surfaces while preserving readable padding and content spacing.
+* Retain selected specialist methods after history compaction and link saved work directly from incomplete outcomes.
+
+= 0.5.0 =
+* Add private durable work plans, exact action receipts and field-aware saved-state checks for substantial tasks.
+* Bound settled history and retain retrievable receipt references; stop repeated failures without replaying successful writes.
+* Load original design, support, content and commerce methods when needed instead of sending every recipe in every request.
+* Inspect reviewed native parameter schemas and saved block sections without dynamic rendering.
+* Preserve public native media URLs and dimensions, and check image-generation availability before depending on new images.
+* Keep incomplete task outcomes visible and include checkpoints and receipts in native privacy export and erasure.
 
 = 0.4.27 =
 * Check the native saved wrapper class for new Core Group custom border colors before saving; preserve unchanged legacy issues.

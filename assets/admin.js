@@ -201,8 +201,8 @@
 		if (gesturing || snapshot.editing && (!focused || focused.tagName !== 'IFRAME' || !editor.contains(focused))) { releaseEditorControl(); return; }
 		const matches = (target) => target && Number(target.id) === snapshot.id && target.type === snapshot.type && safeTarget(target);
 		const action = run.next_action, path = '/wp/v2/' + (snapshot.type === 'page' ? 'pages' : 'posts') + '/' + snapshot.id;
-		const prepared = action && (action.tool === 'wp_request' && (action.write === true || action.method === 'GET') || action.tool === 'open_item' && action.method === 'GET') && action.path === path && matches(action.target);
-		const committed = (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id && ['read', 'write', 'rollback'].includes(event.operation) && matches(event.target));
+		const prepared = action && action.site_action !== false && (action.tool === 'wp_request' && (action.write === true || action.method === 'GET') || ['open_item', 'bhranti_inspect'].includes(action.tool) && action.method === 'GET') && action.path === path && matches(action.target);
+		const committed = (state.session.events || []).some((event) => event.type === 'action' && event.metadata_only !== true && event.success === true && event.run_id === run.id && ['read', 'write', 'rollback'].includes(event.operation) && matches(event.target));
 		if (!prepared && !committed) { releaseEditorControl(); return; }
 		// Native dialogs can be portalled outside the editor; leave their human interaction intact.
 		if (Array.from(document.querySelectorAll('.components-modal__screen-overlay, .media-modal, .components-popover [role="dialog"]')).some((node) => !root.contains(node) && !node.hidden && node.getClientRects().length)) { releaseEditorControl(); return; }
@@ -251,7 +251,7 @@
 		const run = currentRun(), key = resultKey(), inFlight = actionInFlight(run) && siteControl && siteControl.key === key;
 		const postType = (settings.context || {}).post_type;
 		const postEditor = nativeEditorSnapshot() || /\/(?:post|post-new)\.php$/.test(window.location.pathname) && (!postType || ['post', 'page'].includes(postType));
-		const proven = run && (run.next_action || ['action', 'tool'].includes(run.phase) || (state.session.events || []).some((event) => event.type === 'action' && event.success === true && event.run_id === run.id));
+		const proven = run && (run.next_action && run.next_action.site_action !== false || !run.next_action && ['action', 'tool'].includes(run.phase) || (state.session.events || []).some((event) => event.type === 'action' && event.metadata_only !== true && event.success === true && event.run_id === run.id));
 		if (pageSuspended || editorControl || postEditor || !run || run.status !== 'running' || run.interrupted || !proven || (state.error || state.editorError || state.stopRequested) && !inFlight || state.pausedForEditor || !state.open && !inFlight || editorState().unsaved_changes) { releaseSiteControl(); return; }
 		const frame = settings.isAdmin ? document.querySelector('.edit-site-layout') || document.querySelector('#editor.block-editor__container') || document.querySelector('#wpbody-content') : Array.from(document.querySelectorAll('.wp-site-blocks, #page, main, [role="main"]')).find((node) => !node.contains(root) && !node.querySelector('#wpadminbar'));
 		const nodes = [...new Set([frame, ...(settings.isAdmin ? document.querySelectorAll('#wpcontent, #adminmenumain, #adminmenu, #wpadminbar, #wpfooter') : [])])].filter((node) => node && !node.contains(root) && !root.contains(node));
@@ -404,7 +404,7 @@
 			if (observation) {
 				if (!state.open || state.busy || state.stepping || blockedObservation !== observation || observation.key !== resultKey()) return;
 				const run = session && session.run;
-				if (!session || String(session.id) !== String(id) || !run || run.id !== observation.runId || !Number.isSafeInteger(run.step) || run.step < currentRun().step || !['running', 'complete', 'failed', 'cancelled', 'awaiting_input', 'awaiting_confirmation'].includes(run.status)) { observation.stopped = true; state.connectionError = __('The saved task changed. Reconnect to review it.', 'bhranti'); render(); return; }
+				if (!session || String(session.id) !== String(id) || !run || run.id !== observation.runId || !Number.isSafeInteger(run.step) || run.step < currentRun().step || !['running', 'complete', 'incomplete', 'failed', 'cancelled', 'awaiting_input', 'awaiting_confirmation'].includes(run.status)) { observation.stopped = true; state.connectionError = __('The saved task changed. Reconnect to review it.', 'bhranti'); render(); return; }
 				const advanced = run.step > observation.step || run.status !== 'running';
 				// A same-step prepared response cannot prove handover of an observed native write.
 				if (!advanced && currentRun().phase === 'action' && run.phase === 'prepared') return;
@@ -846,7 +846,7 @@
 	}
 	function runStatus() {
 		const run = currentRun(); if (!run) return null;
-		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), awaiting_input: __('Waiting for your answer', 'bhranti'), complete: __('Completed', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
+		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), awaiting_input: __('Waiting for your answer', 'bhranti'), complete: __('Completed', 'bhranti'), incomplete: __('Partially complete', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
 		const retrySeconds = Math.max(0, Math.ceil(Number(run.retry_at) - Date.now() / 1000));
 		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(__('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
 		const pending = run.status === 'running' && !state.stopRequested && !state.pausedForEditor && !state.error && !retrySeconds;
@@ -875,6 +875,24 @@
 		}
 		const link = targetLink(action.target); if (link) { link.textContent = sprintf(__('Open %s', 'bhranti'), action.target.title || __('item', 'bhranti')); preview.appendChild(link); }
 		return preview;
+	}
+	function taskPlan() {
+		const task = state.session && state.session.task;
+		if (!task || typeof task.objective !== 'string' || !task.objective.trim() || !Array.isArray(task.outcomes) || !task.outcomes.length) return null;
+		const rows = (values, checks) => {
+			const list = element('ul', 'bhranti-plan-list');
+			const labels = checks ? { pending: __('Pending', 'bhranti'), read_back: __('Saved state checked', 'bhranti'), manual: __('Review needed', 'bhranti') } : { pending: __('Pending', 'bhranti'), in_progress: __('In progress', 'bhranti'), completed: __('Recorded', 'bhranti'), blocked: __('Blocked', 'bhranti') };
+			values.slice(0, 12).forEach((row) => {
+				if (!row || typeof row.title !== 'string' || !labels[row.status]) return;
+				list.appendChild(element('li', 'bhranti-plan-row', element('span', 'bhranti-plan-title', row.title.slice(0, 240)), element('span', 'bhranti-plan-state', labels[row.status])));
+			});
+			return list;
+		};
+		const body = [element('p', 'bhranti-plan-objective', task.objective.slice(0, 1200)), rows(task.outcomes, false)];
+		if (Array.isArray(task.checks) && task.checks.length) body.push(element('h3', '', __('Checks', 'bhranti')), rows(task.checks, true));
+		const plan = disclosure('plan:' + state.session.id, 'bhranti-work-plan', element('summary', 'bhranti-plan-summary', element('span', '', __('Work plan', 'bhranti')), element('span', 'bhranti-chevron', icon('chevron'))), body);
+		plan.id = 'bhranti-work-plan';
+		return plan;
 	}
 	function toolEvent(value) {
 		const failed = value.type === 'error' || value.success === false, success = value.type === 'action' && value.success === true;
@@ -939,6 +957,7 @@
 		else if (run && run.status === 'failed' && run.can_resume === true) stream.appendChild(recoveryCard(__('Connection paused', 'bhranti'), pausedMessage && pausedMessage.content || __('Your completed work is saved. Resume from the last checkpoint when you’re ready.', 'bhranti'), __('Resume task', 'bhranti'), resumeTask));
 		if (state.reconnecting || state.connectionError && !state.error) { const connection = element('p', 'bhranti-connection-status', state.reconnecting ? __('Reconnecting… Your conversation is safe.', 'bhranti') : state.connectionError); connection.setAttribute('role', 'status'); stream.appendChild(connection); }
 		if (editorSync.message) { const pending = element('p', 'bhranti-connection-status', editorSync.message); pending.setAttribute('role', 'status'); stream.appendChild(pending); }
+		const plan = taskPlan(); if (plan) stream.appendChild(plan);
 		const preview = actionPreview(); if (preview) stream.appendChild(preview);
 		const status = !activeRun() && runStatus(); if (status) stream.appendChild(status);
 		const confirmation = state.session && state.session.confirmation;

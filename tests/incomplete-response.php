@@ -9,6 +9,8 @@ require __DIR__ . '/product-ux.php';
 require ABSPATH . 'wp-includes/php-ai-client/autoload.php';
 require ABSPATH . 'wp-includes/ai-client/class-wp-ai-client-prompt-builder.php';
 require ABSPATH . 'wp-content/plugins/littlemcp/src/ResponseParser.php';
+require dirname( __DIR__ ) . '/includes/class-bhranti-skills.php';
+require dirname( __DIR__ ) . '/includes/class-bhranti-task.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-knowledge.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-progress.php';
 $GLOBALS['ir_checks_start'] = $GLOBALS['ux_checks'];
