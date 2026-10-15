@@ -1,0 +1,16 @@
+{
+  "name": "axe-core",
+  "version": "4.14.0",
+  "license": "MPL-2.0",
+  "source": "https://github.com/dequelabs/axe-core/tree/v4.14.0",
+  "registry_metadata": "https://registry.npmjs.org/axe-core/latest",
+  "tarball": "https://registry.npmjs.org/axe-core/-/axe-core-4.14.0.tgz",
+  "npm_integrity": "sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==",
+  "files_sha256": {
+    "axe.js": "aae0b8b36278089962105b2351ea64f4da7d3d440b54e162e21616d597aa0d6f",
+    "LICENSE": "af175b9d96ee93c21a036152e1b905b0b95304d4ae8c2c921c7609100ba8df7e",
+    "package.json": "486715407f3c8c7d1de882bacc2622acb0adf1ec0f21807fc1251aed64bf9001",
+    "README.md": "b994303ff0df0a44d9bd2fb0faf2ff49670844379f3796047f48e8cb8b9edfaf"
+  },
+  "modifications": "None. axe.js, LICENSE, package.json and README.md are original official npm package files."
+}

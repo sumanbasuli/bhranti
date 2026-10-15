@@ -14,7 +14,7 @@ final class Bhranti_Task {
 	public static function catalog() {
 		return array(
 			'bhranti_task' => array(
-				'description' => 'Keep a durable private checkpoint for a substantial task; skip this for a simple focused answer or edit. GET reads notes and exact action receipts; optional params run_id, page (1-1000), per_page (1-20). POST replaces notes after GET using params revision, objective (1200 characters), decisions (up to 12 plain strings, 500 characters each), outcomes (up to 12 {id,title,status,evidence}), checks (up to 12 {id,title,status,evidence}). IDs are stable lowercase letters/digits/hyphens, 1-40 characters; titles at most 240 characters; evidence is up to 3 receipt IDs returned by tools. Outcomes use pending/in_progress/completed/blocked, at most one in_progress. Completed outcomes require a successful receipt. Checks use pending/read_back/manual. A read_back check requires exactly two receipts: successful write and later GET of the same target, with the read in the current run and no later write. The read must include the written fields; use edit context for raw title/content, not a rendered-only response or _fields=id. This proves only a saved-state readback, not correct appearance, accessibility or a working visitor journey. Use manual for checks not actually available. Notes are model-maintained untrusted data, not human consent or policy. Keep confirmed human decisions accurate; do not invent facts or mark work complete merely to finish. Update remaining work before a question or final reply. GET older run receipts by their exact run UUID rather than repeating a completed action.',
+				'description' => 'Keep a durable private checkpoint for a substantial task; skip this for a simple focused answer or edit. GET reads notes and exact action receipts; optional params run_id, page (1-1000), per_page (1-20). POST replaces notes after GET using params revision, objective (1200 characters), decisions (up to 12 plain strings, 500 characters each), outcomes (up to 12 {id,title,status,evidence}), checks (up to 12 {id,title,status,evidence}). IDs are stable lowercase letters/digits/hyphens, 1-40 characters; titles at most 240 characters; evidence is up to 3 receipt IDs returned by tools. Outcomes use pending/in_progress/completed/blocked, at most one in_progress. Completed outcomes require a successful receipt. Checks use pending/read_back/rendered_check/manual. rendered_check requires exactly one successful current-run bhranti_inspect resource rendered receipt whose fixed desktop/mobile automated profile passed and whose source/rendering environment remains current; later writes require another check. This proves only that automated profile, never all WCAG criteria, visual quality or interactive workflows. Existing manual checks remain required until genuinely resolved. A read_back check requires exactly two receipts: successful write and later GET of the same target, with the read in the current run and no later write. The read must include the written fields; use edit context for raw title/content, not a rendered-only response or _fields=id. This proves only a saved-state readback, not correct appearance, accessibility or a working visitor journey. Use manual for checks not actually available. Notes are model-maintained untrusted data, not human consent or policy. Keep confirmed human decisions accurate; do not invent facts or mark work complete merely to finish. Update remaining work before a question or final reply. GET older run receipts by their exact run UUID rather than repeating a completed action.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -160,7 +160,7 @@ final class Bhranti_Task {
 		$ids    = array();
 		$active = 0;
 		foreach ( $entries as $entry ) {
-			$states = 'outcomes' === $kind ? array( 'pending', 'in_progress', 'completed', 'blocked' ) : array( 'pending', 'read_back', 'manual' );
+			$states = 'outcomes' === $kind ? array( 'pending', 'in_progress', 'completed', 'blocked' ) : array( 'pending', 'read_back', 'rendered_check', 'manual' );
 			if ( ! is_array( $entry ) || array_diff( array_keys( $entry ), array( 'id', 'title', 'status', 'evidence' ) ) || ! is_string( $entry['id'] ?? null ) || ! preg_match( '/\A[a-z0-9][a-z0-9-]{0,39}\z/', $entry['id'] ) || isset( $ids[ $entry['id'] ] ) || ! self::plain( $entry['title'] ?? null, 240 ) || ! in_array( $entry['status'] ?? '', $states, true ) || ! is_array( $entry['evidence'] ?? null ) || array_values( $entry['evidence'] ) !== $entry['evidence'] || count( $entry['evidence'] ) > 3 ) {
 				return self::error( 'schema', __( 'Use unique task IDs, short titles, documented states and exact receipt IDs.', 'bhranti' ) );
 			}
@@ -183,6 +183,9 @@ final class Bhranti_Task {
 			}
 			if ( $verify && 'read_back' === $entry['status'] && ! self::read_back( $session_id, $entry['evidence'] ) ) {
 				return self::error( 'evidence', __( 'A saved-state check needs a write and a later current-run read of the same item, with no newer write. Visual and visitor checks remain manual.', 'bhranti' ) );
+			}
+			if ( $verify && 'rendered_check' === $entry['status'] && ! self::rendered_check( $session_id, $entry['evidence'] ) ) {
+				return self::error( 'evidence', __( 'An automated rendered check needs one current-run passing browser receipt for the unchanged saved item and rendering environment. It does not certify all WCAG criteria or interactive workflows.', 'bhranti' ) );
 			}
 		}
 		return $active > 1 ? self::error( 'schema', __( 'Keep only one task outcome in progress.', 'bhranti' ) ) : true;
@@ -226,7 +229,7 @@ final class Bhranti_Task {
 			}
 		}
 		foreach ( $value['checks'] as $index => $check ) {
-			if ( 'read_back' === $check['status'] && ! self::read_back( $session_id, $check['evidence'] ) ) {
+			if ( ( 'read_back' === $check['status'] && ! self::read_back( $session_id, $check['evidence'] ) ) || ( 'rendered_check' === $check['status'] && ! self::rendered_check( $session_id, $check['evidence'] ) ) ) {
 				// Display current evidence honestly without rewriting historical notes.
 				$value['checks'][ $index ]['status'] = 'pending';
 			}
@@ -252,7 +255,8 @@ final class Bhranti_Task {
 			}
 		}
 		foreach ( $state['checks'] as $entry ) {
-			if ( 'read_back' !== $entry['status'] || ! self::read_back( $session_id, $entry['evidence'] ) ) {
+			$verified = ( 'read_back' === $entry['status'] && self::read_back( $session_id, $entry['evidence'] ) ) || ( 'rendered_check' === $entry['status'] && self::rendered_check( $session_id, $entry['evidence'] ) );
+			if ( ! $verified ) {
 				$remaining[] = $entry['title'];
 			}
 		}
@@ -389,10 +393,27 @@ final class Bhranti_Task {
 		}
 		$steps = array();
 		foreach ( $items as $item ) {
-			if ( ! is_array( $item ) || array_diff( array_keys( $item ), array( 'id', 'run_id', 'step', 'tool', 'method', 'path', 'operation', 'success', 'code', 'entity', 'references', 'target', 'action_id', 'fields', 'coverage' ) ) || ! is_int( $item['step'] ?? null ) || $item['step'] < 1 || $item['step'] > 1000 || isset( $steps[ $item['step'] ] ) || ( $item['run_id'] ?? '' ) !== $run_id || ( $item['id'] ?? '' ) !== $run_id . ':' . $item['step'] || ! is_bool( $item['success'] ?? null ) || ! in_array( $item['operation'] ?? '', array( 'read', 'write', 'image', 'metadata' ), true ) ) {
+			if ( ! is_array( $item ) || array_diff( array_keys( $item ), array( 'id', 'run_id', 'step', 'tool', 'method', 'path', 'operation', 'success', 'code', 'entity', 'references', 'target', 'action_id', 'fields', 'coverage', 'command_hash', 'content_revision', 'created', 'inspection_scope', 'render_check' ) ) || ! is_int( $item['step'] ?? null ) || $item['step'] < 1 || $item['step'] > 1000 || isset( $steps[ $item['step'] ] ) || ( $item['run_id'] ?? '' ) !== $run_id || ( $item['id'] ?? '' ) !== $run_id . ':' . $item['step'] || ! is_bool( $item['success'] ?? null ) || ! in_array( $item['operation'] ?? '', array( 'read', 'write', 'image', 'metadata' ), true ) ) {
 				return false;
 			}
 			$steps[ $item['step'] ] = true;
+			if ( isset( $item['created'] ) && ! is_bool( $item['created'] ) ) {
+				return false;
+			}
+			foreach ( array( 'command_hash', 'content_revision' ) as $key ) {
+				if ( isset( $item[ $key ] ) && ( ! is_string( $item[ $key ] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $item[ $key ] ) ) ) {
+					return false;
+				}
+			}
+			if ( array_key_exists( 'inspection_scope', $item ) ) {
+				$scope = $item['inspection_scope'];
+				if ( 'bhranti_inspect' !== ( $item['tool'] ?? '' ) || true !== $item['success'] || 'read' !== $item['operation'] || 'GET' !== ( $item['method'] ?? '' ) || ! isset( $item['content_revision'] ) || ! is_array( $scope ) || array_diff( array_keys( $scope ), array( 'page', 'per_page', 'block_path' ) ) || ! is_int( $scope['page'] ?? null ) || $scope['page'] < 1 || $scope['page'] > 250 || ! is_int( $scope['per_page'] ?? null ) || $scope['per_page'] < 1 || $scope['per_page'] > 20 || ( array_key_exists( 'block_path', $scope ) && ( ! is_string( $scope['block_path'] ) || strlen( $scope['block_path'] ) > 190 || ! preg_match( '#\A(?:0|[1-9][0-9]*)(?:/(?:0|[1-9][0-9]*))*\z#', $scope['block_path'] ) ) ) ) {
+					return false;
+				}
+			}
+			if ( array_key_exists( 'render_check', $item ) && ( 'bhranti_inspect' !== ( $item['tool'] ?? '' ) || true !== $item['success'] || 'read' !== $item['operation'] || 'GET' !== ( $item['method'] ?? '' ) || ! class_exists( 'Bhranti_Render' ) || ! Bhranti_Render::valid_receipt( $item['render_check'] ) || ( $item['content_revision'] ?? '' ) !== $item['render_check']['source_revision'] ) ) {
+				return false;
+			}
 			if ( $item['success'] ) {
 				if ( ! is_bool( $item['coverage'] ?? null ) || ! is_array( $item['fields'] ?? null ) || array_values( $item['fields'] ) !== $item['fields'] || count( $item['fields'] ) > 128 ) {
 					return false;
@@ -508,6 +529,30 @@ final class Bhranti_Task {
 		}
 		foreach ( $run['receipts'] ?? array() as $receipt ) {
 			if ( ! empty( $receipt['success'] ) && 'write' === ( $receipt['operation'] ?? '' ) && ( $receipt['entity'] ?? '' ) === $read['entity'] && $receipt['step'] > $read['step'] ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Prove only the fixed automated browser profile for a current saved target.
+	 *
+	 * @param int   $session_id Owned conversation.
+	 * @param array $references One exact successful browser receipt.
+	 * @return bool
+	 */
+	private static function rendered_check( $session_id, $references ) {
+		if ( 1 !== count( $references ) || ! class_exists( 'Bhranti_Render' ) ) {
+			return false;
+		}
+		$receipt = self::receipt( $session_id, $references[0] );
+		$run     = get_post_meta( $session_id, 'bhranti_run', true );
+		if ( empty( $receipt['success'] ) || 'bhranti_inspect' !== ( $receipt['tool'] ?? '' ) || 'GET' !== ( $receipt['method'] ?? '' ) || 'read' !== ( $receipt['operation'] ?? '' ) || empty( $receipt['entity'] ) || ( $receipt['run_id'] ?? '' ) !== ( $run['id'] ?? '' ) || ! Bhranti_Render::valid_evidence( $receipt, get_current_user_id(), $session_id ) ) {
+			return false;
+		}
+		foreach ( $run['receipts'] ?? array() as $later ) {
+			if ( ! empty( $later['success'] ) && 'write' === ( $later['operation'] ?? '' ) && ( $later['entity'] ?? '' ) === $receipt['entity'] && $later['step'] > $receipt['step'] ) {
 				return false;
 			}
 		}

@@ -248,6 +248,9 @@ final class Bhranti_Actions {
 				),
 			),
 		);
+		if ( class_exists( 'Bhranti_Content_Patch' ) ) {
+			$catalog['wp_request']['parameters']['properties']['content_patch'] = Bhranti_Content_Patch::schema();
+		}
 		return $catalog + ( class_exists( 'Bhranti_Task' ) ? Bhranti_Task::catalog() : array() ) + ( class_exists( 'Bhranti_Skills' ) ? Bhranti_Skills::catalog() : array() ) + ( class_exists( 'Bhranti_Inspect' ) ? Bhranti_Inspect::catalog() : array() ) + ( class_exists( 'Bhranti_Forms' ) ? Bhranti_Forms::catalog() : array() ) + Bhranti_Settings::task_catalog() + Bhranti_Commerce::catalog() + Bhranti_References::catalog() + ( class_exists( 'Bhranti_Memory' ) ? Bhranti_Memory::catalog() : array() );
 	}
 
@@ -391,6 +394,33 @@ final class Bhranti_Actions {
 			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
 			return $policy;
 		}
+		$content_patch = isset( $command['args']['content_patch'] );
+		if ( $content_patch ) {
+			if ( ! self::object_id( $review, $before ) ) {
+				return self::error( 'bhranti_content_patch_invalid', __( 'Save this template as a native database item before using bounded content edits.', 'bhranti' ), 409 );
+			}
+			$patch_revision = $command['args']['content_patch']['revision'];
+			$content        = Bhranti_Content_Patch::apply( self::raw_value( $before['content'] ?? null ), $command['args']['content_patch'] );
+			if ( is_wp_error( $content ) ) {
+				self::audit( 'action_blocked', $content->get_error_message(), $session_id, $details + array( 'code' => $content->get_error_code() ), $requester_id, $actor_id );
+				return $content;
+			}
+			// The harness patch never enters native request parameters or snapshots.
+			$native = array(
+				'tool' => 'wp_request',
+				'args' => array(
+					'method' => 'POST',
+					'path'   => $path,
+					'params' => array( 'content' => $content ),
+				),
+			);
+			$review = self::review( $native, $requester_id, $actor_id );
+			if ( is_wp_error( $review ) ) {
+				self::audit( 'action_blocked', $review->get_error_message(), $session_id, $details + array( 'code' => $review->get_error_code() ), $requester_id, $actor_id );
+				return $review;
+			}
+			$command = $review['command'];
+		}
 		if ( class_exists( 'Bhranti_Content_Quality' ) ) {
 			foreach ( array( 'content', 'excerpt', 'caption', 'description' ) as $field ) {
 				if ( isset( $command['args']['params'][ $field ] ) && is_string( $command['args']['params'][ $field ] ) ) {
@@ -420,6 +450,15 @@ final class Bhranti_Actions {
 		$target      = self::target( $review, $before );
 		$aux         = self::auxiliary( $review, $command['args']['params'] );
 		$fingerprint = self::fingerprint( $review, $before, $aux );
+		if ( $content_patch ) {
+			// fingerprint() just loaded this native object afresh. Bind that same
+			// baseline to the source used for expansion, before accepting its hash.
+			$source = get_post( self::object_id( $review, $before ) );
+			if ( ! $source || ! hash_equals( $patch_revision, hash( 'sha256', $source->post_content ) ) ) {
+				self::audit( 'action_blocked', __( 'The saved content changed before the section could be saved.', 'bhranti' ), $session_id, $details + array( 'target' => $target ), $requester_id, $actor_id );
+				return self::error( 'bhranti_content_patch_conflict', __( 'The saved content changed. Inspect its current full revision before preparing another section.', 'bhranti' ), 409 );
+			}
+		}
 		if ( $expected_fingerprint && ! hash_equals( $expected_fingerprint, $fingerprint ) ) {
 			self::audit( 'action_blocked', __( 'The item changed after the action was reviewed.', 'bhranti' ), $session_id, $details + array( 'target' => $target ), $requester_id, $actor_id );
 			return self::error( 'bhranti_rollback_conflict', __( 'The item changed after you reviewed it. Review the action again.', 'bhranti' ), 409 );
@@ -525,49 +564,63 @@ final class Bhranti_Actions {
 			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
 			return $policy;
 		}
-		$data = self::dispatch( $review['request'], $actor_id );
-		if ( is_wp_error( $data ) ) {
-			$snapshot['state'] = 'failed';
-			self::save_snapshot( $session_id, $snapshot );
-			self::audit( 'action_failed', __( 'WordPress could not complete the action. Review the item before retrying.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $actor_id );
-			return $data;
-		}
-		$snapshot['target']            = self::target( $review, $data );
-		$snapshot['object_id']         = self::object_id( $review, $data );
-		$snapshot['after_fingerprint'] = self::fingerprint( $review, $data, $aux );
-		$snapshot['state']             = 'completed';
-		if ( 'create' === $kind ) {
-			$snapshot['command']['args']['path'] = rtrim( $path, '/' ) . '/' . $data['id'];
-			if ( ! $review['create'] ) {
-				$snapshot['command']['args']['path'] = $path;
+		try {
+			$data = self::dispatch( $review['request'], $actor_id );
+			if ( is_wp_error( $data ) ) {
+				$snapshot['state'] = 'uncertain';
+				self::save_snapshot( $session_id, $snapshot );
+				self::audit( 'action_failed', __( 'WordPress could not complete the action. Review the item before retrying.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $actor_id );
+				return self::uncertain( $data );
 			}
+			$snapshot['target']            = self::target( $review, $data );
+			$snapshot['object_id']         = self::object_id( $review, $data );
+			$snapshot['after_fingerprint'] = self::fingerprint( $review, $data, $aux );
+			$snapshot['state']             = 'completed';
+			if ( 'create' === $kind ) {
+				$snapshot['command']['args']['path'] = rtrim( $path, '/' ) . '/' . $data['id'];
+				if ( ! $review['create'] ) {
+					$snapshot['command']['args']['path'] = $path;
+				}
+			}
+			$saved = self::save_snapshot( $session_id, $snapshot );
+			if ( is_wp_error( $saved ) ) {
+				self::audit( 'action_failed', __( 'The action ran, but its rollback record could not be finalized. Review the item.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+				return self::uncertain( self::error( 'bhranti_action_storage', __( 'The action ran, but the rollback record could not be finalized.', 'bhranti' ), 500 ) );
+			}
+			$summary = 'DELETE' === $method ? __( 'Item moved to Trash by Bhranti.', 'bhranti' ) : __( 'WordPress action completed by Bhranti.', 'bhranti' );
+			self::audit(
+				'action_completed',
+				$summary,
+				$session_id,
+				array(
+					'method'    => $method,
+					'path'      => $path,
+					'target'    => $snapshot['target'],
+					'action_id' => $action_id,
+				),
+				$requester_id,
+				$actor_id
+			);
+			$result = array(
+				'summary'            => $summary,
+				'created'            => (bool) $review['create'],
+				'data'               => self::public_data( $data, $review['class'] ),
+				'target'             => $snapshot['target'],
+				'action_id'          => $action_id,
+				'rollback_available' => true,
+			);
+			if ( $content_patch ) {
+				$result['data'] = array_intersect_key( $result['data'], array_flip( array( 'id', 'type', 'status', 'link' ) ) );
+				if ( isset( $data['content']['raw'] ) && is_string( $data['content']['raw'] ) ) {
+					$result['content_revision']         = hash( 'sha256', $data['content']['raw'] );
+					$result['data']['content_revision'] = $result['content_revision'];
+					$result['data']['content_bytes']    = strlen( $data['content']['raw'] );
+				}
+			}
+			return $result;
+		} catch ( Throwable $error ) {
+			return self::uncertain( self::error( 'bhranti_action_failed', __( 'The action may have run, but its final result could not be verified. Review the item before continuing.', 'bhranti' ), 500 ) );
 		}
-		$saved = self::save_snapshot( $session_id, $snapshot );
-		if ( is_wp_error( $saved ) ) {
-			self::audit( 'action_failed', __( 'The action ran, but its rollback record could not be finalized. Review the item.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
-			return self::error( 'bhranti_action_storage', __( 'The action ran, but the rollback record could not be finalized.', 'bhranti' ), 500 );
-		}
-		$summary = 'DELETE' === $method ? __( 'Item moved to Trash by Bhranti.', 'bhranti' ) : __( 'WordPress action completed by Bhranti.', 'bhranti' );
-		self::audit(
-			'action_completed',
-			$summary,
-			$session_id,
-			array(
-				'method'    => $method,
-				'path'      => $path,
-				'target'    => $snapshot['target'],
-				'action_id' => $action_id,
-			),
-			$requester_id,
-			$actor_id
-		);
-		return array(
-			'summary'            => $summary,
-			'data'               => self::public_data( $data, $review['class'] ),
-			'target'             => $snapshot['target'],
-			'action_id'          => $action_id,
-			'rollback_available' => true,
-		);
 	}
 
 	/**
@@ -893,6 +946,13 @@ final class Bhranti_Actions {
 		$type    = $schema['title'] ?? basename( $path );
 		$create  = 'POST' === $method && 'create_item' === $endpoint['callback'][1];
 		$allowed = self::write_fields( $class, $type, $schema );
+		$patch   = array_key_exists( 'content_patch', $args );
+		if ( $patch ) {
+			$valid = Bhranti_Content_Patch::validate( $args, $class, $type, $endpoint['callback'][1] );
+			if ( is_wp_error( $valid ) ) {
+				return $valid;
+			}
+		}
 		if ( 'GET' !== $method && empty( $allowed ) ) {
 			return self::error( 'bhranti_action_blocked', __( 'This WordPress resource is available for reading only.', 'bhranti' ), 403 );
 		}
@@ -937,7 +997,7 @@ final class Bhranti_Actions {
 		if ( 'GET' !== $method && self::unsafe_value( $params ) ) {
 			return self::error( 'bhranti_action_blocked', __( 'Executable code and JavaScript URLs are outside Bhranti content actions.', 'bhranti' ), 403 );
 		}
-		if ( 'POST' === $method && ! $params ) {
+		if ( 'POST' === $method && ! $params && ! $patch ) {
 			return self::error( 'bhranti_action_invalid', __( 'A write must specify the fields to change.', 'bhranti' ) );
 		}
 		if ( isset( $params['per_page'] ) && ( (int) $params['per_page'] < 1 || (int) $params['per_page'] > 20 ) ) {
@@ -996,14 +1056,18 @@ final class Bhranti_Actions {
 			wp_set_current_user( $previous_user );
 		}
 		unset( $params['force'] );
+		$reviewed_args = array(
+			'method' => $method,
+			'path'   => $path,
+			'params' => $params,
+		);
+		if ( $patch ) {
+			$reviewed_args['content_patch'] = $args['content_patch'];
+		}
 		return array(
 			'command' => array(
 				'tool' => 'wp_request',
-				'args' => array(
-					'method' => $method,
-					'path'   => $path,
-					'params' => $params,
-				),
+				'args' => $reviewed_args,
 			),
 			'request' => $request,
 			'class'   => $class,
@@ -1869,5 +1933,17 @@ final class Bhranti_Actions {
 	 */
 	private static function error( $code, $message, $status = 400 ) {
 		return new WP_Error( $code, $message, array( 'status' => $status ) );
+	}
+
+	/**
+	 * A native mutation may have saved before a callback or finalization failed.
+	 *
+	 * @param WP_Error $error Sanitized post-dispatch failure.
+	 * @return WP_Error Error that must never trigger an automatic action retry.
+	 */
+	private static function uncertain( $error ) {
+		$data = $error->get_error_data();
+		$error->add_data( array_merge( is_array( $data ) ? $data : array( 'status' => 500 ), array( 'uncertain_action' => true ) ) );
+		return $error;
 	}
 }

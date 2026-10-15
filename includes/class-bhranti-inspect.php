@@ -14,13 +14,13 @@ final class Bhranti_Inspect {
 	public static function catalog() {
 		return array(
 			'bhranti_inspect' => array(
-				'description' => 'Inspect supported WordPress parameters, saved block content or native image-generation availability without changing the site. resource route: path and method describe the reviewed native endpoint parameters; optional field selects one exact parameter. Metadata is not permission: execute still rechecks current guardrails and both accounts. resource content: exact item path returns a paginated block outline, content revision, mechanically known authored issues, and optional exact block_path saved markup. resource images: supply resource and optional aspect_ratio such as 16:9 or 2:3; check native metadata and site limits without generating. Choose imagery for its role and inspect existing native Media Library assets before creating new ones. If generation is available, use it where appropriate to the agreed design; unavailable support alone triggers a needed-upload question. An unsupported requested ratio may use a supported native ratio or default and does not mean image generation is unavailable. Unknown means discovery failed, not permanent lack of support. A block outline or authored check does not verify native JS serialization, rendered design, mobile layout, forms or WCAG conformance. No arbitrary routes, source files or callbacks. Image capability checks may use the native connector metadata service.',
+				'description' => 'Inspect supported WordPress parameters, saved block content or native image-generation availability without changing the site. resource route: path and method describe the reviewed native endpoint parameters; optional field selects one exact parameter. Metadata is not permission: execute still rechecks current guardrails and both accounts. resource content: exact item path returns a paginated block outline, full content data.revision, mechanically known authored issues, and optional exact block_path saved markup. For wp_request.content_patch use data.revision, never selected.revision; paths include whitespace/freeform entries. resource images: supply resource and optional aspect_ratio such as 16:9 or 2:3; check native metadata and site limits without generating. Choose imagery for its role and inspect existing native Media Library assets before creating new ones. If generation is available, use it where appropriate to the agreed design; unavailable support alone triggers a needed-upload question. An unsupported requested ratio may use a supported native ratio or default and does not mean image generation is unavailable. Unknown means discovery failed, not permanent lack of support. resource rendered: supply only resource and an exact saved /wp/v2/posts/ID or /wp/v2/pages/ID path. An open Bhranti browser automatically loads the authenticated native preview at desktop 1280 and mobile 390/320 CSS pixels and runs local axe WCAG A/AA and finite DOM layout, image and fragment checks. The job waits safely if the browser closes. Read returned findings, fix only authorized targets and check again. This performs actual rendered checks, not a screenshot, keyboard interaction, form submission, anonymous visitor test, design-quality judgment or full WCAG certification. A block outline or authored check alone verifies none of those rendered behaviors. No arbitrary routes, source files or callbacks. Image capability checks may use the native connector metadata service.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
 						'resource'     => array(
 							'type' => 'string',
-							'enum' => array( 'route', 'content', 'images' ),
+							'enum' => array( 'route', 'content', 'images', 'rendered' ),
 						),
 						'path'         => array(
 							'type'      => 'string',
@@ -88,6 +88,9 @@ final class Bhranti_Inspect {
 			return self::error( 'bhranti_inspect_invalid', __( 'Use one exact native inspection request.', 'bhranti' ) );
 		}
 		$args = $command['args'];
+		if ( 'rendered' === $args['resource'] ) {
+			return self::error( 'bhranti_render_browser', __( 'Rendered inspection needs its owned browser job in the current conversation.', 'bhranti' ), 409 );
+		}
 		if ( ( 'images' === $args['resource'] && array_diff( array_keys( $args ), array( 'resource', 'aspect_ratio' ) ) ) || ( 'images' !== $args['resource'] && ! isset( $args['path'] ) ) ) {
 			return self::error( 'bhranti_inspect_invalid', __( 'Choose an exact native item or an image capability check without additional fields.', 'bhranti' ) );
 		}
@@ -200,6 +203,7 @@ final class Bhranti_Inspect {
 			'target'  => $target,
 			'data'    => array(
 				'revision'        => hash( 'sha256', $content ),
+				'revision_scope'  => 'Exact full saved raw content; use this revision for content_patch, not the selected block hash.',
 				'block_count'     => $total,
 				'page'            => $page,
 				'per_page'        => $per_page,

@@ -62,10 +62,12 @@ foreach ( $incomplete as $sse ) {
 }
 $error = ir_error( $incomplete[0] );
 $post = ux_session( 120 ); $run = ir_run( 120 ); $history = $run['history'];
-foreach ( array( 5, 15, 30 ) as $index => $delay ) {
+foreach ( array( 5, 15, 30, 60, 5, 15, 30 ) as $index => $delay ) {
     $before = time(); $calls = $GLOBALS['ir_calls']; $result = ir_step( 120, $error ); $saved = get_post_meta( 120, 'bhranti_run', true );
     ux_check( ! is_wp_error( $result ) && 'running' === $saved['status'] && '' === $saved['phase'], 'Repeated incomplete response stays recoverable beyond the malformed-plan allowance.' );
-    ux_check( $index + 1 === $saved['request_retries'] && $saved['retry_at'] >= $before + $delay && $saved['retry_at'] <= time() + $delay, 'Incomplete retries use existing bounded deadlines.' );
+    $expected_attempt = $index < 3 ? $index + 1 : $index - 3;
+    ux_check( $expected_attempt === $saved['request_retries'] && $saved['retry_at'] >= $before + $delay && $saved['retry_at'] <= time() + $delay, 'Incomplete retries use bounded deadlines around one automatic continuation.' );
+    ux_check( ( $index < 3 ? 1 : 2 ) === $saved['recovery_stage'] && ( $index < 3 ? 0 : 1 ) === ( $saved['auto_recoveries'] ?? 0 ), 'Recovery strategy advances once and retains the same owned run.' );
     ux_check( 1 === $saved['plan_retries'] && $history === $saved['history'] && ! isset( $saved['pending_plan'], $saved['next_action'] ), 'No incomplete output becomes a plan or discards completed tool history.' );
     ux_check( $calls + 1 === $GLOBALS['ir_calls'], 'Exactly one mocked model request per incomplete attempt.' );
     ir_step( 120, $error );
@@ -73,10 +75,11 @@ foreach ( array( 5, 15, 30 ) as $index => $delay ) {
     ir_due( 120 );
 }
 $result = ir_step( 120, $error ); $failed = get_post_meta( 120, 'bhranti_run', true );
-ux_check( 'failed' === $failed['status'] && 3 === $failed['request_retries'] && 'model_request' === $failed['resume_checkpoint']['kind'], 'Fourth consecutive failure stops with the exact safe model checkpoint.' );
+ux_check( 'failed' === $failed['status'] && 3 === $failed['request_retries'] && 1 === $failed['auto_recoveries'] && 'model_request' === $failed['resume_checkpoint']['kind'], 'Eighth consecutive failure stops after one automatic continuation with the exact safe model checkpoint.' );
 ux_check( $result['run']['can_resume'] && $history === $failed['history'], 'Verified incomplete failure permits explicit Resume without losing successful actions.' );
 $calls = $GLOBALS['ir_calls']; $resume = Bhranti_Agent::resume( array( 'id' => 120, 'run_id' => $failed['id'] ) );
 ux_check( ! is_wp_error( $resume ) && $calls === $GLOBALS['ir_calls'] && 0 === get_post_meta( 120, 'bhranti_run', true )['request_retries'], 'Human Resume renews budget without making an inline request.' );
+ux_check( 2 === get_post_meta( 120, 'bhranti_run', true )['recovery_stage'] && 1 === get_post_meta( 120, 'bhranti_run', true )['auto_recoveries'], 'Explicit Resume keeps the smaller strategy and never renews automatic continuation.' );
 $valid = wp_json_encode( array( 'type' => 'tool', 'content' => 'Read pages.', 'tool' => 'wp_request', 'args' => '{"method":"GET","path":"/wp/v2/pages"}' ) );
 $result = ir_step( 120, $valid ); $prepared = get_post_meta( 120, 'bhranti_run', true );
 ux_check( 'prepared' === $prepared['phase'] && 0 === $prepared['request_retries'] && ! isset( $prepared['retry_at'] ) && 1 === $prepared['plan_retries'], 'Valid plan resets consecutive request retries without renewing malformed-plan allowance.' );

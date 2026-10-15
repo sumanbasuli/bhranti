@@ -129,7 +129,7 @@ final class Bhranti_Runner {
 			return $run;
 		}
 		self::clear( $session_id, $run_id, $requester_id );
-		if ( 'running' !== ( $run['status'] ?? '' ) ) {
+		if ( 'running' !== ( $run['status'] ?? '' ) || 'browser' === ( $run['phase'] ?? '' ) ) {
 			return false;
 		}
 		$previous_user       = get_current_user_id();
@@ -385,6 +385,9 @@ final class Bhranti_Runner {
 		if ( ! is_array( $command ) || ! is_string( $command['tool'] ?? null ) || ! is_array( $command['args'] ?? null ) ) {
 			return true;
 		}
+		if ( 'bhranti_inspect' === $command['tool'] && 'rendered' === ( $command['args']['resource'] ?? '' ) ) {
+			return false;
+		}
 		if ( in_array( $command['tool'] ?? '', array( 'site_search', 'open_item', 'plugin_search' ), true ) ) {
 			return false;
 		}
@@ -406,7 +409,7 @@ final class Bhranti_Runner {
 		if ( is_wp_error( $run ) ) {
 			return $run;
 		}
-		if ( 'running' !== ( $run['status'] ?? '' ) ) {
+		if ( 'running' !== ( $run['status'] ?? '' ) || 'browser' === ( $run['phase'] ?? '' ) ) {
 			self::clear( $session_id, $run_id, $requester_id );
 			return true;
 		}

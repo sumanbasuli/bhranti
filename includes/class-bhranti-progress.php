@@ -47,8 +47,12 @@ final class Bhranti_Progress {
 		}
 		if ( in_array( $tool, array( 'bhranti_task', 'bhranti_skill', 'bhranti_inspect' ), true ) ) {
 			$data['write']       = false;
-			$data['site_action'] = 'bhranti_inspect' === $tool && 'content' === ( $args['resource'] ?? '' );
+			$data['site_action'] = 'bhranti_inspect' === $tool && in_array( $args['resource'] ?? '', array( 'content', 'rendered' ), true );
 			$data['method']      = 'GET';
+		}
+		if ( 'bhranti_inspect' === $tool && 'rendered' === ( $args['resource'] ?? '' ) ) {
+			$data['summary'] = __( 'Checking actual desktop and mobile rendering', 'bhranti' );
+			$data['details'] = array( __( 'Automated accessibility, layout, images and anchors', 'bhranti' ) );
 		}
 		if ( 'bhranti_task_limit' === $tool ) {
 			$data['path']    = '/bhranti/v1/task-limit';

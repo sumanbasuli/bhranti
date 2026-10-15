@@ -7,6 +7,7 @@
 	const sprintf = wp.i18n && wp.i18n.sprintf ? wp.i18n.sprintf : (value, ...args) => value.replace(/%[ds]/g, () => String(args.shift()));
 	const apiPath = (settings.apiPath || '/bhranti/v1').replace(/\/+$/, '');
 	const state = { open: false, initialized: false, loading: false, busy: false, stepping: false, stopRequested: false, pausedForEditor: false, editor: null, editorError: '', progress: null, menu: false, workspace: { sessions: [], ai: {} }, session: null, draft: '', drafts: new Map(), screenshots: new Map(), screenshot: null, capturing: false, error: '', reconnecting: 0, connectionError: '', results: new Map(), notices: [], seen: new Set(), width: 350, attachPage: true, attachBlock: true, agentId: 'bhranti' };
+	let renderController = null;
 	let noticeSequence = 0, lastTrigger = null, contextFingerprint = '', progressTimer = null, heartbeatTimer = null, backgroundTimer = null, heartbeatRequest = null, heartbeatQueued = false, heartbeatFingerprint = '', backgroundReading = false, pageSuspended = false, interacting = false, composing = false, renderPending = false, interactionTimer = null, pageFormDirty = false, streamSession = null;
 	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
 	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
@@ -155,6 +156,7 @@
 	function actionInFlight(run) { return !!(run && (run.phase === 'action' || pendingAction && pendingAction.key === resultKey() && pendingAction.step === run.step)); }
 	function reconcileActionControl() {
 		const run = currentRun();
+		if (renderController && (!state.open || !run || run.phase !== 'browser' || run.status !== 'running')) abortRender();
 		if (pendingAction && (!run || pendingAction.key !== resultKey() || run.status !== 'running' || run.step > pendingAction.step || !['prepared', 'action'].includes(run.phase))) pendingAction = null;
 		if (stopRunKey && stopRunKey !== resultKey() || run && !activeRun()) { state.stopRequested = false; state.pausedForEditor = false; stopRunKey = ''; }
 	}
@@ -649,6 +651,7 @@
 	}
 	function closePanel() {
 		if (closeUnavailable()) return;
+		abortRender();
 		rememberOpen(false);
 		const url = new URL(window.location.href); if (url.searchParams.has('bhranti')) { url.searchParams.delete('bhranti'); window.history.replaceState(null, '', url); }
 		state.open = false; state.menu = false; root.hidden = true; document.body.classList.remove('bhranti-panel-open'); syncTrigger();
@@ -722,6 +725,44 @@
 		finally { await refreshWorkspaceQuietly(); state.busy = false; rememberDraft(); render(); }
 		markExistingEvents(); continueRun(); focusComposer();
 	}
+	function paintPreparedAction() {
+		return new Promise((resolve) => {
+			let settled = false, frame = 0;
+			const done = () => { if (settled) return; settled = true; window.clearTimeout(timer); window.cancelAnimationFrame(frame); resolve(); };
+			// Hidden tabs can suspend animation frames while Cron advances the task.
+			const timer = window.setTimeout(done, 250);
+			frame = window.requestAnimationFrame(() => { frame = window.requestAnimationFrame(done); });
+		});
+	}
+	function abortRender() { if (renderController) renderController.abort(); }
+	async function inspectRenderedPage(id, runId) {
+		const before = currentRun(), jobId = before.render_job && before.render_job.id, step = before.step;
+		if (!jobId || !window.BhrantiRender || typeof window.BhrantiRender.run !== 'function') throw new Error(__('The rendered preview checker could not load. Reload Bhranti to continue.', 'bhranti'));
+		state.session = await request('/sessions/' + encodeURIComponent(id) + '/render-start', 'POST', { run_id: runId, prepared_step: step, job_id: jobId });
+		if (!state.open || pageSuspended || !currentRun() || currentRun().id !== runId || currentRun().phase !== 'browser' || state.stopRequested) return;
+		const job = currentRun().render_job, controller = new AbortController(); renderController = controller;
+		state.progress = { label: __('Loading the saved WordPress preview…', 'bhranti'), started: Date.now() }; render(); progressTimer = window.setInterval(updateElapsed, 1000);
+		try {
+			const report = await window.BhrantiRender.run(job, { signal: controller.signal, axeUrl: settings.renderCheck && settings.renderCheck.axeUrl, onProgress: (progress) => {
+				if (!controller.signal.aborted && currentRun() && currentRun().id === runId && state.open) { state.progress.label = progress.message; render(); }
+			} });
+			if (controller.signal.aborted || pageSuspended || !state.open || state.stopRequested || !currentRun() || currentRun().id !== runId) return;
+			state.session = await request('/sessions/' + encodeURIComponent(id) + '/render-result', 'POST', { run_id: runId, prepared_step: step, job_id: job.id, report });
+			markExistingEvents();
+		} catch (error) {
+			if (error && error.name === 'AbortError') return;
+			// A lost response may already be settled; reconcile without replaying it.
+			const fresh = await request('/sessions/' + encodeURIComponent(id));
+			if (pageSuspended || !state.session || state.session.id !== id || !currentRun() || currentRun().id !== runId) return;
+			state.session = fresh;
+			if (!fresh.run || fresh.run.id !== runId || fresh.run.phase !== 'browser' || !fresh.run.render_job || fresh.run.render_job.id !== job.id) return;
+			if (error && error.code === 'bhranti_render_stale') return;
+			throw error;
+		} finally {
+			if (renderController === controller) renderController = null;
+			window.clearInterval(progressTimer); progressTimer = null; state.progress = null; render();
+		}
+	}
 	async function continueRun() {
 		if (pageSuspended || state.stepping || state.busy || state.error && !state.stopRequested || !state.open || !currentRun() || currentRun().status !== 'running') return;
 		if (!state.stopRequested && pendingAction && pendingAction.key === resultKey() && pendingAction.step === currentRun().step && currentRun().phase === 'prepared') { state.error = __('The previous action response is still unconfirmed. Reconnect to check the saved task before continuing.', 'bhranti'); render(); return; }
@@ -734,6 +775,7 @@
 				const id = state.session.id, runId = currentRun().id;
 				if (currentRun().interrupted && !state.stopRequested) { state.error = __('The previous request was interrupted. Stop this run and check Logs before starting again.', 'bhranti'); render(); break; }
 				if (state.stopRequested && (currentRun().interrupted || !['model', 'action', 'tool'].includes(currentRun().phase))) { state.error = ''; cancelAttempted = true; state.session = await request('/sessions/' + encodeURIComponent(id) + '/cancel', 'POST', { run_id: runId }); state.stopRequested = false; state.pausedForEditor = false; render(); break; }
+				if (currentRun().phase === 'browser') { await inspectRenderedPage(id, runId); if (!state.open || pageSuspended) break; continue; }
 				const retryAt = Number(currentRun().retry_at) * 1000;
 				if (Number.isFinite(retryAt) && retryAt > 0 && (retryAt > Date.now() || observedRetryAt !== retryAt)) {
 					if (retryAt > Date.now()) { await wait(Math.min(1000, retryAt - Date.now())); if (!state.open || pageSuspended) break; render(); if (state.stopRequested || retryAt > Date.now()) continue; }
@@ -756,7 +798,7 @@
 						try { await reportEditor(false, true); } catch (error) { state.pausedForEditor = true; render(); break; }
 						if (editorState().unsaved_changes || editorSummary().dirty) { state.pausedForEditor = true; render(); break; }
 					}
-					state.pausedForEditor = false; render(); await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+					state.pausedForEditor = false; render(); await paintPreparedAction();
 					if (!state.open || pageSuspended) break; if (state.stopRequested) continue;
 				}
 				try {
@@ -872,9 +914,9 @@
 	}
 	function runStatus() {
 		const run = currentRun(); if (!run) return null;
-		const labels = { running: ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), awaiting_input: __('Waiting for your answer', 'bhranti'), complete: __('Completed', 'bhranti'), incomplete: __('Partially complete', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
+		const labels = { running: run.phase === 'browser' ? __('Waiting for the rendered preview check', 'bhranti') : ['prepared', 'action', 'tool'].includes(run.phase) ? (run.next_action && run.next_action.summary || __('Running a WordPress action…', 'bhranti')) : run.recovery_stage > 0 ? __('Continuing in smaller steps…', 'bhranti') : __('Planning next step…', 'bhranti'), awaiting_confirmation: __('Waiting for your approval', 'bhranti'), awaiting_input: __('Waiting for your answer', 'bhranti'), complete: __('Completed', 'bhranti'), incomplete: __('Partially complete', 'bhranti'), failed: run.can_resume ? __('Connection paused', 'bhranti') : __('Task stopped', 'bhranti'), cancelled: __('Stopped', 'bhranti') };
 		const retrySeconds = Math.max(0, Math.ceil(Number(run.retry_at) - Date.now() / 1000));
-		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(__('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
+		const label = state.stopRequested ? __('Stopping after the current step…', 'bhranti') : state.pausedForEditor && run.status === 'running' ? state.editorError || (editorSummary().dirty && !editorState().unsaved_changes ? __('Save or discard changes in your other editor tabs, then Resume', 'bhranti') : __('Save or discard your editor changes to continue', 'bhranti')) : state.progress ? state.progress.label : state.error && run.status === 'running' ? __('Paused after a request error', 'bhranti') : run.status === 'running' && retrySeconds > 0 ? sprintf(run.recovery_stage >= 2 ? __('Continuing saved task in %ds', 'bhranti') : __('Retrying connection in %ds', 'bhranti'), retrySeconds) : labels[run.status] || run.status;
 		const pending = run.status === 'running' && !state.stopRequested && !state.pausedForEditor && !state.error && !retrySeconds;
 		const name = pending ? 'sparkle' : run.status === 'complete' ? 'check' : run.status === 'failed' ? 'error' : 'clock';
 		const status = element('div', 'bhranti-run-status', element('span', 'bhranti-status-icon' + (pending ? ' is-running' : ''), icon(name)), element('span', 'bhranti-status-label', label)); status.id = 'bhranti-run-status'; status.setAttribute('role', 'status');
@@ -883,13 +925,13 @@
 		if (run.status === 'running') {
 			const actions = element('div', 'bhranti-run-controls');
 			if (state.pausedForEditor) { const resume = button(__('Resume', 'bhranti'), 'bhranti-inline-button', resumeRun, 'bhranti-resume-run'); resume.disabled = state.busy || state.stepping; actions.appendChild(resume); }
-			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; stopRunKey = resultKey(); state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }, 'bhranti-stop'); stop.prepend(icon('stop')); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
+			const stop = button(__('Stop', 'bhranti'), 'bhranti-inline-button', () => { state.stopRequested = true; abortRender(); stopRunKey = resultKey(); state.pausedForEditor = false; render(); if (!state.stepping && !state.busy) continueRun(); }, 'bhranti-stop'); stop.prepend(icon('stop')); stop.disabled = state.stopRequested; actions.appendChild(stop); status.appendChild(actions);
 		}
 		return status;
 	}
 	function actionPreview() {
 		const run = currentRun(), action = run && run.next_action;
-		if (!run || run.status !== 'running' || !['prepared', 'action', 'tool'].includes(run.phase) || !action) return null;
+		if (!run || run.status !== 'running' || !['prepared', 'action', 'tool', 'browser'].includes(run.phase) || !action) return null;
 		const name = action.tool === 'generate_image' ? 'image' : action.tool === 'plugin_request' ? 'plugin' : action.write ? 'write' : 'search';
 		const preview = element('section', 'bhranti-action-preview', element('h3', '', icon(name), action.summary || __('Prepared WordPress action', 'bhranti'))); preview.id = 'bhranti-action-preview';
 		if (typeof action.intent === 'string' && action.intent.trim() && action.intent.trim() !== action.summary) preview.appendChild(element('p', 'bhranti-action-intent', action.intent.trim().slice(0, 240)));
@@ -907,7 +949,7 @@
 		if (!task || typeof task.objective !== 'string' || !task.objective.trim() || !Array.isArray(task.outcomes) || !task.outcomes.length) return null;
 		const rows = (values, checks) => {
 			const list = element('ul', 'bhranti-plan-list');
-			const labels = checks ? { pending: __('Pending', 'bhranti'), read_back: __('Saved state checked', 'bhranti'), manual: __('Review needed', 'bhranti') } : { pending: __('Pending', 'bhranti'), in_progress: __('In progress', 'bhranti'), completed: __('Recorded', 'bhranti'), blocked: __('Blocked', 'bhranti') };
+			const labels = checks ? { pending: __('Pending', 'bhranti'), read_back: __('Saved state checked', 'bhranti'), rendered_check: __('Rendered checks passed', 'bhranti'), manual: __('Review needed', 'bhranti') } : { pending: __('Pending', 'bhranti'), in_progress: __('In progress', 'bhranti'), completed: __('Recorded', 'bhranti'), blocked: __('Blocked', 'bhranti') };
 			values.slice(0, 12).forEach((row) => {
 				if (!row || typeof row.title !== 'string' || !labels[row.status]) return;
 				list.appendChild(element('li', 'bhranti-plan-row', element('span', 'bhranti-plan-title', row.title.slice(0, 240)), element('span', 'bhranti-plan-state', labels[row.status])));
@@ -1072,7 +1114,7 @@
 		const close = iconButton(__('Close Bhranti', 'bhranti'), 'bhranti-icon-button', closePanel, 'close', 'bhranti-close'); close.disabled = closeUnavailable(); if (close.disabled) close.title = __('Available after the current change finishes', 'bhranti'); trailing.appendChild(close);
 		const brand = element('h2', 'bhranti-brand', __('Bhranti', 'bhranti')); brand.id = 'bhranti-panel-title';
 		const header = element('header', 'bhranti-header', controls, brand, trailing); header.id = 'bhranti-header';
-		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, relevant saved preferences and verified image facts, inspected public reference pages, attached rendered-page HTML/text, editor context and any screenshot or reference image you choose with your configured WordPress AI provider. Images are prepared in your browser and shared only when you send. A chosen reference stays with the same task through its questions and answers until removed or replaced. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
+		const details = disclosure('disclosure', 'bhranti-disclosure', element('summary', '', __('You’re chatting with AI. Details.', 'bhranti')), [element('p', '', __('Sending shares your messages, recent conversation, configured system prompt and guardrails, selected agent and skill instructions, requested site content, image-generation prompts, query and action results, relevant saved preferences and verified image facts, inspected public reference pages, rendered-preview accessibility findings and layout measurements, attached rendered-page HTML/text, editor context and any screenshot or reference image you choose with your configured WordPress AI provider. Images are prepared in your browser and shared only when you send. A chosen reference stays with the same task through its questions and answers until removed or replaced. Provider terms apply. Site changes and rollback are recorded in Logs.', 'bhranti'))]); details.id = 'bhranti-disclosure';
 		if (!(state.workspace.ai || {}).available && state.initialized) details.appendChild(element('p', '', __('No AI provider is configured. Use WordPress connectors in the Bhranti menu.', 'bhranti')));
 		const streamNode = conversation(), dock = activeRun() ? element('div', 'bhranti-task-dock', runStatus()) : null; if (dock) dock.id = 'bhranti-task-dock';
 		const jump = iconButton(__('Jump to latest', 'bhranti'), 'bhranti-jump-latest', (event) => { const stream = root.querySelector('.bhranti-stream'); if (stream) { stream.scrollTop = stream.scrollHeight; scrollPositions.set(String(state.session && state.session.id || 'new'), { top: stream.scrollTop, bottom: true }); } event.currentTarget.hidden = true; const input = root.querySelector('#bhranti-composer'); if (input && !input.disabled) input.focus(); else root.querySelector('#bhranti-close').focus(); }, 'down', 'bhranti-jump-latest'); jump.appendChild(element('span', '', __('Jump to latest', 'bhranti'))); jump.hidden = !position || position.bottom;
@@ -1143,7 +1185,7 @@
 		} catch (error) { return; }
 		if (fingerprint !== contextFingerprint) { contextFingerprint = fingerprint; if (state.open) render(); }
 	});
-	window.addEventListener('pagehide', () => { pageSuspended = true; releaseEditorControl(); releaseSiteControl(); composing = false; interacting = false; renderPending = false; window.clearTimeout(interactionTimer); interactionTimer = null; window.clearInterval(heartbeatTimer); heartbeatTimer = null; window.clearTimeout(backgroundTimer); backgroundTimer = null; window.clearInterval(progressTimer); progressTimer = null; window.clearTimeout(editorSync.timer); editorSync.timer = null; });
+	window.addEventListener('pagehide', () => { pageSuspended = true; abortRender(); releaseEditorControl(); releaseSiteControl(); composing = false; interacting = false; renderPending = false; window.clearTimeout(interactionTimer); interactionTimer = null; window.clearInterval(heartbeatTimer); heartbeatTimer = null; window.clearTimeout(backgroundTimer); backgroundTimer = null; window.clearInterval(progressTimer); progressTimer = null; window.clearTimeout(editorSync.timer); editorSync.timer = null; });
 	window.addEventListener('pageshow', (event) => { if (!event.persisted) return; pageSuspended = false; startHeartbeat(); if (editorSync.pending) { editorSync.pending.attempts = 0; scheduleEditorChanges(); } if (state.open) openPanel(); else scheduleBackgroundObservation(true); });
 	startHeartbeat(); if (!settings.autoOpen) scheduleBackgroundObservation(true);
 	syncTrigger(); if (settings.autoOpen) openPanel();

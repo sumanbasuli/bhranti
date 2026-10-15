@@ -29,7 +29,7 @@ final class Bhranti_Panel {
 	 * @return bool
 	 */
 	private static function allowed() {
-		return is_user_logged_in() && current_user_can( 'manage_options' );
+		return is_user_logged_in() && current_user_can( 'manage_options' ) && ( ! class_exists( 'Bhranti_Render' ) || ! Bhranti_Render::is_frame() );
 	}
 
 	/**
@@ -101,7 +101,9 @@ final class Bhranti_Panel {
 		// The native editor can rewrite the URL before the panel has finished loading.
 		$session_id = isset( $_GET['bhranti_session'] ) ? absint( $_GET['bhranti_session'] ) : ( isset( $_GET['session'] ) ? absint( $_GET['session'] ) : 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		wp_enqueue_style( 'bhranti-admin', plugins_url( 'assets/admin.css', BHRANTI_FILE ), array( 'buttons', 'dashicons' ), BHRANTI_VERSION );
-		wp_enqueue_script( 'bhranti-admin', plugins_url( 'assets/admin.js', BHRANTI_FILE ), array( 'wp-api-fetch', 'wp-data', 'wp-notices', 'wp-i18n', 'wp-date' ), BHRANTI_VERSION, true );
+		wp_enqueue_script( 'bhranti-render', plugins_url( 'assets/render-check.js', BHRANTI_FILE ), array( 'wp-i18n' ), BHRANTI_VERSION, true );
+		wp_set_script_translations( 'bhranti-render', 'bhranti' );
+		wp_enqueue_script( 'bhranti-admin', plugins_url( 'assets/admin.js', BHRANTI_FILE ), array( 'bhranti-render', 'wp-api-fetch', 'wp-data', 'wp-notices', 'wp-i18n', 'wp-date' ), BHRANTI_VERSION, true );
 		wp_set_script_translations( 'bhranti-admin', 'bhranti' );
 		$screen = is_admin() ? get_current_screen() : null;
 		if ( $screen && 'post' === $screen->base && in_array( $screen->post_type, array( 'post', 'page' ), true ) && $screen->is_block_editor() ) {
@@ -114,6 +116,10 @@ final class Bhranti_Panel {
 				array(
 					'apiPath'           => '/bhranti/v1',
 					'backgroundEnabled' => true,
+					'renderCheck'       => array(
+						'axeUrl'  => plugins_url( 'assets/vendor/axe-core/axe.js', BHRANTI_FILE ),
+						'version' => Bhranti_Render::ENGINE_VERSION,
+					),
 					'connectorsUrl'     => admin_url( 'options-connectors.php' ),
 					'logsUrl'           => admin_url( 'admin.php?page=bhranti-logs' ),
 					'settingsUrl'       => admin_url( 'admin.php?page=bhranti' ),

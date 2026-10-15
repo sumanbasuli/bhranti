@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.5.2
+Stable tag: 0.6.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -103,6 +103,10 @@ Yes. Native WordPress scheduling continues saved tasks after the panel or browse
 
 Completed operations remain in the audit log. An interrupted operation is not automatically replayed; inspect the item and logs before starting another request. A later failed step does not undo prior successful steps.
 
+Known temporary text-planning failures reduce the next content step size and retry after saved deadlines. After three retries, one automatic continuation keeps the same task, checkpoint, reference and saved item/image IDs with an even smaller content budget. A continued outage stops after a further three retries and offers safe Resume. Authentication, usage limits, approvals and uncertain actions are not automatically replayed. The task step limit still applies. Recovery blocks identical successful mutations and same-titled saved image generation within the run; three repeated proposals stop with the work marked partial. New human requests can deliberately change or generate items again.
+
+Large saved posts, pages and templates support small revision-checked block patches through the reviewed native content pipeline. Appends and individual block replacements preserve surrounding source, permissions, authored-content checks and conflict-safe Undo. A changed revision requires a fresh inspection before another patch.
+
 = Does it stream replies? =
 
 The installed native WordPress AI Client returns a completed text result. Bhranti displays that result without simulated typing. Live token streaming requires support from the native client and connector transport. Prepared actions and request elapsed time remain visible. Sidebar status reads have a 20-second timeout per attempt and recover temporary connection failures with up to two delayed retries. Site-changing requests have a four-minute response deadline and are not automatically replayed. After a missing response, Bhranti reads the saved task state before continuing. Native text planning uses a scoped 120-second timeout and image generation uses 180 seconds.
@@ -120,6 +124,26 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.6.1 =
+* Bound prepared-action paint waits so hidden browser tabs cannot stall native continuation.
+* Inspect actual native post/page previews at desktop and two mobile widths with locally bundled axe-core.
+* Retain exact owned browser jobs across navigation, with Stop, renewal, conflict checks and idempotent results.
+* Bind passing automated rendered evidence to the saved page and known theme state; keep findings and limits traceable.
+* Keep full bounded browser reports private and covered by export, erasure and conversation deletion.
+
+
+
+= 0.5.4 =
+* Keep large authorized raw content available for verification by omitting duplicated rendered HTML from oversized tool feedback.
+* Retain the exact selected-block inspection scope in durable action receipts so compacted history does not cause repeated verification.
+* Guide large saved-source reads toward native field selection and meaningful verification checkpoints.
+
+= 0.5.3 =
+* Continue known temporary planning failures automatically in smaller steps, with bounded retries and durable background deadlines.
+* Preserve saved resource identities and content revisions across compacted history; prevent replay of successful actions and images during recovery.
+* Build and edit long native block documents through small revision-checked append/replace operations with existing audit and Undo protection.
+* Show when a task is continuing in smaller steps while preserving Stop, approval and editor safeguards.
 
 = 0.5.2 =
 * Ground design content and imagery in the offering, audience and visitor decisions rather than decorative style alone.
@@ -298,3 +322,7 @@ No. Supported changes retain seven-day snapshots and reject conflicts or replay.
 
 = 0.1.0 =
 * Initial private chat workspace, native AI integration and read-only boundaries.
+
+== Bundled libraries ==
+
+axe-core 4.14.0 by Deque Systems is bundled locally under MPL-2.0. Readable source, original license, third-party notices and integrity/source metadata are in assets/vendor/axe-core/. Source: https://github.com/dequelabs/axe-core/tree/v4.14.0 . No external scanning service or CDN is used. Automated scans assist accessibility evaluation and do not certify full WCAG conformance.
