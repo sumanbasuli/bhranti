@@ -1378,6 +1378,56 @@ async function testExactApprovalControls() {
   }
 }
 
+async function testChatListRefreshOnOpen() {
+  const workspace = { sessions: [{ id: 2429, title: 'New frontend conversation' }, { id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
+  const held = deferred();
+  const page = fixture({ handler: async (request) => { if (request.path.endsWith('/workspace') && request.method === 'GET') return held.promise; throw new Error('Opening Chats may refresh only workspace metadata.'); } });
+  try {
+    const doc = page.w.document, current = page.api.state.session;
+    typeDraft(page, 'Exact unsent draft while another tab creates a chat');
+    doc.getElementById('bhranti-chats').click(); await flush();
+    equal(count(page, '/workspace', 'GET'), 1, 'Opening an already initialized chat menu starts one fresh workspace GET');
+    check(doc.getElementById('bhranti-chat-17'), 'Cached chat choices remain available while metadata loads');
+    equal(page.api.state.busy, false, 'A chat-list refresh never blocks the current conversation');
+    const search = doc.getElementById('bhranti-chat-search'); search.focus(); search.value = 'frontend'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); search.setSelectionRange(2, 6);
+    doc.getElementById('bhranti-menu').scrollTop = 47;
+    held.resolve(clone(workspace));
+    await until(() => !!doc.getElementById('bhranti-chat-2429'), page); await page.advance(20);
+    equal(page.api.state.session, current, 'A newly discovered chat never replaces the selected conversation');
+    equal(page.api.state.draft, 'Exact unsent draft while another tab creates a chat', 'Workspace refresh preserves the selected chat draft');
+    equal(doc.getElementById('bhranti-composer').value, page.api.state.draft, 'The composer retains the exact draft text');
+    equal(page.api.restoreDraft(17), page.api.state.draft, 'Per-chat draft storage is unchanged');
+    equal(doc.getElementById('bhranti-chat-search'), search, 'Refreshing choices retains the mounted search field');
+    equal(search.value, 'frontend', 'A pending refresh does not reset the current filter');
+    equal(doc.activeElement, search, 'The completion render preserves current search focus');
+    equal(search.selectionStart, 2, 'The completion render preserves search selection start'); equal(search.selectionEnd, 6, 'The completion render preserves search selection end');
+    equal(doc.getElementById('bhranti-menu').scrollTop, 47, 'The completion render preserves menu reading position');
+    equal(page.requests.length, 1, 'Discovering another tab’s chat loads neither conversation history nor provider actions');
+  } finally { held.resolve(workspace); await flush(); page.close(); }
+  const later = deferred();
+  const closed = fixture({ handler: async (request) => { if (request.path.endsWith('/workspace') && request.method === 'GET') return later.promise; throw new Error('Chat-list refresh is GET only.'); } });
+  try {
+    const doc = closed.w.document;
+    doc.getElementById('bhranti-chats').click(); doc.getElementById('bhranti-chats').click(); doc.getElementById('bhranti-chats').click(); await flush();
+    equal(count(closed, '/workspace', 'GET'), 1, 'Rapid close/reopen shares the existing in-flight chat-list read');
+    doc.getElementById('bhranti-chats').click(); const native = doc.getElementById('native-field'); native.focus();
+    later.resolve(clone(workspace)); await until(() => closed.api.state.workspace.sessions.some((item) => item.id === 2429), closed); await closed.advance(20);
+    equal(closed.api.state.menu, false, 'A late response never reopens a dismissed chat menu'); equal(doc.activeElement, native, 'A late response preserves native WordPress focus'); equal(native.value, 'Unsaved native text', 'A late response preserves native form text');
+    doc.getElementById('bhranti-chats').click(); await flush(); equal(count(closed, '/workspace', 'GET'), 2, 'A later deliberate opening performs a new metadata read'); check(doc.getElementById('bhranti-chat-2429'), 'The new chat is available on the next deliberate opening');
+    equal(closed.requests.filter((request) => request.method !== 'GET').length, 0, 'Opening and dismissing Chats cannot replay any mutation');
+  } finally { later.resolve(workspace); await flush(); closed.close(); }
+  let offline = true;
+  const recovering = fixture({ handler: async (request) => { if (request.path.endsWith('/workspace') && request.method === 'GET') { if (offline) throw Object.assign(new Error('Temporary metadata outage'), { data: { status: 503 } }); return clone(workspace); } throw new Error('Only existing safe workspace GET retries are allowed.'); } });
+  try {
+    const doc = recovering.w.document; typeDraft(recovering, 'Draft survives chat-list outage'); doc.getElementById('bhranti-chats').click();
+    await until(() => recovering.api.state.connectionError.includes('chat list') && recovering.api.state.reconnecting === 0, recovering, 250);
+    equal(count(recovering, '/workspace', 'GET'), 3, 'An unavailable chat list uses only the existing three bounded GET attempts'); check(doc.getElementById('bhranti-chat-17'), 'Failed metadata reads preserve cached chat choices'); equal(recovering.api.state.error, '', 'A list outage never becomes a blocking conversation error'); equal(doc.getElementById('bhranti-composer').disabled, false, 'The composer remains usable after a chat-list outage');
+    await recovering.advance(60000); equal(count(recovering, '/workspace', 'GET'), 3, 'No global poll or automatic refresh loop follows the bounded failure');
+    offline = false; doc.getElementById('bhranti-chats').click(); doc.getElementById('bhranti-chats').click(); await until(() => !!doc.getElementById('bhranti-chat-2429'), recovering);
+    equal(count(recovering, '/workspace', 'GET'), 4, 'The next explicit opening can recover a previously failed list'); equal(recovering.api.state.connectionError, '', 'A successful metadata read clears the temporary connection status'); equal(recovering.api.state.draft, 'Draft survives chat-list outage', 'Retry and recovery preserve the exact draft'); equal(recovering.requests.filter((request) => request.method !== 'GET').length, 0, 'List recovery never sends a task, approval or action request');
+  } finally { recovering.close(); }
+}
+
 async function testChatMenuJumpAndCopy() {
   const page = fixture();
   try {
@@ -1390,7 +1440,7 @@ async function testChatMenuJumpAndCopy() {
     equal(doc.getElementById('bhranti-chat-17').getAttribute('aria-current'), 'page', 'The selected chat is explicitly identified to assistive technology');
     let search = doc.getElementById('bhranti-chat-search'); search.focus(); search.value = 'SECOND'; search.dispatchEvent(new page.w.Event('input', { bubbles: true })); await page.advance();
     check(doc.getElementById('bhranti-chat-18') && !doc.getElementById('bhranti-chat-17'), 'Chat filtering is case-insensitive and selects the matching title');
-    equal(page.requests.length, 0, 'Typing a chat filter performs no HTTP request');
+    equal(count(page, '/workspace', 'GET'), 1, 'Opening Chats refreshes metadata once; typing a filter adds no request');
     equal(doc.activeElement, search, 'Filtering retains the native search field and focus');
     const menu = doc.getElementById('bhranti-menu'); menu.scrollTop = 63;
     page.api.state.workspace = clone(page.api.state.workspace); page.api.render();
@@ -1430,7 +1480,7 @@ async function testChatMenuJumpAndCopy() {
     equal(doc.getElementById(copyId), copy, 'An identical response poll retains the copy control node'); equal(doc.activeElement, copy, 'Polling retains copy-button keyboard focus');
     copy.click(); await flush(); await page.advance();
     equal(copies.length, 1, 'Copy performs exactly one local clipboard operation'); equal(copies[0], 'Exact local reply <literal> 猫', 'Copy uses the exact response text rather than rendered HTML');
-    equal(page.requests.length, 0, 'Menu search, Jump to latest and local copying never call a provider or server');
+    equal(count(page, '/workspace', 'GET'), 2, 'Only the two explicit Chats openings refresh the chat list'); equal(page.requests.filter((request) => !request.path.endsWith('/workspace') || request.method !== 'GET').length, 0, 'Menu search, Jump to latest and local copying add no request or provider call');
   } finally { page.close(); }
 }
 
@@ -1438,6 +1488,7 @@ async function testDirectChatNavigation() {
   const first = session('complete'); first.events = [tool('same-event')];
   const second = { ...clone(first), id: 18, title: 'Second independent chat' };
   const page = fixture({ session: first, handler: async (request) => {
+    if (request.method === 'GET' && request.path.endsWith('/workspace')) return { sessions: [{ id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
     if (request.method === 'GET' && request.path.endsWith('/sessions/17')) return clone(first);
     if (request.method === 'GET' && request.path.endsWith('/sessions/18')) return clone(second);
     throw new Error('Chat navigation must only read the selected owned conversation.');
@@ -1952,6 +2003,7 @@ async function testDurableTaskPresentation() {
   } finally { page.close(); }
 }
 async function main() {
+  await testChatListRefreshOnOpen();
   await testTransportBoundaries();
   await testReferenceImageContext();
   await testReferenceContinuation();

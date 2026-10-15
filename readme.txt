@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.4
+Stable tag: 0.6.5
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -124,6 +124,11 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.6.5 =
+* Refresh Chats when opened so conversations created in another tab appear without losing drafts or focus.
+* Read native saved post/page revisions to recover earlier wording through the existing guarded content edits.
+* Include the resolved native site timezone, including fixed UTC offsets, in the site context.
 
 = 0.6.4 =
 * Run actual rendered measurements inside the authorized native preview when its parent editor cannot inspect the preview document.

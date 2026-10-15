@@ -191,7 +191,7 @@ final class Bhranti_Actions {
 	 * @return array Tool definitions keyed by tool name.
 	 */
 	public static function catalog() {
-		$catalog = array(
+		$catalog                               = array(
 			'wp_request'  => array(
 				'description' => 'Use reviewed core /wp/v2 routes. GET discovers content, types, taxonomies, comments, public users, installed themes, templates, styles and safe settings. GET /wp/v2/themes lists installed themes and global_styles_id for an existing readable user-style record (null when absent or unavailable); theme writes are unavailable. There is no /wp/v2/global-styles collection. Read active theme defaults at /wp/v2/global-styles/themes/{stylesheet}; read/update existing user overrides at /wp/v2/global-styles/{global_styles_id}. Never guess a style ID or create one during discovery. GET /wp/v2/block-types or /wp/v2/block-types/namespace lists up to 200 compact installed block names; GET /wp/v2/block-types/namespace/name reads its native attributes/supports without scripts, asset URLs or rendering. Use exact discovered block names for complex layouts; block metadata is read-only. POST/PUT/PATCH creates or updates content and comments, updates media descriptions, existing terms/menus, published templates, navigation, styles and safe settings. DELETE only trashes reversible content/comments after human confirmation. No arbitrary routes, user changes, secrets, files or core changes. Use plugin_request for reviewed plugin management and generate_image for native AI image creation. Use GET to discover IDs/schema before writing. New taxonomy terms and classic menus, arbitrary media upload, template source resets, deletion of existing templates and permanent deletes are unsupported. Examples: {"method":"GET","path":"/wp/v2/types"}, {"method":"GET","path":"/wp/v2/taxonomies"}, {"method":"POST","path":"/wp/v2/pages","params":{"title":"New page","content":"<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->","status":"draft"}}. Do not send OPTIONS requests.',
 				'parameters'  => array(
@@ -248,6 +248,7 @@ final class Bhranti_Actions {
 				),
 			),
 		);
+		$catalog['wp_request']['description'] .= ' To recover earlier wording, GET /wp/v2/posts/ID/revisions or /wp/v2/pages/ID/revisions lists up to 20 saved revision records; GET that path plus /REVISION_ID reads its original raw title/content/excerpt. These are read-only, exclude autosaves and pin the parent in the URL. Discover revisions rather than asking the human to paste earlier text. Compare the requested earlier section with current saved content, then use the existing current-revision content_patch to restore only that section; never overwrite unrelated later changes with an entire old page.';
 		if ( class_exists( 'Bhranti_Content_Patch' ) ) {
 			$catalog['wp_request']['parameters']['properties']['content_patch'] = Bhranti_Content_Patch::schema();
 		}
@@ -354,8 +355,15 @@ final class Bhranti_Actions {
 			} elseif ( 'WP_REST_Themes_Controller' === $review['class'] ) {
 				// Native theme links create a global-styles post when none exists.
 				$review['request']->set_param( '_fields', Bhranti_Site::theme_fields() );
+			} elseif ( 'WP_REST_Revisions_Controller' === $review['class'] ) {
+				$attributes = $review['request']->get_attributes();
+				$review['request']->set_param( 'context', 'edit' );
+				$review['request']->set_param( '_fields', self::revision_fields( 'get_items' === $attributes['callback'][1] ) );
 			}
 			$data = self::dispatch( $review['request'], $actor_id );
+			if ( ! is_wp_error( $data ) && 'WP_REST_Revisions_Controller' === $review['class'] ) {
+				$data = self::revision_data( $data, $review['request']->get_url_params() );
+			}
 			if ( is_wp_error( $data ) ) {
 				self::audit( 'action_failed', __( 'WordPress could not complete the read request.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $actor_id );
 				return $data;
@@ -987,6 +995,9 @@ final class Bhranti_Actions {
 			unset( $params['_fields'] );
 		}
 		foreach ( $params as $key => $value ) {
+			if ( 'WP_REST_Revisions_Controller' === $class && 'parent' === $key ) {
+				return self::error( 'bhranti_action_blocked', __( 'The revision parent must remain the item selected in the route.', 'bhranti' ), 403 );
+			}
 			if ( in_array( $key, array( 'force', 'password', 'meta', 'author_email', 'author_ip', 'author_user_agent', 'source', '_fields', '_embed', 'id' ), true ) || ! isset( $endpoint['args'][ $key ] ) || ( 'GET' !== $method && ! in_array( $key, $allowed, true ) ) ) {
 				return self::error( 'bhranti_action_blocked', __( 'A parameter is outside the reviewed route schema or rollback policy.', 'bhranti' ), 403 );
 			}
@@ -1036,6 +1047,9 @@ final class Bhranti_Actions {
 		try {
 			foreach ( array( $requester_id, $actor_id ) as $user_id ) {
 				wp_set_current_user( $user_id );
+				if ( 'WP_REST_Revisions_Controller' === $class && ! current_user_can( 'read_post', (int) $matched['url_params']['parent'] ) ) {
+					return self::error( 'bhranti_action_permission', __( 'Both accounts must be able to read the revision parent.', 'bhranti' ), 403 );
+				}
 				$check      = static function () use ( $endpoint, $request ) {
 					return call_user_func( $endpoint['permission_callback'], $request );
 				};
@@ -1054,6 +1068,15 @@ final class Bhranti_Actions {
 			}
 		} finally {
 			wp_set_current_user( $previous_user );
+		}
+		if ( 'WP_REST_Revisions_Controller' === $class && isset( $matched['url_params']['id'] ) ) {
+			$revision = get_post( (int) $matched['url_params']['id'] );
+			if ( ! $revision || 'revision' !== $revision->post_type || (int) $revision->post_parent !== (int) $matched['url_params']['parent'] ) {
+				return self::error( 'bhranti_revision_parent', __( 'The returned revision does not belong to the selected item.', 'bhranti' ), 403 );
+			}
+			if ( wp_is_post_autosave( $revision ) ) {
+				return self::error( 'bhranti_revision_autosave', __( 'Choose a saved revision rather than an unsaved editor autosave.', 'bhranti' ), 403 );
+			}
 		}
 		unset( $params['force'] );
 		$reviewed_args = array(
@@ -1143,6 +1166,9 @@ final class Bhranti_Actions {
 		}
 		$params = array();
 		foreach ( $endpoint['args'] ?? array() as $key => $argument ) {
+			if ( 'WP_REST_Revisions_Controller' === $class && 'parent' === $key ) {
+				continue;
+			}
 			if ( in_array( $key, array( 'force', 'password', 'meta', 'author_email', 'author_ip', 'author_user_agent', 'source', '_embed', 'id' ), true ) || ( 'GET' !== $method && ! in_array( $key, $allowed, true ) ) || ( '' !== $field && $field !== $key ) ) {
 				continue;
 			}
@@ -1267,7 +1293,7 @@ final class Bhranti_Actions {
 	 * @return array|WP_Error
 	 */
 	private static function handler( $method, $path ) {
-		$classes = array( 'WP_REST_Posts_Controller', 'WP_REST_Attachments_Controller', 'WP_REST_Comments_Controller', 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller', 'WP_REST_Global_Styles_Controller', 'WP_REST_Post_Types_Controller', 'WP_REST_Taxonomies_Controller', 'WP_REST_Users_Controller', 'WP_REST_Search_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Themes_Controller', 'WP_REST_Block_Types_Controller' );
+		$classes = array( 'WP_REST_Posts_Controller', 'WP_REST_Attachments_Controller', 'WP_REST_Comments_Controller', 'WP_REST_Terms_Controller', 'WP_REST_Menus_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller', 'WP_REST_Global_Styles_Controller', 'WP_REST_Post_Types_Controller', 'WP_REST_Taxonomies_Controller', 'WP_REST_Users_Controller', 'WP_REST_Search_Controller', 'WP_REST_Settings_Controller', 'WP_REST_Themes_Controller', 'WP_REST_Block_Types_Controller', 'WP_REST_Revisions_Controller' );
 		$server  = rest_get_server();
 		foreach ( $server->get_routes() as $route => $endpoints ) {
 			if ( ! preg_match( '@^' . $route . '$@i', $path, $matches ) ) {
@@ -1277,8 +1303,18 @@ final class Bhranti_Actions {
 				if ( empty( $endpoint['methods'][ $method ] ) || ! is_array( $endpoint['callback'] ) || ! is_object( $endpoint['callback'][0] ) || ! in_array( get_class( $endpoint['callback'][0] ), $classes, true ) || ! in_array( $endpoint['callback'][1], array( 'get_item', 'get_items', 'create_item', 'update_item', 'delete_item', 'get_theme_item', 'get_theme_items' ), true ) ) {
 					continue;
 				}
-				$controller        = $endpoint['callback'][0];
-				$options           = $server->get_route_options( $route );
+				$controller = $endpoint['callback'][0];
+				$options    = $server->get_route_options( $route );
+				if ( 'WP_REST_Revisions_Controller' === get_class( $controller ) ) {
+					if ( 'GET' !== $method || ! preg_match( '#\A/wp/v2/(posts|pages)/[1-9][0-9]*/revisions(?:/[1-9][0-9]*)?\z#', $path, $revision_match ) ) {
+						continue;
+					}
+					$native_route = '/wp/v2/' . $revision_match[1] . '/(?P<parent>[\d]+)/revisions';
+					$post_type    = get_post_type_object( 'pages' === $revision_match[1] ? 'page' : 'post' );
+					if ( ! in_array( $route, array( $native_route, $native_route . '/(?P<id>[\d]+)' ), true ) || ( $endpoint['callback'][1] ?? '' ) !== ( $route === $native_route ? 'get_items' : 'get_item' ) || ! $post_type || $post_type->get_revisions_rest_controller() !== $controller || array( $controller, 'get_public_item_schema' ) !== ( $options['schema'] ?? null ) ) {
+						continue;
+					}
+				}
 				$public_schema     = 'GET' === $method && '/wp/v2/types/(?P<type>[\w-]+)' === $route && 'WP_REST_Post_Types_Controller' === get_class( $controller ) && 'get_item' === $endpoint['callback'][1] && '__return_true' === $endpoint['permission_callback'] && array( $controller, 'get_public_item_schema' ) === ( $options['schema'] ?? null );
 				$permission_method = $endpoint['callback'][1] . '_permissions_check';
 				// Native Settings uses its read permission check for both reading and updating.
@@ -1820,6 +1856,58 @@ final class Bhranti_Actions {
 		}
 		$public = array_intersect_key( $data, array_flip( $allowed ) );
 		return 'WP_REST_Attachments_Controller' === $controller_class ? array_merge( $public, self::media_data( $data ) ) : $public;
+	}
+
+	/**
+	 * Keep revision reads inert: list identity first, then read one saved source.
+	 *
+	 * @param bool $collection Native collection rather than an exact revision.
+	 * @return string[]
+	 */
+	private static function revision_fields( $collection ) {
+		$fields = array( 'id', 'parent', 'date', 'date_gmt', 'modified', 'modified_gmt' );
+		return $collection ? $fields : array_merge( $fields, array( 'title.raw', 'content.raw', 'excerpt.raw' ) );
+	}
+
+	/**
+	 * Reject foreign revisions and omit autosaves before exposing any response.
+	 *
+	 * @param array $data Native response data.
+	 * @param array $selectors Exact URL selectors, never query overrides.
+	 * @return array|WP_Error
+	 */
+	private static function revision_data( $data, $selectors ) {
+		$item    = isset( $selectors['id'] );
+		$records = $item ? array( $data ) : $data;
+		if ( ! is_array( $records ) || count( $records ) > 20 ) {
+			return self::error( 'bhranti_revision_limit', __( 'Read at most twenty saved revisions at a time.', 'bhranti' ) );
+		}
+		$result = array();
+		foreach ( $records as $record ) {
+			$post = is_array( $record ) && is_int( $record['id'] ?? null ) ? get_post( $record['id'] ) : null;
+			if ( ! $post || 'revision' !== $post->post_type || (int) $post->post_parent !== (int) $selectors['parent'] || (int) ( $record['parent'] ?? 0 ) !== (int) $selectors['parent'] || ( $item && (int) $post->ID !== (int) $selectors['id'] ) ) {
+				return self::error( 'bhranti_revision_parent', __( 'The returned revision does not belong to the selected item.', 'bhranti' ), 403 );
+			}
+			if ( wp_is_post_autosave( $post->ID ) ) {
+				if ( $item ) {
+					return self::error( 'bhranti_revision_autosave', __( 'Choose a saved revision rather than an unsaved editor autosave.', 'bhranti' ), 403 );
+				}
+				continue;
+			}
+			$safe = array_intersect_key( $record, array_flip( self::revision_fields( true ) ) );
+			if ( $item ) {
+				foreach ( array( 'title', 'content', 'excerpt' ) as $field ) {
+					if ( is_string( $record[ $field ]['raw'] ?? null ) ) {
+						$safe[ $field ] = array( 'raw' => $record[ $field ]['raw'] );
+					}
+				}
+			}
+			$result[] = $safe;
+		}
+		if ( strlen( wp_json_encode( $result ) ) > 1048576 ) {
+			return self::error( 'bhranti_revision_limit', __( 'This saved revision exceeds the bounded source-read limit.', 'bhranti' ) );
+		}
+		return $item ? $result[0] : $result;
 	}
 
 	/**

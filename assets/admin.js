@@ -12,7 +12,7 @@
 	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
 	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
 	const scrollPositions = new Map(), disclosureStates = new Map(), referenceRemovals = new Map();
-	let renderedFingerprint = '', menuScroll = 0, chatSearch = '';
+	let renderedFingerprint = '', menuScroll = 0, chatSearch = '', chatListRequest = null;
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null, siteControl = null;
 	let pendingAction = null, stopRunKey = '', blockedObservation = null;
@@ -615,6 +615,12 @@
 	async function refreshWorkspaceQuietly() {
 		try { await refreshWorkspace(); } catch (error) { state.connectionError = __('The chat list will update when the connection returns.', 'bhranti'); }
 	}
+	function toggleChats() {
+		state.menu = !state.menu; render();
+		if (!state.menu) return;
+		const first = root.querySelector('.bhranti-chat-item'); if (first && !first.disabled) first.focus();
+		if (!chatListRequest) chatListRequest = refreshWorkspaceQuietly().finally(() => { chatListRequest = null; if (!pageSuspended) render(); });
+	}
 	function sessionUnavailable(error) { return error && ['bhranti_session_missing', 'bhranti_session_owner', 'bhranti_session_not_found'].includes(error.code) || error && error.data && Number(error.data.status) === 404; }
 	async function loadSession(id) {
 		try { return await request('/sessions/' + encodeURIComponent(id)); }
@@ -1112,7 +1118,7 @@
 		const position = scrollPositions.get(session); streamSession = session;
 		root.className = 'bhranti-app'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'false'); root.setAttribute('aria-labelledby', 'bhranti-panel-title'); root.hidden = !state.open;
 		document.documentElement.style.setProperty('--bhranti-panel-width', state.width + 'px');
-		const chats = iconButton(__('Chats', 'bhranti'), 'bhranti-icon-button', () => { state.menu = !state.menu; render(); if (state.menu) { const first = root.querySelector('.bhranti-chat-item'); if (first && !first.disabled) first.focus(); } }, 'history', 'bhranti-chats'); chats.setAttribute('aria-expanded', String(state.menu)); chats.setAttribute('aria-controls', 'bhranti-menu');
+		const chats = iconButton(__('Chats', 'bhranti'), 'bhranti-icon-button', toggleChats, 'history', 'bhranti-chats'); chats.setAttribute('aria-expanded', String(state.menu)); chats.setAttribute('aria-controls', 'bhranti-menu');
 		const start = iconButton(__('New chat', 'bhranti'), 'bhranti-icon-button', newChat, 'plus', 'bhranti-new-chat'); start.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const controls = element('div', 'bhranti-header-controls', chats, start), trailing = element('div', 'bhranti-header-controls');
 		if (settings.settingsUrl) { const link = element('a', 'bhranti-icon-button', icon('settings')); link.id = 'bhranti-settings'; link.href = settings.settingsUrl; link.setAttribute('aria-label', __('Bhranti Settings', 'bhranti')); link.title = __('Bhranti Settings', 'bhranti'); trailing.appendChild(link); }

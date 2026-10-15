@@ -175,6 +175,7 @@ final class Bhranti_Workspace {
 			'name'      => wp_strip_all_tags( get_bloginfo( 'name' ) ),
 			'url'       => home_url( '/' ),
 			'wordpress' => $wp_version,
+			'timezone'  => wp_timezone_string(),
 			'theme'     => wp_get_theme()->get( 'Name' ),
 			'posts'     => (int) wp_count_posts( 'post' )->publish,
 			'pages'     => (int) wp_count_posts( 'page' )->publish,

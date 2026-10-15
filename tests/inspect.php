@@ -70,6 +70,11 @@ $bi_request_guard = static function ( $response, $handler, $request ) {
 	if ( preg_match( '#^/wp/v2/(?:posts/[1-9][0-9]*|templates/.+)$#', $request->get_route() ) && 'id,type,link,title.raw,content.raw' !== $request->get_param( '_fields' ) ) {
 		throw new RuntimeException( 'Raw field projection must precede actual native dispatch.' );
 	}
+	if ( false !== strpos( $request->get_route(), '/revisions' ) ) {
+		$fields = array( 'id', 'parent', 'date', 'date_gmt', 'modified', 'modified_gmt' );
+		if ( preg_match( '#/revisions/[1-9][0-9]*$#', $request->get_route() ) ) { $fields = array_merge( $fields, array( 'title.raw', 'content.raw', 'excerpt.raw' ) ); }
+		if ( 'edit' !== $request->get_param( 'context' ) || $fields !== $request->get_param( '_fields' ) ) { throw new RuntimeException( 'Revision projection must exclude rendering/private callbacks before dispatch.' ); }
+	}
 	return $response;
 };
 add_filter( 'rest_request_before_callbacks', $bi_request_guard, 10, 3 );
@@ -116,7 +121,20 @@ function bi_source( $content, $args = array() ) {
 	return bi_inspect( array( 'resource' => 'content', 'path' => '/wp/v2/posts/' . $id ) + $args );
 }
 
+/** Read earlier native wording through the ordinary reviewed action pipeline. */
+function bi_revision( $path, $params = array(), $method = 'GET' ) {
+	return Bhranti_Actions::execute( array( 'tool' => 'wp_request', 'args' => array( 'method' => $method, 'path' => $path, 'params' => $params ) ), $GLOBALS['bi_owner'], $GLOBALS['bi_session'] );
+}
+
 try {
+	foreach ( array( array( 'Asia/Kolkata', 0, 'Asia/Kolkata' ), array( '', 0, '+00:00' ), array( '', 5.5, '+05:30' ), array( '', -3.5, '-03:30' ) ) as $bi_timezone_case ) {
+		$bi_timezone_name = static function () use ( $bi_timezone_case ) { return $bi_timezone_case[0]; };
+		$bi_timezone_offset = static function () use ( $bi_timezone_case ) { return $bi_timezone_case[1]; };
+		add_filter( 'pre_option_timezone_string', $bi_timezone_name );
+		add_filter( 'pre_option_gmt_offset', $bi_timezone_offset );
+		try { bi_check( $bi_timezone_case[2] === ( Bhranti_Workspace::site_context()['timezone'] ?? null ), 'Site context exposes the native resolved named, UTC or fractional fixed-offset timezone without changing settings.' ); }
+		finally { remove_filter( 'pre_option_timezone_string', $bi_timezone_name ); remove_filter( 'pre_option_gmt_offset', $bi_timezone_offset ); }
+	}
 	$bi_owner = wp_insert_user( array( 'user_login' => $bi_marker, 'user_pass' => wp_generate_password( 40 ), 'user_email' => $bi_marker . '@example.invalid', 'role' => 'administrator' ) );
 	bi_check( is_int( $bi_owner ) && $bi_owner > 1, 'Independent human fixture created.' );
 	wp_set_current_user( $bi_owner );
@@ -128,6 +146,88 @@ try {
 	register_rest_field( 'post', 'bhranti_private_fixture', array( 'get_callback' => static function () { ++$GLOBALS['bi_additional']; throw new RuntimeException( 'Unrequested additional-field callback must not run.' ); }, 'schema' => array( 'type' => 'string', 'context' => array( 'view', 'edit' ) ) ) );
 	$bi_native_post_endpoint = bi_endpoint( '/wp/v2/posts', 'POST' );
 	bi_check( 'WP_REST_Posts_Controller' === get_class( $bi_native_post_endpoint['callback'][0] ) && 0 === strpos( ( new ReflectionClass( $bi_native_post_endpoint['callback'][0] ) )->getFileName(), realpath( ABSPATH . WPINC ) ), 'Core-controller evidence comes from the actual installed WordPress package.' );
+
+	// A plain follow-up Undo must recover real earlier wording without a new write primitive.
+	$bi_original_intro = '<!-- wp:paragraph --><p>The exact original introduction.</p><!-- /wp:paragraph -->';
+	$bi_later_section = '<!-- wp:paragraph --><p>A later unrelated section stays.</p><!-- /wp:paragraph -->';
+	$bi_history_parent = bi_fixture( $bi_original_intro, 'post' );
+	$bi_history_revision = wp_save_post_revision( $bi_history_parent );
+	bi_check( is_int( $bi_history_revision ) && $bi_history_revision > 0, 'Native fixture retains a real saved original revision.' );
+	$bi_friendly_intro = '<!-- wp:paragraph --><p>A friendly new introduction.</p><!-- /wp:paragraph -->';
+	wp_update_post( wp_slash( array( 'ID' => $bi_history_parent, 'post_content' => $bi_friendly_intro . $bi_later_section ) ) );
+	$bi_current_history = get_post_field( 'post_content', $bi_history_parent, 'raw' );
+	$bi_history_page = bi_fixture( '<!-- wp:paragraph --><p>Page original.</p><!-- /wp:paragraph -->', 'page' );
+	$bi_page_revision = wp_save_post_revision( $bi_history_page );
+	$bi_revision_path = '/wp/v2/posts/' . $bi_history_parent . '/revisions';
+	$bi_revision_schema = bi_inspect( array( 'resource' => 'route', 'path' => $bi_revision_path ) );
+	bi_check( is_array( $bi_revision_schema ) && isset( $bi_revision_schema['data']['parameters']['per_page'] ) && ! isset( $bi_revision_schema['data']['parameters']['parent'] ), 'The previously blocked native revision schema is discoverable with URL-bound parent.' );
+	$bi_revision_queries = array();
+	$bi_revision_query_observer = static function ( $args ) use ( &$bi_revision_queries ) { $bi_revision_queries[] = $args; return $args; };
+	add_filter( 'rest_revision_query', $bi_revision_query_observer );
+	register_rest_field( 'post-revision', 'bhranti_private_revision_fixture', array( 'get_callback' => static function () { ++$GLOBALS['bi_additional']; throw new RuntimeException( 'Revision additional fields must not run.' ); }, 'schema' => array( 'type' => 'string', 'context' => array( 'edit' ) ) ) );
+	$bi_history_list = bi_revision( $bi_revision_path );
+	bi_check( is_array( $bi_history_list ) && count( $bi_history_list['data'] ) <= 20 && in_array( $bi_history_revision, array_column( $bi_history_list['data'], 'id' ), true ) && ! isset( $bi_history_list['data'][0]['content'] ), 'Bounded native collection lists real saved revision metadata without content dumps.' );
+	bi_check( 20 === $bi_revision_queries[0]['posts_per_page'] && 1 === count( bi_revision( $bi_revision_path, array( 'per_page' => 1 ) )['data'] ), 'Native revisions never use the core unbounded default and honor smaller requested pages.' );
+	$bi_original_read = bi_revision( $bi_revision_path . '/' . $bi_history_revision, array( '_fields' => 'id,parent,title.raw,content.raw,author,meta' ) );
+	bi_check( is_array( $bi_original_read ) && $bi_original_intro === $bi_original_read['data']['content']['raw'] && $bi_history_parent === $bi_original_read['data']['parent'], 'The model can retrieve exact earlier raw wording without asking the human to paste it.' );
+	bi_check( 'post-revision' === $bi_original_read['target']['type'] && $bi_history_revision === $bi_original_read['target']['id'] && ! isset( $bi_original_read['data']['author'], $bi_original_read['data']['meta'], $bi_original_read['data']['content']['rendered'] ), 'Historical source has distinct revision identity and excludes author, metadata and rendered fields.' );
+	bi_check( '' === $bi_original_read['action_id'] && ! $bi_original_read['rollback_available'] && 0 === $bi_renders && 0 === $bi_additional, 'Revision lookup adds no write/rollback authority or render/additional callbacks.' );
+	$bi_restored_section = Bhranti_Content_Patch::apply( $bi_current_history, array( 'revision' => hash( 'sha256', $bi_current_history ), 'operation' => 'replace', 'block_path' => '0', 'content' => $bi_original_read['data']['content']['raw'] ) );
+	bi_check( $bi_original_intro . $bi_later_section === $bi_restored_section && $bi_current_history === get_post_field( 'post_content', $bi_history_parent, 'raw' ), 'Existing conflict-safe patch can restore only the earlier section and retain later work without writing during inspection tests.' );
+	$bi_stale_patch = Bhranti_Content_Patch::apply( $bi_current_history, array( 'revision' => hash( 'sha256', $bi_original_intro ), 'operation' => 'replace', 'block_path' => '0', 'content' => $bi_original_intro ) );
+	bi_check( is_wp_error( $bi_stale_patch ), 'Earlier source never grants a stale full-page restore or bypasses current revision conflicts.' );
+	$bi_page_read = bi_revision( '/wp/v2/pages/' . $bi_history_page . '/revisions/' . $bi_page_revision );
+	bi_check( is_array( $bi_page_read ) && 'page-revision' === $bi_page_read['target']['type'], 'The same native integration supports pages without broadening other post types.' );
+	foreach ( array( array( $bi_revision_path, array( 'parent' => $bi_history_page ), 'GET' ), array( $bi_revision_path, array( 'per_page' => 21 ), 'GET' ), array( $bi_revision_path . '/' . $bi_page_revision, array(), 'GET' ), array( $bi_revision_path . '/' . $bi_history_revision, array(), 'POST' ), array( $bi_revision_path . '/' . $bi_history_revision, array( 'force' => true ), 'DELETE' ), array( '/wp/v2/posts/' . $bi_history_parent . '/autosaves', array(), 'GET' ) ) as $bi_revision_bad ) {
+		bi_check( is_wp_error( bi_revision( $bi_revision_bad[0], $bi_revision_bad[1], $bi_revision_bad[2] ) ), 'Parent overrides, cross-parent reads, oversized pages, autosave routes and revision writes are refused.' );
+	}
+	$bi_autosave = _wp_put_post_revision( array_merge( get_post( $bi_history_parent, ARRAY_A ), array( 'post_content' => 'Private unsaved autosave fixture.' ) ), true );
+	bi_check( is_int( $bi_autosave ) && wp_is_post_autosave( $bi_autosave ), 'A real separate native autosave fixture exists.' );
+	$bi_history_list = bi_revision( $bi_revision_path );
+	$bi_before_autosave_read = $bi_dispatched;
+	bi_check( is_array( $bi_history_list ) && ! in_array( $bi_autosave, array_column( $bi_history_list['data'], 'id' ), true ) && is_wp_error( bi_revision( $bi_revision_path . '/' . $bi_autosave ) ) && $bi_dispatched === $bi_before_autosave_read, 'Autosaves are omitted from native revision collections and exact autosave IDs fail before native dispatch.' );
+	$bi_foreign_autosave = _wp_put_post_revision( array_merge( get_post( $bi_history_page, ARRAY_A ), array( 'post_content' => 'Private foreign unsaved autosave fixture.' ) ), true );
+	bi_check( is_int( $bi_foreign_autosave ) && wp_is_post_autosave( $bi_foreign_autosave ), 'A real foreign-parent autosave fixture exists.' );
+	foreach ( array( $bi_page_revision, $bi_foreign_autosave, $bi_history_parent, PHP_INT_MAX ) as $bi_wrong_history_id ) {
+		bi_error( bi_revision( $bi_revision_path . '/' . $bi_wrong_history_id ), 'bhranti_revision_parent', 'Foreign saved revisions, foreign autosaves, non-revisions and missing IDs share a generic parent mismatch without leaking autosave identity.' );
+	}
+	bi_check( $bi_dispatched === $bi_before_autosave_read, 'Foreign or invalid revision identities fail before native dispatch.' );
+	foreach ( array( $bi_owner, $bi_actor ) as $bi_denied_user ) {
+		foreach ( array( 'read_post', 'edit_post' ) as $bi_denied_meta_cap ) {
+			$bi_revision_deny = static function ( $caps, $cap, $user_id, $args ) use ( $bi_denied_user, $bi_denied_meta_cap, $bi_history_parent ) { return $user_id === $bi_denied_user && $cap === $bi_denied_meta_cap && (int) ( $args[0] ?? 0 ) === $bi_history_parent ? array( 'do_not_allow' ) : $caps; };
+			add_filter( 'map_meta_cap', $bi_revision_deny, 100, 4 );
+			try { bi_error( bi_revision( $bi_revision_path . '/' . $bi_history_revision ), 'bhranti_action_permission', 'Either account losing parent read or edit permission blocks history.' ); }
+			finally { remove_filter( 'map_meta_cap', $bi_revision_deny, 100 ); }
+			bi_check( $bi_owner === get_current_user_id(), 'Rejected historical permission checks restore the human identity.' );
+		}
+	}
+	$bi_revision_native_route = '/wp/v2/posts/(?P<parent>[\d]+)/revisions';
+	foreach ( array( 'instance', 'schema', 'permission', 'callback', 'callback_item', 'moved' ) as $bi_revision_spoof ) {
+		$bi_revision_filter = static function ( $routes ) use ( $bi_revision_native_route, $bi_revision_spoof ) {
+			if ( 'moved' === $bi_revision_spoof ) { $routes['/wp/v2/private-history/(?P<parent>[\d]+)/revisions'] = $routes[ $bi_revision_native_route ]; return $routes; }
+			if ( 'callback_item' === $bi_revision_spoof ) { foreach ( $routes[ $bi_revision_native_route . '/(?P<id>[\d]+)' ] as &$item_handler ) { if ( 'get_item' === ( $item_handler['callback'][1] ?? '' ) ) { $item_handler['callback'][1] = 'get_items'; $item_handler['permission_callback'][1] = 'get_items_permissions_check'; } } return $routes; }
+			if ( 'schema' === $bi_revision_spoof ) { $routes[ $bi_revision_native_route ]['schema'] = '__return_empty_array'; }
+			foreach ( $routes[ $bi_revision_native_route ] as &$handler ) {
+				if ( 'get_items' !== ( $handler['callback'][1] ?? '' ) ) { continue; }
+				if ( 'instance' === $bi_revision_spoof ) { $copy = new WP_REST_Revisions_Controller( 'post' ); $handler['callback'][0] = $copy; $handler['permission_callback'][0] = $copy; }
+				if ( 'permission' === $bi_revision_spoof ) { $handler['permission_callback'] = '__return_true'; }
+				if ( 'callback' === $bi_revision_spoof ) { $handler['callback'][1] = 'get_item'; $handler['permission_callback'][1] = 'get_item_permissions_check'; }
+			}
+			return $routes;
+		};
+		add_filter( 'rest_endpoints', $bi_revision_filter, PHP_INT_MAX );
+		try { bi_error( bi_revision( 'moved' === $bi_revision_spoof ? '/wp/v2/private-history/' . $bi_history_parent . '/revisions' : $bi_revision_path . ( 'callback_item' === $bi_revision_spoof ? '/' . $bi_history_revision : '' ) ), 'bhranti_action_blocked', 'Replacement instances/schema/permissions/callback shapes and moved revision routes cannot impersonate reviewed native history.' ); }
+		finally { remove_filter( 'rest_endpoints', $bi_revision_filter, PHP_INT_MAX ); }
+	}
+	$bi_foreign_revision = static function ( $args ) use ( $bi_history_page ) { $args['post_parent'] = $bi_history_page; return $args; };
+	add_filter( 'rest_revision_query', $bi_foreign_revision );
+	try { bi_error( bi_revision( $bi_revision_path ), 'bhranti_revision_parent', 'A third-party query filter cannot return another parent’s history.' ); }
+	finally { remove_filter( 'rest_revision_query', $bi_foreign_revision ); }
+	remove_filter( 'rest_revision_query', $bi_revision_query_observer );
+	$bi_large_history = bi_fixture( str_repeat( 'x', 1048577 ) );
+	$bi_large_revision = wp_save_post_revision( $bi_large_history );
+	bi_error( bi_revision( '/wp/v2/posts/' . $bi_large_history . '/revisions/' . $bi_large_revision ), 'bhranti_revision_limit', 'Oversized original source is rejected rather than returned or truncated.' );
+	bi_check( $bi_current_history === get_post_field( 'post_content', $bi_history_parent, 'raw' ) && ! get_post_meta( $bi_session, 'bhranti_actions', true ), 'All history attempts preserve current source and create no action snapshots.' );
 
 	$bi_content = '<!-- wp:group {"layout":{"type":"constrained"},"anchor":"useful-context"} --><div class="wp-block-group" id="useful-context"><!-- wp:heading --><h2 class="wp-block-heading">Useful heading</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Useful body text.</p><!-- /wp:paragraph --><!-- wp:template-part {"slug":"header","theme":"twentytwentyfive"} /--></div><!-- /wp:group --><!-- wp:paragraph --><p>Outside the group.</p><!-- /wp:paragraph --><!-- wp:bhranti-inspect-fixture/dynamic /--><!-- wp:paragraph --><p><img src="https://assets.invalid/fixture.png"></p><!-- /wp:paragraph -->';
 	$bi_post_id = bi_fixture( $bi_content );
@@ -372,7 +472,9 @@ try {
 	$bi_failure = $error->getMessage();
 } finally {
 	remove_filter( 'rest_request_before_callbacks', $bi_request_guard, 10 );
+	if ( isset( $bi_revision_query_observer ) ) { remove_filter( 'rest_revision_query', $bi_revision_query_observer ); }
 	unset( $GLOBALS['wp_rest_additional_fields']['post']['bhranti_private_fixture'] );
+	unset( $GLOBALS['wp_rest_additional_fields']['post-revision']['bhranti_private_revision_fixture'] );
 	if ( WP_Block_Type_Registry::get_instance()->is_registered( 'bhranti-inspect-fixture/dynamic' ) ) { unregister_block_type( 'bhranti-inspect-fixture/dynamic' ); }
 	wp_set_current_user( $bi_original_user );
 	foreach ( $bi_fixture_ids as $bi_id ) {
