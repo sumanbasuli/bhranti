@@ -16,6 +16,46 @@ function rc_report() {
 function rc_submit( $tuple, $job, $report, $extra = array() ) {
     return lr_rest('POST','/sessions/'.$tuple[0].'/render-result',array_merge(array('run_id'=>$tuple[1],'prepared_step'=>$job['step'],'job_id'=>$job['id'],'report'=>$report),$extra));
 }
+/** Exercise the actual native frontend gate without an HTTP request or page rendering. */
+function rc_frame_bootstrap( $tuple, $page, $job ) {
+    global $wp_query, $wp_scripts, $wp_filter;
+    $saved_query=$wp_query; $saved_scripts=$wp_scripts ?? null; $saved_get=$_GET; $saved_user=get_current_user_id();
+    $stored=lr_state($tuple); $property=new ReflectionProperty(Bhranti_Render::class,'frame_job'); $property->setAccessible(true);
+    $hooks=array(); foreach(array('wp_enqueue_scripts','redirect_canonical','show_admin_bar') as $name){$hooks[$name]=isset($wp_filter[$name])?clone $wp_filter[$name]:null;}
+    try {
+        $wp_query=new WP_Query(array('page_id'=>$page,'post_type'=>'page','post_status'=>'draft'));
+        lr_check(is_singular('page') && get_queried_object_id()===$page,'The fixture uses the actual native singular draft query.');
+        foreach(array('ordinary','job','owner','phase','step','source','environment','expired','valid') as $kind){
+            $property->setValue(null,null); $wp_scripts=new WP_Scripts();
+            foreach($hooks as $name=>$hook){if(null===$hook)unset($wp_filter[$name]);else $wp_filter[$name]=clone $hook;}
+            $_GET=array('bhranti_render'=>$tuple[0],'bhranti_render_job'=>$job['id']); $candidate=$stored; wp_set_current_user($saved_user);
+            if('ordinary'===$kind)$_GET=array();
+            if('job'===$kind)$_GET['bhranti_render_job']=wp_generate_uuid4();
+            if('owner'===$kind)wp_set_current_user($GLOBALS['lr_actor']);
+            if('phase'===$kind)$candidate['phase']='prepared';
+            if('step'===$kind)$candidate['step']++;
+            if('source'===$kind)$candidate['render_job']['revision']=str_repeat('0',64);
+            if('environment'===$kind)$candidate['render_job']['environment_revision']=str_repeat('0',64);
+            if('expired'===$kind)$candidate['render_job']['expires']=time()-1;
+            update_post_meta($tuple[0],'bhranti_run',wp_slash($candidate));
+            Bhranti_Render::frame(); Bhranti_Render::enqueue_frame();
+            ob_start(); Bhranti_Render::marker(); $marker=ob_get_clean();
+            if('valid'!==$kind){lr_check(!Bhranti_Render::is_frame() && !wp_script_is('bhranti-render','enqueued') && ''===$marker,'A noncurrent/unowned ordinary native preview receives no worker, bootstrap or marker: '.$kind);continue;}
+            lr_check(Bhranti_Render::is_frame() && wp_script_is('bhranti-render','enqueued') && '<meta name="bhranti-render-check" content="'.$job['marker'].'">'===$marker,'Only the exact owned active browser job enqueues measurement and retains its exact marker.');
+            $script=$wp_scripts->registered['bhranti-render']; $inline=array_values(array_filter($script->extra['before'],'is_string'));
+            lr_check(1===count($inline) && 0===strpos($inline[0],'window.bhrantiRenderFrame = '),'The native worker has one explicitly scoped JSON bootstrap.');
+            $config=json_decode(substr($inline[0],strlen('window.bhrantiRenderFrame = '),-1),true);
+            lr_check(array('job','renderCheck')===array_keys($config) && array('axeUrl','version')===array_keys($config['renderCheck']),'Bootstrap contains only the public job and fixed local engine metadata.');
+            lr_check(array('id','run_id','step','path','post_id','url','revision','environment_revision','marker','expires','viewports','engine','version')===array_keys($config['job']),'Private conversation, task, requester, provider and REST-authentication state never enter the preview.');
+            lr_check($job['id']===$config['job']['id'] && $job['marker']===$config['job']['marker'] && plugins_url('assets/vendor/axe-core/axe.js',BHRANTI_FILE)===$config['renderCheck']['axeUrl'] && Bhranti_Render::ENGINE_VERSION===$config['renderCheck']['version'],'Worker binding and engine URL come from the current stored native job and installed asset.');
+            lr_check(plugins_url('assets/render-check.js',BHRANTI_FILE)===$script->src && BHRANTI_VERSION===$script->ver && array('wp-i18n')===$script->deps,'Native script loading uses only the installed versioned worker and WordPress translations.');
+        }
+    } finally {
+        $property->setValue(null,null); update_post_meta($tuple[0],'bhranti_run',wp_slash($stored));
+        $wp_query=$saved_query; $wp_scripts=$saved_scripts; $_GET=$saved_get; wp_set_current_user($saved_user);
+        foreach($hooks as $name=>$hook){if(null===$hook)unset($wp_filter[$name]);else $wp_filter[$name]=$hook;}
+    }
+}
 function bhranti_native_recovery_scenario() {
     $tuple=lr_start('render-check');
     $source='<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Native fixture</h1><!-- /wp:heading -->';
@@ -30,6 +70,7 @@ function bhranti_native_recovery_scenario() {
     $start=array('run_id'=>$tuple[1],'prepared_step'=>$step,'job_id'=>$job['id']);
     $reply=lr_rest('POST','/sessions/'.$tuple[0].'/render-start',$start);
     lr_check(200===$reply->get_status() && $reply->get_data()['run']['render_job']['id']===$job['id'],'The current owned browser job is stable across claims.');
+    rc_frame_bootstrap($tuple,$page,$job);
     $report=rc_report();
     foreach(array('extra','version','profiles','counts','overflow','html') as $kind){
         $bad=$report;

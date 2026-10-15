@@ -10,6 +10,24 @@ defined( 'ABSPATH' ) || exit;
 /** Derive progress from the actual pending command rather than simulated work. */
 final class Bhranti_Progress {
 	/**
+	 * Classify site mutations independently of display text or private task notes.
+	 * Execution still validates ownership, schema, policy and both accounts.
+	 *
+	 * @param mixed $command Parsed tool command.
+	 * @return bool Unknown or malformed commands fail closed.
+	 */
+	public static function is_write( $command ) {
+		if ( ! is_array( $command ) || ! is_string( $command['tool'] ?? null ) || ! is_array( $command['args'] ?? null ) ) {
+			return true;
+		}
+		if ( in_array( $command['tool'], array( 'bhranti_task', 'bhranti_skill', 'bhranti_inspect', 'site_search', 'open_item', 'plugin_search' ), true ) ) {
+			return false;
+		}
+		$method = $command['args']['method'] ?? 'GET';
+		return ! in_array( $command['tool'], array( 'wp_request', 'plugin_request', 'form_request', 'commerce_request', 'reference_page', 'bhranti_memory', 'bhranti_task_limit' ), true ) || ! is_string( $method ) || 'GET' !== strtoupper( $method );
+	}
+
+	/**
 	 * Describe a proposed tool using bounded labels and native item links.
 	 *
 	 * @param array  $command Parsed tool command. Execution still validates its complete schema.
@@ -29,7 +47,7 @@ final class Bhranti_Progress {
 			'path'       => $path,
 			'summary'    => __( 'Preparing a WordPress action', 'bhranti' ),
 			'details'    => array(),
-			'write'      => 'generate_image' === $tool || ! in_array( $method, array( 'GET', 'HEAD' ), true ),
+			'write'      => self::is_write( $command ),
 			'navigation' => false,
 		);
 		$labels = array(
@@ -46,7 +64,6 @@ final class Bhranti_Progress {
 			$data['summary'] = $labels[ $tool ];
 		}
 		if ( in_array( $tool, array( 'bhranti_task', 'bhranti_skill', 'bhranti_inspect' ), true ) ) {
-			$data['write']       = false;
 			$data['site_action'] = 'bhranti_inspect' === $tool && in_array( $args['resource'] ?? '', array( 'content', 'rendered' ), true );
 			$data['method']      = 'GET';
 		}

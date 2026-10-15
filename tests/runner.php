@@ -72,7 +72,7 @@ function ru_rest( $method, $path, $body = array() ) {
 	$request->set_header( 'Content-Type', 'application/json' ); $request->set_body( wp_json_encode($body) );
 	return rest_do_request( $request );
 }
-function ru_plan( $args ) { return wp_json_encode(array('type'=>'tool','content'=>'Review the exact QA fixture.','tool'=>'wp_request','args'=>wp_json_encode($args))); }
+function ru_plan( $args, $tool = 'wp_request' ) { return wp_json_encode(array('type'=>'tool','content'=>'Review the exact QA fixture.','tool'=>$tool,'args'=>wp_json_encode($args))); }
 function ru_reply() { return wp_json_encode(array('type'=>'reply','content'=>'The requested fixture action is complete.','tool'=>'none','args'=>'{}')); }
 function ru_start( $owner, $context = array() ) {
 	global $ru_sessions,$ru_runs;
@@ -96,8 +96,8 @@ function ru_tick( $tuple ) {
 	try { return Bhranti_Runner::tick(...$tuple); }
 	finally { ru_check($user===get_current_user_id()&&$background===Bhranti_Runner::is_background(),'Tick restores caller identity and server background scope'); }
 }
-function ru_prepare( $tuple, $args ) {
-	$calls=count(Bhranti_QA_Model::$calls); Bhranti_QA_Model::$responses=array(ru_plan($args)); $response=ru_tick($tuple);
+function ru_prepare( $tuple, $args, $tool = 'wp_request' ) {
+	$calls=count(Bhranti_QA_Model::$calls); Bhranti_QA_Model::$responses=array(ru_plan($args,$tool)); $response=ru_tick($tuple);
 	ru_check($response instanceof WP_REST_Response&&200===$response->get_status()&&'prepared'===(ru_state($tuple)['phase']??null),'One native background planning tick persists preparation');
 	ru_check($calls+1===count(Bhranti_QA_Model::$calls),'Planning tick makes one actual native SDK call');
 }
@@ -213,6 +213,50 @@ try {
 	$stored=get_user_meta($owner,$key,true);ru_check(array('active','dirty','expires')===array_keys($stored[$token])&&is_int($stored[$token]['expires'])&&$stored[$token]['expires']<=time()+120,'Stored own tab marker contains only booleans and bounded expiration');
 	ru_check(Bhranti_Runner::editor_blocked($owner,true)&&!Bhranti_Runner::editor_blocked($owner,false)&&!Bhranti_Runner::editor_dirty($owner),'Clean active editor protects background writes and permits reads');
 	$reader=ru_start($owner);ru_prepare($reader,$get);ru_execute($reader);ru_complete($reader);
+	foreach(array(
+		array(null,true),array(array('tool'=>'wp_request','args'=>'invalid'),true),
+		array(array('tool'=>'unknown_tool','args'=>array('method'=>'GET')),true),
+		array(array('tool'=>'wp_request','args'=>array('method'=>array('GET'))),true),
+		array(array('tool'=>'wp_request','args'=>array('method'=>'POST')),true),
+		array(array('tool'=>'plugin_request','args'=>array('method'=>'DELETE')),true),
+		array(array('tool'=>'form_request','args'=>array('method'=>'POST')),true),
+		array(array('tool'=>'commerce_request','args'=>array('method'=>'POST')),true),
+		array(array('tool'=>'bhranti_memory','args'=>array('method'=>'POST')),true),
+		array(array('tool'=>'bhranti_task_limit','args'=>array('method'=>'POST')),true),
+		array(array('tool'=>'generate_image','args'=>array()),true),
+		array(array('tool'=>'commerce_request','args'=>array('method'=>'GET')),false),
+		array(array('tool'=>'bhranti_inspect','args'=>array('resource'=>'rendered')),false),
+	) as list($command,$write)){
+		ru_check($write===Bhranti_Progress::is_write($command),'Shared classification keeps unknown/malformed commands and real native mutators guarded');
+		if(is_array($command)&&is_array($command['args'])){ru_check($write===Bhranti_Progress::describe($command,$owner,11)['write'],'Public prepared progress and background protection share the same site-write classification');}
+	}
+	// Private checkpoints and inert discovery can proceed without touching the open editor.
+	foreach(array(false,true) as $dirty){
+		ru_editor($token,true,$dirty);
+		$commands=array(
+			array('bhranti_task',array('method'=>'GET')),
+			array('bhranti_skill',array('name'=>'wordpress-support')),
+			array('bhranti_inspect',array('resource'=>'route','path'=>'/wp/v2/pages/'.$ru_page,'method'=>'GET')),
+			array('bhranti_inspect',array('resource'=>'content','path'=>'/wp/v2/pages/'.$ru_page)),
+		);
+		foreach($commands as list($tool,$args)){
+			$tuple=ru_start($owner);$before_content=get_post_field('post_content',$ru_page);$writes=count($ru_native_writes);
+			ru_prepare($tuple,$args,$tool);ru_execute($tuple);$feedback=ru_feedback($tuple);
+			ru_check(true===($feedback['success']??false)&&''===ru_state($tuple)['phase'],'Private checkpoint and read tools pass active or dirty editor protection through native execution');
+			ru_check($before_content===get_post_field('post_content',$ru_page)&&$writes===count($ru_native_writes),'Metadata and read tools never change the open page or dispatch a native content write');
+			if('bhranti_task'===$tool){
+				$revision=$feedback['result']['task']['revision'];$params=array('revision'=>$revision,'objective'=>'Retain this private Runner QA checkpoint.','decisions'=>array(),'outcomes'=>array(),'checks'=>array());
+				ru_prepare($tuple,array('method'=>'POST','params'=>$params),'bhranti_task');ru_execute($tuple);$saved=ru_feedback($tuple);
+				ru_check(true===($saved['success']??false)&&'Retain this private Runner QA checkpoint.'===($saved['result']['task']['objective']??null),'Private checkpoint POST persists through background execution while the editor stays protected');
+				ru_check($before_content===get_post_field('post_content',$ru_page)&&$writes===count($ru_native_writes)&&Bhranti_Runner::editor_blocked($owner,true),'Private notes do not modify site content or release the existing editor write lock');
+			}
+			ru_complete($tuple);
+		}
+		$blocked=ru_start($owner);ru_prepare($blocked,$update('<p>Protected from classification regression</p>'));$before_content=get_post_field('post_content',$ru_page);$writes=count($ru_native_writes);$calls=count(Bhranti_QA_Model::$calls);
+		ru_check(true===ru_tick($blocked)&&'prepared'===ru_state($blocked)['phase']&&$before_content===get_post_field('post_content',$ru_page)&&$writes===count($ru_native_writes)&&$calls===count(Bhranti_QA_Model::$calls),'Actual prepared site writes remain paused for both active clean and dirty editors without resampling');
+	}
+	ru_editor($token,true,false);
+
 	$paused=ru_start($owner);ru_prepare($paused,$update('<p>After clean editor closes</p>'));$before_content=get_post_field('post_content',$ru_page);$writes=count($ru_native_writes);wp_set_current_user($other);ru_check(true===ru_tick($paused)&&'prepared'===ru_state($paused)['phase']&&$before_content===get_post_field('post_content',$ru_page)&&$writes===count($ru_native_writes),'Active clean editor pauses actual prepared background write');wp_set_current_user($owner);ru_check(200===ru_editor($token,false,false)->get_status(),'Same tab closes its clean editor');ru_execute($paused);ru_check('<p>After clean editor closes</p>'===get_post_field('post_content',$ru_page),'Closing clean editor releases exact prepared write');ru_complete($paused);
 
 	$stale=wp_generate_uuid4();ru_seed_editor($owner,array($stale=>array('active'=>true,'dirty'=>true,'expires'=>time()-1)));$status=Bhranti_Runner::editor_status($owner);ru_check($status['dirty']&&$status['stale_dirty']&&$status['write_blocked']&&!$status['active'],'Expired dirty tab remains sticky while active state expires');

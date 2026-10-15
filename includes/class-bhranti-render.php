@@ -267,9 +267,33 @@ final class Bhranti_Render {
 			return;
 		}
 		self::$frame_job = $job;
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_frame' ) );
 		nocache_headers();
 		add_filter( 'redirect_canonical', '__return_false' );
 		add_filter( 'show_admin_bar', '__return_false', PHP_INT_MAX );
+	}
+
+	/** Enqueue only the validated native preview's measurement worker. */
+	public static function enqueue_frame() {
+		if ( ! self::$frame_job ) {
+			return;
+		}
+		wp_enqueue_script( 'bhranti-render', plugins_url( 'assets/render-check.js', BHRANTI_FILE ), array( 'wp-i18n' ), BHRANTI_VERSION, true );
+		wp_set_script_translations( 'bhranti-render', 'bhranti' );
+		wp_add_inline_script(
+			'bhranti-render',
+			'window.bhrantiRenderFrame = ' . wp_json_encode(
+				array(
+					'job'         => self::public_job( self::$frame_job ),
+					'renderCheck' => array(
+						'axeUrl'  => plugins_url( 'assets/vendor/axe-core/axe.js', BHRANTI_FILE ),
+						'version' => self::ENGINE_VERSION,
+					),
+				),
+				JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+			) . ';',
+			'before'
+		);
 	}
 
 	/**

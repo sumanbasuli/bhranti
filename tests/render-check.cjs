@@ -9,7 +9,7 @@ try { ({ JSDOM } = require('jsdom')); } catch (_) { ({ JSDOM } = require('/Users
 const source = fs.readFileSync(path.join(__dirname, '../assets/render-check.js'), 'utf8');
 const original = 'window.BhrantiRender = Object.freeze({ run });';
 assert.equal(source.split(original).length, 2);
-const instrumented = source.replace(original, 'window.BhrantiRender = Object.freeze({ run, validateJob, frameIdentity, selector, observations, findings, nodeSummary, sameDocument, plain, bytes, VERSION, INTEGRITY, VIEWPORTS });');
+const instrumented = source.replace(original, 'window.BhrantiRender = Object.freeze({ run, plain, bytes, INTEGRITY });');
 const axeUrl = 'https://render.invalid/wp-content/plugins/bhranti/assets/vendor/axe-core/axe.js?ver=4.14.0';
 const job = { id: 'd663dfd7-bc9d-4b7b-b801-79e188644212', run_id: 'e47e4df9-40cb-4577-b52f-d58394802a02', step: 7, post_id: 17, path: '/wp/v2/pages/17', url: 'https://render.invalid/fixture/?bhranti_render=9&bhranti_render_job=d663dfd7-bc9d-4b7b-b801-79e188644212', revision: 'a'.repeat(64), environment_revision: 'b'.repeat(64), marker: 'c'.repeat(64), expires: Math.floor(Date.now() / 1000) + 600, engine: 'axe-core', version: '4.14.0', viewports: [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 844 }] };
 let checks = 0;
@@ -18,11 +18,16 @@ function equal(actual, expected, message) { assert.deepEqual(actual, expected, m
 const clone = (value) => JSON.parse(JSON.stringify(value));
 function fixture(options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><input value="parent-unsaved-private-value"><button>Keep focus</button></body></html>', { url: 'https://render.invalid/wp-admin/admin.php?page=bhranti', runScripts: 'outside-only', pretendToBeVisual: true });
-  const w = dom.window, frames = [], children = [], scripts = [], scans = [], scrolls = [];
-  const timers = new Set();
+  const w = dom.window, frames = [], children = [], scripts = [], scans = [], scrolls = [], messages = [];
+  if (options.noRandomUUID) Object.defineProperty(w.crypto, 'randomUUID', { value: undefined });
+  const timers = new Set(), listeners = new Map();
+  const track = (view) => { const active = new Set(); listeners.set(view, active); const add = view.addEventListener.bind(view), remove = view.removeEventListener.bind(view); view.addEventListener = (type, callback, options) => { if (['message', 'pagehide'].includes(type)) active.add(callback); add(type, callback, options); }; view.removeEventListener = (type, callback, options) => { if (['message', 'pagehide'].includes(type)) active.delete(callback); remove(type, callback, options); }; };
+  track(w);
   w.TextEncoder = TextEncoder;
   w.setTimeout = (callback, delay) => { let id; id = setTimeout(() => { timers.delete(id); callback(); }, delay >= 60000 ? 1000 : delay >= 2000 ? delay / 1000 : 0); timers.add(id); return id; };
   w.clearTimeout = (id) => { timers.delete(id); clearTimeout(id); };
+  w.setInterval = (callback) => { const id = setInterval(callback, 1); timers.add(id); return id; };
+  w.clearInterval = (id) => { timers.delete(id); clearInterval(id); };
   w.bhrantiSettings = { renderCheck: { axeUrl, version: '4.14.0' } };
   w.fetch = () => { throw new Error('No network in worker unit fixtures.'); };
   w.open = () => { throw new Error('No popups in worker unit fixtures.'); };
@@ -36,8 +41,41 @@ function fixture(options = {}) {
     const child = new JSDOM('<!doctype html><html lang="en"><head><title>Native fixture</title>' + marker + '</head><body>' + body + '</body></html>', { url: options.redirect || element.src, runScripts: 'outside-only', pretendToBeVisual: true });
     children.push(child);
     const view = child.window, doc = view.document;
-    Object.defineProperty(element, 'contentWindow', { value: view, configurable: true });
-    Object.defineProperty(element, 'contentDocument', { value: doc, configurable: true });
+    view.TextEncoder = TextEncoder; track(view);
+    ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].forEach((name) => { view[name] = w[name]; });
+    if (options.loadPending || options.deferredPending) Object.defineProperty(doc, 'readyState', { value: options.deferredPending ? 'interactive' : 'loading' });
+    if (options.deferredPending) {
+      const add = doc.addEventListener.bind(doc);
+      doc.addEventListener = (type, callback, settings) => { if (type !== 'DOMContentLoaded') add(type, callback, settings); };
+    }
+    if (options.cachedDomReady) {
+      Object.defineProperty(doc, 'readyState', { value: 'interactive' });
+      view.performance.getEntriesByType = () => [{ domContentLoadedEventEnd: 1 }];
+    }
+    if (options.transientLoad) {
+      let parsed = false; Object.defineProperty(doc, 'readyState', { get: () => parsed ? 'interactive' : 'loading' });
+      queueMicrotask(() => element.dispatchEvent(new w.Event('load')));
+      w.setTimeout(() => { parsed = true; doc.dispatchEvent(new view.Event('DOMContentLoaded')); }, 0);
+    }
+    if (options.stylesPending || options.stylesReadyLater) {
+      const link = doc.createElement('link'); link.rel = 'stylesheet'; if (!options.stylesEmpty) link.href = '/fixture.css'; doc.head.appendChild(link);
+      if (options.stylesDisabled) link.disabled = true;
+      if (options.stylesInactive) { link.media = 'print'; view.matchMedia = () => ({ matches: false }); }
+      if (options.stylesUnknown) { link.media = 'screen'; view.matchMedia = () => { throw new Error('Unknown fixture media state'); }; }
+      let loaded = false; Object.defineProperty(link, 'sheet', { get: () => loaded ? {} : null });
+      if (options.stylesReadyLater) w.setTimeout(() => { loaded = true; link.dispatchEvent(new view.Event('load')); }, 0);
+    }
+    const deliver = (target, data, origin, source, targetOrigin, direction) => {
+      messages.push({ data: clone(data), targetOrigin, direction });
+      const attempts = options.messages ? options.messages(clone(data), direction) : [{ data, origin, source }];
+      for (const attempt of attempts) queueMicrotask(() => { if (element.isConnected && targetOrigin === target.location.origin) { const event = new target.MessageEvent('message', { data: attempt.data, origin: attempt.origin || origin }); Object.defineProperty(event, 'source', { value: attempt.source || source }); target.dispatchEvent(event); } });
+    };
+    const parentProxy = { postMessage: (data, targetOrigin) => deliver(w, data, view.location.origin, observedWindow, targetOrigin, 'child') };
+    const observedWindow = new Proxy(view, { get(target, key) { if (key === 'location' && options.opaqueOrigin) throw new view.DOMException('private inaccessible frame URL', 'SecurityError'); if (key === 'postMessage') return (data, targetOrigin) => deliver(view, data, w.location.origin, parentProxy, targetOrigin, 'parent'); return Reflect.get(target, key); } });
+    Object.defineProperty(view, 'parent', { value: options.topLevel ? view : parentProxy });
+    Object.defineProperty(element, 'contentWindow', { value: observedWindow, configurable: true });
+    Object.defineProperty(element, 'contentDocument', { get() { if (options.opaqueOrigin) throw new view.DOMException('private inaccessible document', 'SecurityError'); return options.absentDocument ? null : doc; }, configurable: true });
+    const remove = element.remove.bind(element); element.remove = () => { view.dispatchEvent(new view.Event('pagehide')); remove(); };
     Object.defineProperty(view, 'innerWidth', { value: options.wrongWidth ? 900 : parseInt(element.style.width), configurable: true });
     Object.defineProperty(view, 'innerHeight', { value: parseInt(element.style.height), configurable: true });
     Object.defineProperty(doc.documentElement, 'clientWidth', { get: () => view.innerWidth });
@@ -61,15 +99,18 @@ function fixture(options = {}) {
       queueMicrotask(() => script.dispatchEvent(new view.Event(options.engineError ? 'error' : 'load')));
       return script;
     };
-    if (!options.loadPending) queueMicrotask(() => { if (options.autoFocus) element.focus(); element.dispatchEvent(new w.Event('load')); });
+    view.bhrantiRenderFrame = { job: clone(job), renderCheck: { axeUrl, version: '4.14.0' } };
+    if (options.autoFocus) element.focus();
+    if (!options.blankPending) queueMicrotask(() => view.eval(instrumented));
+    if (!options.loadPending && !options.domReadyOnly) queueMicrotask(() => element.dispatchEvent(new w.Event('load')));
     return element;
   };
   w.eval(instrumented);
-  return { w, frames, children, scripts, scans, scrolls, timers, close() { timers.forEach(clearTimeout); children.forEach((child) => child.window.close()); dom.window.close(); } };
+  return { w, frames, children, scripts, scans, scrolls, timers, messages, listenerCount() { return Array.from(listeners.values()).reduce((sum, active) => sum + active.size, 0); }, close() { timers.forEach(clearTimeout); children.forEach((child) => child.window.close()); dom.window.close(); } };
 }
 async function failureCase(options, code, request = job) {
   const f = fixture(options);
-  try { const result = await f.w.BhrantiRender.run(request, { axeUrl }); equal(JSON.stringify(result), JSON.stringify({ status: 'failed', code }), 'A bounded failure has only its fixed code.'); check(f.frames.every((frame) => !frame.isConnected), 'Failed jobs remove every owned frame.'); } finally { f.close(); }
+  try { const result = await f.w.BhrantiRender.run(request, { axeUrl }); equal(JSON.stringify(result), JSON.stringify({ status: 'failed', code }), 'A bounded failure has only its fixed code.'); check(f.frames.every((frame) => !frame.isConnected), 'Failed jobs remove every owned frame.'); equal(f.timers.size, 0, 'Rejected jobs clean all readiness pollers and deadlines.'); equal(f.listenerCount(), 0, 'Rejected jobs remove both directions of message and pagehide listeners.'); } finally { f.close(); }
 }
 (async () => {
   const f = fixture();
@@ -96,18 +137,41 @@ async function failureCase(options, code, request = job) {
     check(!JSON.stringify(report).includes('private-') && !JSON.stringify(report).includes('<input') && !JSON.stringify(report).includes('token='), 'No form values, raw markup, private element IDs or asset query tokens enter the report.');
     check(api.bytes(report) < 150000, 'The complete report stays within the server byte bound.');
   } finally { f.close(); }
+  const domReady = fixture({ domReadyOnly: true });
+  try { equal((await domReady.w.BhrantiRender.run(job, { axeUrl })).status, 'complete', 'A fully parsed native document can be inspected while unrelated resources still delay the iframe load event.'); equal(domReady.timers.size, 0, 'DOM-ready completion cleans every readiness timer.'); } finally { domReady.close(); }
+  for (const readiness of [{ initialBlank: true }, { transientLoad: true, domReadyOnly: true }, { cachedDomReady: true, domReadyOnly: true }, { stylesReadyLater: true, domReadyOnly: true }, { stylesPending: true, stylesDisabled: true, domReadyOnly: true }, { stylesPending: true, stylesInactive: true, domReadyOnly: true }, { stylesPending: true, stylesEmpty: true, domReadyOnly: true }]) {
+    const prepared = fixture(readiness);
+    try { equal((await prepared.w.BhrantiRender.run(job, { axeUrl })).status, 'complete', 'Initial blank events, cached DOM completion and delayed active stylesheet readiness preserve the exact native preview gate.'); equal(prepared.timers.size, 0, 'Successful readiness removes all pollers and deadlines.'); } finally { prepared.close(); }
+  }
   for (const changed of [null, { ...job, post_id: 18 }, { ...job, revision: 'bad' }, { ...job, expires: 1 }, { ...job, step: 1001 }, { ...job, version: '4.13.0' }, { ...job, viewports: [{ width: 600, height: 900 }] }]) await failureCase({}, 'load', changed);
   for (const url of ['https://outside.invalid/fixture/', 'https://user:secret@render.invalid/fixture/', 'https://render.invalid/wp-admin/', job.url + '&rest_route=/wp/v2/users', job.url + '&bhranti_render_job=duplicate', job.url + '#fragment']) await failureCase({}, 'origin', { ...job, url });
   await failureCase({ missingMarker: true }, 'marker');
+  await failureCase({ missingMarker: true, domReadyOnly: true }, 'marker');
   await failureCase({ marker: '0'.repeat(64) }, 'marker');
-  await failureCase({ redirect: 'https://outside.invalid/fixture/' }, 'origin');
+  await failureCase({ redirect: 'https://outside.invalid/fixture/' }, 'load');
+  for (const options of [{ opaqueOrigin: true, absentDocument: true }, { noRandomUUID: true }]) {
+    const paired = fixture(options); try { equal((await paired.w.BhrantiRender.run(job, { axeUrl })).status, 'complete', 'Actual child measurement works without parent DOM access or randomUUID when native secure randomness remains available.'); check(paired.messages.every((message) => message.targetOrigin === 'https://render.invalid'), 'Both directions use the exact site target origin.'); equal(paired.timers.size, 0, 'Both protocol sides remove their owned timers.'); } finally { paired.close(); }
+  }
+  await failureCase({ deferredPending: true, domReadyOnly: true }, 'load');
+  await failureCase({ stylesPending: true, domReadyOnly: true }, 'load');
+  await failureCase({ stylesPending: true, stylesUnknown: true, domReadyOnly: true }, 'load');
   await failureCase({ changeMarker: true }, 'marker');
-  await failureCase({ wrongWidth: true }, 'limit');
+  await failureCase({ wrongWidth: true }, 'load');
   await failureCase({ body: '<main><h1>Large</h1>' + '<span>Part</span>'.repeat(5001) + '</main>' }, 'limit');
   await failureCase({ wrongVersion: true }, 'engine');
   await failureCase({ engineError: true }, 'engine');
   await failureCase({ enginePending: true }, 'timeout');
   await failureCase({ loadPending: true }, 'load');
+  const loadingStop = fixture({ loadPending: true });
+  try {
+    const controller = new loadingStop.w.AbortController();
+    await assert.rejects(loadingStop.w.BhrantiRender.run(job, { axeUrl, signal: controller.signal, onProgress(state) { if (state.phase === 'loading') loadingStop.w.setTimeout(() => controller.abort(), 0); } }), { name: 'AbortError' }); checks++;
+    check(loadingStop.frames.every((frame) => !frame.isConnected), 'Stop during pending DOM readiness removes its owned frame.');
+    equal(loadingStop.timers.size, 0, 'Stop during loading clears every readiness poller and deadline.');
+    equal(loadingStop.scans.length, 0, 'An aborted loading job never starts the engine.');
+  } finally { loadingStop.close(); }
+  await failureCase({ topLevel: true }, 'load');
+  await failureCase({ blankPending: true }, 'load');
   const deniedAsset = fixture();
   try { equal(JSON.stringify(await deniedAsset.w.BhrantiRender.run(job, { axeUrl: 'https://outside.invalid/axe.js' })), JSON.stringify({ status: 'failed', code: 'engine' }), 'No external or model-selected engine URL is accepted.'); equal(deniedAsset.frames.length, 0, 'Invalid asset metadata cannot start a page load.'); equal(JSON.stringify(await deniedAsset.w.BhrantiRender.run(job, null)), JSON.stringify({ status: 'failed', code: 'engine' }), 'Invalid options remain a finite preflight failure.'); equal(JSON.stringify(await deniedAsset.w.BhrantiRender.run(job, { axeUrl, signal: {} })), JSON.stringify({ status: 'failed', code: 'engine' }), 'Malformed cancellation metadata cannot throw an unbounded caller error.'); } finally { deniedAsset.close(); }
   const focusFixture = fixture({ autoFocus: true });
@@ -133,5 +197,28 @@ async function failureCase(options, code, request = job) {
     check(stop.frames.every((frame) => !frame.isConnected), 'Stop tears down the current frame before any further scan.');
     equal(stop.scans.length, 0, 'Stop during asset readiness does not start the engine.');
   } finally { stop.close(); }
+  const forged = fixture({ messages(data, direction) {
+    const wrong = [];
+    if (direction === 'child') {
+      wrong.push({ data, origin: 'https://outside.invalid' }, { data, origin: 'null' }, { data, source: {} });
+      for (const field of ['job_id', 'run_id', 'step', 'marker', 'revision', 'environment_revision', 'width', 'height']) { const bad = clone(data); bad.binding[field] = typeof bad.binding[field] === 'number' ? bad.binding[field] + 1 : 'stale'; wrong.push({ data: bad }); }
+      const extra = clone(data); extra.extra = 'untrusted'; wrong.push({ data: extra });
+      if (data.kind !== 'ready') { const stale = clone(data); stale.channel = '00000000-0000-4000-8000-000000000000'; wrong.push({ data: stale }); }
+    }
+    if (direction === 'parent' && data.kind === 'start') {
+      wrong.push({ data, origin: 'null' }, { data, source: {} });
+      const stale = clone(data); stale.binding.revision = '0'.repeat(64); wrong.push({ data: stale });
+      const malformed = clone(data); malformed.channel = 'untrusted'; wrong.push({ data: malformed });
+      const cancel = clone(data); cancel.kind = 'cancel'; wrong.push({ data: cancel });
+    }
+    return wrong.concat([{ data }, { data }]);
+  } });
+  try { equal((await forged.w.BhrantiRender.run(job, { axeUrl })).status, 'complete', 'Wrong origin/null origin/source, stale exact bindings/channels and extra keys cannot replace actual child observations; duplicate handshakes/progress/results settle once.'); equal(forged.scans.length, 3, 'Duplicate messages never repeat native engine work.'); equal(forged.timers.size, 0, 'Successful adversarial delivery removes all timers.'); equal(forged.listenerCount(), 0, 'Both sides remove all protocol/pagehide listeners after completion.'); } finally { forged.close(); }
+  for (const field of ['width', 'height', 'extra']) await failureCase({ messages(data, direction) { if (direction === 'child' && data.kind === 'result' && data.payload.status === 'complete') { if (field === 'extra') data.payload.profile.extra = true; else data.payload.profile[field]++; } return [{ data }]; } }, 'engine');
+  await failureCase({ messages(data, direction) { if (direction === 'child' && data.kind === 'result') data.payload.extra = 'x'.repeat(145001); return [{ data }]; } }, 'limit');
+  await failureCase({ messages(data, direction) { if (direction === 'child' && data.kind === 'progress' && data.payload === 'assets') { data.kind = 'result'; data.payload = { status: 'complete', profile: {} }; } return [{ data }]; } }, 'engine');
+  await failureCase({ messages(data, direction) { if (direction === 'parent') data.channel = '00000000-0000-4000-8000-000000000000'; return [{ data }]; } }, 'load');
+  const hidden = fixture({ fontsPending: true });
+  try { await assert.rejects(hidden.w.BhrantiRender.run(job, { axeUrl, onProgress(state) { if (state.phase === 'assets') hidden.w.dispatchEvent(new hidden.w.Event('pagehide')); } }), { name: 'AbortError' }); checks++; equal(hidden.scans.length, 0, 'Parent pagehide stops child work before the engine.'); equal(hidden.timers.size, 0, 'Pagehide removes parent and child deadlines.'); equal(hidden.listenerCount(), 0, 'Pagehide removes parent and child protocol listeners.'); check(hidden.frames.every((frame) => !frame.isConnected), 'Pagehide removes the owned frame.'); } finally { hidden.close(); }
   console.log('PASS ' + checks + ' rendered-worker DOM/negative checks; mocked geometry/engine, no network or actual browser WCAG claim.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

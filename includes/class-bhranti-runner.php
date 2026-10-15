@@ -381,18 +381,7 @@ final class Bhranti_Runner {
 	 * @return bool
 	 */
 	private static function is_write( $run ) {
-		$command = $run['pending_plan'] ?? array();
-		if ( ! is_array( $command ) || ! is_string( $command['tool'] ?? null ) || ! is_array( $command['args'] ?? null ) ) {
-			return true;
-		}
-		if ( 'bhranti_inspect' === $command['tool'] && 'rendered' === ( $command['args']['resource'] ?? '' ) ) {
-			return false;
-		}
-		if ( in_array( $command['tool'] ?? '', array( 'site_search', 'open_item', 'plugin_search' ), true ) ) {
-			return false;
-		}
-		$method = $command['args']['method'] ?? 'GET';
-		return ! in_array( $command['tool'], array( 'wp_request', 'plugin_request', 'form_request' ), true ) || ! is_string( $method ) || 'GET' !== strtoupper( $method );
+		return Bhranti_Progress::is_write( $run['pending_plan'] ?? null );
 	}
 
 	/**
