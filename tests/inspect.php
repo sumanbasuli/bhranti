@@ -213,6 +213,15 @@ try {
 	bi_check( is_array( $bi_types ) && isset( $bi_types['data']['parameters']['context'] ), 'Exact native public post-type schema exception remains usable.' );
 	$bi_search = bi_inspect( array( 'resource' => 'route', 'path' => '/wp/v2/search' ) );
 	bi_check( is_array( $bi_search ) && 'string' === $bi_search['data']['parameters']['search']['type'], 'Actual native Search discovery retains its singular get_items_permission_check pairing.' );
+	foreach ( array( '/wp/v2/templates', '/wp/v2/template-parts' ) as $bi_template_collection ) {
+		$bi_native_template_endpoint = bi_endpoint( $bi_template_collection, 'GET' );
+		$bi_template_schema = bi_inspect( array( 'resource' => 'route', 'path' => $bi_template_collection, 'method' => 'GET' ) );
+		bi_check( is_array( $bi_template_schema ) && array_keys( $bi_native_template_endpoint['args'] ) === array_keys( $bi_template_schema['data']['parameters'] ), 'Template collection discovery exposes the actual installed native arguments.' );
+		bi_check( ! array_diff( array( 'context', 'wp_id', 'area', 'post_type' ), array_keys( $bi_template_schema['data']['parameters'] ) ) && ! array_intersect( array( 'page', 'per_page' ), array_keys( $bi_template_schema['data']['parameters'] ) ), 'Native template collections retain supported filters without invented post-list pagination.' );
+		foreach ( array( 'page', 'per_page' ) as $bi_pagination_field ) {
+			bi_error( bi_inspect( array( 'resource' => 'route', 'path' => $bi_template_collection, 'method' => 'GET', 'field' => $bi_pagination_field ) ), 'bhranti_action_blocked', 'Unsupported template pagination cannot be advertised as a native argument.' );
+		}
+	}
 	$bi_public_schema_spoof = static function ( $routes ) {
 		$routes['/wp/v2/types/(?P<type>[\\w-]+)']['schema'] = static function () { ++$GLOBALS['bi_schema_callbacks']; throw new RuntimeException( 'Substituted public schema callback must not execute.' ); };
 		return $routes;

@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.1
+Stable tag: 0.6.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -124,6 +124,10 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.6.2 =
+* Resume an owned rendered preview check when background observation reaches its browser handoff, preserving editor protections and completed work.
+* Discover exact native collection arguments before adding unfamiliar filters instead of assuming post-list pagination.
 
 = 0.6.1 =
 * Bound prepared-action paint waits so hidden browser tabs cannot stall native continuation.

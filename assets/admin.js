@@ -422,6 +422,7 @@
 		if (state.open && (!observation || observation.stopped || observation.key !== resultKey()) || pageSuspended || backgroundReading || !id || !/^[1-9]\d*$/.test(String(id))) return;
 		if (state.busy || state.stepping) { scheduleBackgroundObservation(); return; }
 		backgroundReading = true;
+		let continueBrowser = false;
 		try {
 			const session = await request('/sessions/' + encodeURIComponent(id));
 			if (pageSuspended || String(state.session && state.session.id || savedSession()) !== String(id)) return;
@@ -429,15 +430,19 @@
 				if (!state.open || state.busy || state.stepping || blockedObservation !== observation || observation.key !== resultKey()) return;
 				const run = session && session.run;
 				if (!session || String(session.id) !== String(id) || !run || run.id !== observation.runId || !Number.isSafeInteger(run.step) || run.step < currentRun().step || !['running', 'complete', 'incomplete', 'failed', 'cancelled', 'awaiting_input', 'awaiting_confirmation'].includes(run.status)) { observation.stopped = true; state.connectionError = __('The saved task changed. Reconnect to review it.', 'bhranti'); render(); return; }
-				const advanced = run.step > observation.step || run.status !== 'running';
+				const job = run.render_job, browserReady = run.status === 'running' && run.phase === 'browser' && job && typeof job.id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(job.id) && job.run_id === run.id && job.step === run.step;
+				const advanced = run.step > observation.step || run.status !== 'running' || browserReady;
 				// A same-step prepared response cannot prove handover of an observed native write.
 				if (!advanced && currentRun().phase === 'action' && run.phase === 'prepared') return;
 				state.session = session;
 				if (advanced) { state.pausedForEditor = false; state.editorError = ''; editorSync.generation++; observation.step = run.step; observation.started = Date.now(); }
 				markExistingEvents(); render(); revealNewTarget(new Set(), observation.runId);
+				continueBrowser = browserReady;
 			} else if (!state.open) { state.session = session; markExistingEvents(); syncTrigger(); }
 		} catch (error) { if (observation && (pageSuspended || blockedObservation !== observation || observation.key !== resultKey())) return; const status = Number(error && error.data && error.data.status); if (observation && status >= 400 && status < 500) observation.stopped = true; state.connectionError = __('Latest task status is unavailable. Reopen Bhranti to reconnect.', 'bhranti'); if (observation && state.open) render(); else syncTrigger(); }
 		finally { backgroundReading = false; scheduleBackgroundObservation(); }
+		// Cron cannot perform a browser-only preview check; resume only this exact observed handoff.
+		if (continueBrowser && blockedObservation === observation && observation.key === resultKey()) continueRun();
 	}
 	async function resumeRun() {
 		if (state.busy || state.stepping) return;

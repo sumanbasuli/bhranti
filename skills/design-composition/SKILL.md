@@ -38,6 +38,8 @@ Separate composition width from reading width. A broad business page can compose
 
 Character comes from a deliberate focal point, alignment, type, useful content and imagery. The accent need not cover every section. Use a consistent hierarchy of primary, secondary and plain text actions. Preserve the native accessible focus indicator. Decorative imagery remains secondary unless the brief deliberately makes it the brand's focal point.
 
+Theme focus is author CSS; unmodified browser focus is exempt. Exterior indicators need 3:1 against adjacent surfaces. Prefer local native surface fixes; keep shared styles. Current scans omit focus: verify it separately.
+
 When full-width colored sections should touch, put just those adjacent sections inside one native parent core/group with style.spacing.blockGap="0" and an appropriate flow layout. Give each section intentional supported padding and keep its own paragraph/column gaps, such as 16–24px. A theme's inherited sibling block gap can otherwise expose white stripes between colored surfaces. Inspect direct-child margins too; clear only a specific unwanted authored top/bottom margin using native spacing attributes if necessary. Do not zero global spacing, all descendants or unrelated sections; do not mask gaps with arbitrary CSS or negative margins. Layout-generated gap rules need not appear as an inline gap style in saved HTML. See content-operations for an installed-editor-verified wrapper example, then inspect the actual rendered boundaries.
 
 ## Compose one representative page, then extend

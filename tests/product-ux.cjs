@@ -850,6 +850,71 @@ async function testPendingHeartbeatRecovery() {
   } finally { page.close(); }
 }
 
+async function testRenderedBackgroundHandoff() {
+  const action = { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Update the saved page.', write: true, target: historical.target };
+  const jobId = 'f7e894c2-10e2-4429-9e24-7bf238d13d2f';
+  for (const scenario of ['higher-step', 'same-step-prepared', 'same-step-action', 'already-browser', 'dirty-after-scan']) {
+    const step = scenario === 'higher-step' ? 26 : 25;
+    const job = { id: jobId, run_id: runId, step };
+    const observed = session('running', { phase: 'browser', step, render_job: job });
+    const phase = scenario === 'same-step-action' ? 'action' : scenario === 'already-browser' ? 'browser' : 'prepared';
+    const initial = session('running', { phase, step: 25, next_action: action, ...(phase === 'browser' ? { render_job: job } : {}) });
+    let scans = 0;
+    const page = fixture({ background: true, siteFrame: 'admin', session: initial, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) return { dirty: false, active: false, write_blocked: false };
+      if (request.method === 'GET') return observed;
+      if (request.path.endsWith('/render-start') || request.path.endsWith('/render-result')) {
+        equal(request.data.run_id, runId, scenario + ': the browser handshake retains the exact run');
+        equal(request.data.prepared_step, step, scenario + ': the browser handshake retains the exact step');
+        equal(request.data.job_id, jobId, scenario + ': the browser handshake retains the exact owned job');
+        if (request.path.endsWith('/render-start')) return observed;
+        return session('running', { step, ...(scenario === 'dirty-after-scan' ? { phase: 'prepared', next_action: action } : {}) });
+      }
+      if (request.path.endsWith('/step')) return session('complete', { step: step + 1 });
+      throw new Error('A rendered handoff cannot replay or bypass a native write.');
+    } });
+    try {
+      page.w.BhrantiRender = { run: async () => { scans++; return { status: 'complete' }; } };
+      page.api.state.pausedForEditor = scenario !== 'already-browser';
+      page.api.state.editorError = page.api.state.pausedForEditor ? 'An earlier safety report failed.' : '';
+      page.api.state.draft = 'Keep my university follow-up'; page.api.rememberDraft();
+      // The old observer can already show browser phase with its local pause cleared.
+      if (scenario === 'already-browser') {
+        page.api.state.pausedForEditor = true; page.api.scheduleBackgroundObservation(); page.api.state.pausedForEditor = false;
+      } else page.api.scheduleBackgroundObservation();
+      if (scenario === 'dirty-after-scan') {
+        const field = page.w.document.getElementById('native-field'); field.value = 'Unsent native edit'; field.dispatchEvent(new page.w.Event('input', { bubbles: true }));
+        check(page.api.editorState().unsaved_changes, 'The dirty handoff fixture contains a real unsubmitted native form edit');
+      }
+      await page.advance(4000); await until(() => idle(page), page);
+      equal(count(page, '/render-start', 'POST'), 1, scenario + ': a fresh browser checkpoint starts its owned scanner once');
+      equal(scans, 1, scenario + ': the scanner runs exactly once');
+      equal(count(page, '/render-result', 'POST'), 1, scenario + ': one result settles the same browser job');
+      equal(count(page, '/execute', 'POST'), 0, scenario + ': observation never replays a content write');
+      equal(count(page, '/resume', 'POST'), 0, scenario + ': the browser handoff does not restart the task');
+      equal(page.api.state.draft, 'Keep my university follow-up', scenario + ': background handoff preserves the unsent chat draft');
+      if (scenario === 'dirty-after-scan') {
+        check(page.api.state.pausedForEditor, 'Native unsaved changes still pause the next prepared write after a read-only scan');
+        equal(count(page, '/step', 'POST'), 0, 'Dirty native content cannot bypass a prepared write through another planning turn');
+        equal(page.w.document.getElementById('native-field').value, 'Unsent native edit', 'Rendered inspection preserves native unsaved input');
+      } else equal(page.api.state.session.run.status, 'complete', scenario + ': the normal loop continues after browser settlement');
+    } finally { page.close(); }
+  }
+  for (const invalid of ['missing', 'wrong-job', 'wrong-run', 'wrong-step']) {
+    const job = { id: invalid === 'wrong-job' ? 'invalid' : jobId, run_id: invalid === 'wrong-run' ? 'other-run' : runId, step: invalid === 'wrong-step' ? 26 : 25 };
+    const page = fixture({ background: true, session: session('running', { phase: 'prepared', step: 25, next_action: action }), handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) return { dirty: false, active: false, write_blocked: false };
+      if (request.method === 'GET') return session('running', { phase: 'browser', step: 25, ...(invalid === 'missing' ? {} : { render_job: job }) });
+      throw new Error('An invalid browser job cannot launch any task request.');
+    } });
+    try {
+      page.api.state.pausedForEditor = true; page.api.scheduleBackgroundObservation(); await page.advance(4000);
+      equal(count(page, '/render-start', 'POST'), 0, invalid + ': invalid or unbound browser metadata cannot start a scanner');
+      check(page.api.state.pausedForEditor, invalid + ': invalid same-step metadata cannot prove handover');
+    } finally { page.close(); }
+  }
+}
+
 async function testSafetyBlockedBackgroundObservation() {
   const action = { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Update the saved page.', write: true, target: historical.target };
   const prepared = session('running', { phase: 'prepared', step: 25, next_action: action });
@@ -1904,6 +1969,7 @@ async function main() {
   await testBackgroundPreparedStepRace();
   await testPendingHeartbeatRecovery();
   await testSafetyBlockedBackgroundObservation();
+  await testRenderedBackgroundHandoff();
   await testCompletedTargetRefresh();
   await testStablePollingAndComposer();
   await testToolDisclosuresAndGrouping();
