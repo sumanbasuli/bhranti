@@ -22,6 +22,7 @@ REQUIRED_FILES = (
     "bhranti.php",
     "uninstall.php",
     "readme.txt",
+    "changelog.txt",
     "LICENSE",
     "assets/admin.css",
     "assets/admin.js",
@@ -34,6 +35,7 @@ REQUIRED_FILES = (
     "assets/settings.css",
     "assets/settings.js",
     "assets/vendor/axe-core/LICENSE",
+    "assets/vendor/axe-core/LICENSE-3RD-PARTY.txt",
     "assets/vendor/axe-core/README.md",
     "assets/vendor/axe-core/SOURCE.json",
     "assets/vendor/axe-core/THIRD-PARTY-NOTICES.md",
@@ -171,7 +173,7 @@ def validate_dependencies(files):
             fail("Missing packaged skill: " + name)
     vendor = ROOT / "assets/vendor/axe-core"
     manifest = json.loads((vendor / "SOURCE.json").read_text(encoding="utf-8"))
-    for name in ("axe.js", "LICENSE", "package.json", "README.md"):
+    for name in ("axe.js", "LICENSE", "LICENSE-3RD-PARTY.txt", "package.json", "README.md"):
         actual = hashlib.sha256((vendor / name).read_bytes()).hexdigest()
         if manifest.get("files_sha256", {}).get(name) != actual:
             fail("Bundled axe-core source hash mismatch: " + name)

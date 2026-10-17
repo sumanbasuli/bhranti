@@ -39,7 +39,7 @@ Verify the checksums on macOS with `cd build` followed by `shasum -a 256 -c SHA2
 
 ## What ships
 
-The ZIP has a single `bhranti/` root containing the plugin entry file, `uninstall.php`, `readme.txt`, `LICENSE`, PHP classes under `includes/`, and the explicit assets and built-in skills listed in `scripts/build.py`.
+The ZIP has a single `bhranti/` root containing the plugin entry file, `uninstall.php`, `readme.txt`, `changelog.txt`, `LICENSE`, PHP classes under `includes/`, and the explicit assets and built-in skills listed in `scripts/build.py`.
 
 Keep the five bundled `skills/*/SKILL.md` documents: the running harness reads them. Keep `assets/vendor/axe-core/` source, license, notices and provenance files: rendered accessibility checks use that library. Its recorded source hashes are checked during the build. Add new runtime assets to the allowlist when introducing them.
 

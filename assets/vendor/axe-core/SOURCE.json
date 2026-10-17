@@ -10,7 +10,8 @@
     "axe.js": "aae0b8b36278089962105b2351ea64f4da7d3d440b54e162e21616d597aa0d6f",
     "LICENSE": "af175b9d96ee93c21a036152e1b905b0b95304d4ae8c2c921c7609100ba8df7e",
     "package.json": "486715407f3c8c7d1de882bacc2622acb0adf1ec0f21807fc1251aed64bf9001",
-    "README.md": "b994303ff0df0a44d9bd2fb0faf2ff49670844379f3796047f48e8cb8b9edfaf"
+    "README.md": "b994303ff0df0a44d9bd2fb0faf2ff49670844379f3796047f48e8cb8b9edfaf",
+    "LICENSE-3RD-PARTY.txt": "4f8563870d0fca38bbc3e00b6f670cb7fa9f380ba9f26a7f7d1184a6b18b1653"
   },
-  "modifications": "None. axe.js, LICENSE, package.json and README.md are original official npm package files."
+  "modifications": "None. axe.js, LICENSE, LICENSE-3RD-PARTY.txt, package.json and README.md are original official npm package files."
 }

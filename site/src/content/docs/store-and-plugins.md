@@ -67,6 +67,6 @@ Bhranti supports plugin changes on single-site WordPress installations. **Instal
 
 Deactivation and deletion are different operations. Deactivation changes status; deletion permanently uninstalls an eligible inactive plugin.
 
-**Delete plugins** is disabled by default and needs the site owner’s host-level opt-in before an administrator can enable it. Bhranti then asks you to approve each uninstall through an **Approve/Deny** card. Uninstalling can permanently remove plugin data; reinstalling does not recover it.
+**Delete plugins** is disabled by default. An administrator can enable it in **Bhranti → Settings**. Bhranti then asks you to approve each uninstall through an **Approve/Deny** card. Uninstalling can permanently remove plugin data; reinstalling does not recover it.
 
 Rolling back activation restores the plugin’s active or inactive status. It does not reverse emails or other changes the plugin made while starting or stopping. See [Approvals and Undo](/docs/permissions-and-undo/) for restoration limits.

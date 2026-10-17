@@ -65,11 +65,12 @@ class PackagingTests(unittest.TestCase):
     def test_runtime_allowlist_and_clean_folder(self):
         # Explicit expected runtime inventory catches accidentally broadened packaging.
         names = {
-            "bhranti.php", "uninstall.php", "readme.txt", "LICENSE",
+            "bhranti.php", "uninstall.php", "readme.txt", "changelog.txt", "LICENSE",
             "assets/admin.css", "assets/admin.js", "assets/credentials.js", "assets/logs.css", "assets/editor.js",
             "assets/forms.css", "assets/render-check.js", "assets/settings.css",
             "assets/settings.js", "assets/bootstrap-icons-LICENSE.txt",
             "assets/vendor/axe-core/axe.js", "assets/vendor/axe-core/LICENSE",
+            "assets/vendor/axe-core/LICENSE-3RD-PARTY.txt",
             "assets/vendor/axe-core/README.md", "assets/vendor/axe-core/SOURCE.json",
             "assets/vendor/axe-core/package.json", "assets/vendor/axe-core/THIRD-PARTY-NOTICES.md",
             "skills/commerce-workflow/SKILL.md", "skills/content-operations/SKILL.md",
@@ -141,6 +142,13 @@ class PackagingTests(unittest.TestCase):
             path = root / "assets/vendor/axe-core/axe.js"
             path.write_bytes(path.read_bytes() + b"\n// accidental change\n")
             with self.assertRaisesRegex(ValueError, "source hash mismatch: axe.js"):
+                builder.validate_dependencies(builder.collect_files())
+
+    def test_modified_vendor_license_notice_is_rejected(self):
+        with fixture() as root:
+            path = root / "assets/vendor/axe-core/LICENSE-3RD-PARTY.txt"
+            path.write_bytes(path.read_bytes() + b"\naccidental change\n")
+            with self.assertRaisesRegex(ValueError, r"source hash mismatch: LICENSE-3RD-PARTY\.txt"):
                 builder.validate_dependencies(builder.collect_files())
 
     def test_symlinked_runtime_file_and_parent_are_rejected(self):
