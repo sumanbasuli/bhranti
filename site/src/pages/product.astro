@@ -9,7 +9,7 @@ const capabilities = [
   ['Design & navigation', 'Work with supported native design settings, shared template parts, and navigation.', '/docs/content-workflows/#build-a-new-page-or-redesign'],
   ['Media & images', 'Find and use your media. Generate images when your native connector and site support it.', '/docs/content-workflows/#use-existing-media'],
   ['WooCommerce', 'Prepare simple products and categories, plus supported store, shipping, and offline payment settings.', '/docs/store-and-plugins/'],
-  ['Directory plugins', 'Use reviewed WordPress.org installation and activation operations when enabled in your settings.', '/docs/store-and-plugins/#install-or-activate-a-plugin'],
+  ['Directory plugins', 'Review the listed WordPress.org plugin changes; one installation approval can include activation.', '/docs/store-and-plugins/#install-or-activate-a-plugin'],
   ['Longer tasks', 'Continue persisted work through WordPress scheduling, with visible progress and a Stop control.', '/docs/working-with-bhranti/#continue-after-closing-the-browser'],
 ];
 ---
@@ -61,9 +61,9 @@ const capabilities = [
         <figcaption>Illustrative action details, using a fictional page.</figcaption>
       </figure>
       <div class="control-explanations">
-        <article><h3>A human yes. Or no.</h3><p>Content Trash always pauses for an explicit Approve or Deny button. Approvals are stored on the server, bound to the specific item state, and expire after ten minutes.</p></article>
+        <article><h3>A human yes. Or no.</h3><p>Plugin changes and content Trash pause for approval. One plugin installation card can include activation. Approvals bind to the exact operation, expire after ten minutes, and remain in the task history after your decision.</p></article>
         <article><h3>Undo with a memory.</h3><p>Supported changes keep seven-day snapshots. Undo checks that the item still matches Bhranti’s saved result, and refuses to overwrite a later edit.</p></article>
-        <article><h3>A record you can follow.</h3><p>Expandable chat details show each action’s outcome. A separate Logs screen records activity and the human requester and managed actor.</p></article>
+        <article><h3>A record you can follow.</h3><p>Expandable chat details show each action’s outcome. A separate Logs screen records activity, the requester, and the account that performed each action.</p></article>
       </div>
     </div>
     <div class="boundaries"><h3>Clear limits are part of the product.</h3><div><p>Bhranti does not edit arbitrary core, theme, or plugin source code, accounts, roles, credentials, or security settings. Its reviewed tools define what it can do.</p><p>Undo restores supported WordPress data. It cannot reverse emails, webhooks, or other third-party effects. Opt-in plugin deletion requires approval and may permanently remove plugin data.</p><a class="text-link" href="/docs/permissions-and-undo/">Read the full safety &amp; Undo guide <Arrow /></a></div></div>

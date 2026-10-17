@@ -72,7 +72,7 @@ See the intended action and affected item before it runs. Open the details, chec
 
 ### 02 — Have the final word.
 
-Moving content to Trash waits for your Approve or Deny button. Permission switches keep supported actions within the boundaries you choose.
+Plugin changes and content Trash wait for approval. One installation card can include activation. Permission switches keep supported actions within the boundaries you choose.
 
 ### 03 — Room to change your mind.
 

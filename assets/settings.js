@@ -19,9 +19,9 @@
 		{ key: 'manage_navigation', label: __('Manage navigation', 'bhranti') },
 		{ key: 'manage_design', label: __('Manage templates and design', 'bhranti') },
 		{ key: 'manage_site_settings', label: __('Change site settings', 'bhranti') },
-		{ key: 'plugins_install', label: __('Install plugins', 'bhranti'), help: __('Install plugins from the WordPress.org directory.', 'bhranti') },
-		{ key: 'plugins_activate', label: __('Activate or deactivate plugins', 'bhranti'), help: __('Undo restores activation status. Plugin lifecycle effects may remain.', 'bhranti') },
-		{ key: 'plugins_delete', label: __('Delete plugins', 'bhranti'), help: __('Permanently uninstall inactive plugins only after approval. WordPress uninstall can remove plugin data; this action cannot be rolled back.', 'bhranti'), disabled: settingsPage.pluginDeletionAvailable !== true }
+		{ key: 'plugins_install', label: __('Install plugins', 'bhranti'), help: __('Install plugins from the WordPress.org directory only after you approve each installation. The approval states whether activation is included; otherwise the plugin stays inactive.', 'bhranti') },
+		{ key: 'plugins_activate', label: __('Activate or deactivate plugins', 'bhranti'), help: __('Approve standalone activation or deactivation in chat. Activation can also be included in an installation approval. Undo restores activation status. Plugin lifecycle effects may remain.', 'bhranti') },
+		{ key: 'plugins_delete', label: __('Delete plugins', 'bhranti'), help: __('Permanently uninstall inactive plugins only after you approve each deletion in chat. WordPress uninstall can remove plugin data; this action cannot be rolled back.', 'bhranti'), disabled: settingsPage.pluginDeletionAvailable !== true }
 	];
 	function validPermissions(permissions) {
 		return permissions && !Array.isArray(permissions) && Object.keys(permissions).length === actionPermissions.length && actionPermissions.every(({ key }) => typeof permissions[key] === 'boolean');
@@ -193,7 +193,7 @@
 		return h('div', { className: 'bhranti-settings' }, heading, h('div', { className: 'bhranti-settings-content' }, noticeNode,
 			reloadConfirm && h(Notice, { status: 'warning', isDismissible: false }, h('p', null, __('Reloading replaces your unsaved edits with the saved settings.', 'bhranti')), h('div', { className: 'bhranti-settings-actions' }, h(Button, { variant: 'secondary', onClick: load }, __('Reload', 'bhranti')), h(Button, { variant: 'tertiary', onClick: () => setReloadConfirm(false) }, __('Keep editing', 'bhranti')))),
 			h(Card, { className: 'bhranti-settings-card' }, h(CardHeader, null, h('h2', null, __('Action permissions', 'bhranti'))), h(CardBody, null,
-				h('p', { className: 'bhranti-settings-permissions-help' }, __('When enabled, normal operations can proceed. WordPress permissions still apply, and deletion requires confirmation.', 'bhranti')),
+				h('p', { className: 'bhranti-settings-permissions-help' }, __('Enabled operations still require WordPress permissions. Plugin changes require your approval in chat. Installation and activation can share one approval when both are described. Moving content to Trash also requires confirmation.', 'bhranti')),
 				h(TextControl, { label: __('Task step limit', 'bhranti'), type: 'number', min: 12, max: 1000, step: 1, value: config.max_steps, help: __('Maximum AI planning steps for each new task, from 12 to 1,000. The default is 128; an active task keeps the limit it started with.', 'bhranti'), disabled: saving, onChange: (value) => setConfig((current) => ({ ...current, max_steps: value === '' ? '' : Number(value) })) }),
 				actionPermissions.map(({ key, label, help, disabled }) => h(ToggleControl, { key, label, help, checked: config.permissions[key], disabled: saving || disabled, onChange: (checked) => setConfig((current) => ({ ...current, permissions: { ...current.permissions, [key]: checked } })) })))),
 			h(Card, { className: 'bhranti-settings-card' }, h(CardHeader, null, h('h2', null, __('Global instructions', 'bhranti'))), h(CardBody, null,

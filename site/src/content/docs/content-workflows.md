@@ -62,7 +62,7 @@ If generation is unavailable, choose an existing Media Library image or upload o
 
 ## Add or reuse a form
 
-Ask Bhranti to look for an existing working form first. It can create and update supported forms with **Contact Form 7**. If the plugin is missing, ask Bhranti to install and activate it; the relevant permission switches must be enabled. To save submissions in the WordPress dashboard without sending email, request dashboard-only storage with **Flamingo**.
+Ask Bhranti to look for an existing working form first. It can create and update supported forms with **Contact Form 7**. If the plugin is missing, ask Bhranti to install and activate it; the relevant permission switches must be enabled. Review the installation card: if it lists activation too, one approval covers both. Otherwise later activation needs its own card. To save submissions in the WordPress dashboard without sending email, request dashboard-only storage with **Flamingo**.
 
 Provide the fields, labels, purpose and confirmation message. For email notifications, include the recipient’s business email address in your request. For dashboard-only storage, Flamingo must be active.
 

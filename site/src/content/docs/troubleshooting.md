@@ -11,7 +11,7 @@ Start with the message Bhranti is showing and its last recorded action. Check wh
 
 Confirm the plugin is active and you are using an administrator account with permission to manage site settings. Open **Bhranti** from the WordPress admin bar. If that button is unavailable in a post or page editor, look in the editor header.
 
-The first request also needs an administrator who can create users. Bhranti creates a dedicated account so its site changes have a clear identity in Logs; you continue using your own account.
+The first request also needs an administrator who can create users. Bhranti creates a dedicated account for ordinary site actions. Approved plugin changes run as your account; Logs records the actual acting user.
 
 ## No AI provider is configured
 
@@ -29,9 +29,9 @@ If Bhranti asks a question, answer in the same chat. If it is still running and 
 
 Reply in the same conversation with the missing decision, such as the audience, price, image source or whether to publish. Bhranti will wait for your answer before continuing.
 
-## A deletion has not happened
+## A plugin change or deletion has not happened
 
-Look for **Approval required** with **Approve** and **Deny** buttons. If no card appears, ask Bhranti to show one for the named item. Use the button to approve; a typed “yes” does not replace it.
+Look for **Approval required**. Use the button to approve; a typed “yes” does not replace it. A plugin installation card can include activation with no second prompt. If it lists installation only, the plugin stays inactive; later status changes need a new card. Select **Cancel** to stop the current task. If no card appears, ask Bhranti to show one for the named item.
 
 Approvals expire after ten minutes. If an approval expires or the item changes, ask for a new one. Bhranti moves supported content to Trash rather than permanently deleting it. Plugin uninstall is a separate opt-in feature and can permanently remove plugin data.
 

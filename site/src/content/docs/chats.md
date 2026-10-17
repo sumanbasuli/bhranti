@@ -63,7 +63,7 @@ Deleting a chat removes its private conversation data, work plan and rollback re
 
 ## Read long conversations comfortably
 
-Completed actions may be grouped under **completed actions**. Expand the group, then expand an individual action to see its summary, time, affected item and any Roll back control. Failures and approvals remain visible.
+Completed actions may be grouped under **completed actions**. Expand the group, then expand an individual action to see its summary, time, affected item and any Roll back control. Failures and pending approvals remain visible. Resolved approval decisions fold into the task history in chronological order; expand an entry to review it.
 
 Use **Jump to latest** when you have scrolled up and want to return to the newest message. Use **Copy response** beside an assistant reply to copy the reply.
 

@@ -570,7 +570,7 @@ try {
 		$action_posts[] = $loop_post->ID;
 	}
 	bhranti_action_check( 200 === $first_step->get_status() && 'running' === $first_step->get_data()['run']['status'] && $before_calls + 1 === count( Bhranti_QA_Model::$calls ) && 1 === count( $loop_posts ), 'One step makes one model call and executes one real WordPress action' );
-	bhranti_action_check( $actor === (int) $loop_posts[0]->post_author && ! isset( $first_step->get_data()['run']['history'] ) && ! isset( $first_step->get_data()['run']['phase'] ), 'Agent content identifies Bhranti and keeps internal run state private' );
+	bhranti_action_check( $actor === (int) $loop_posts[0]->post_author && '' === $first_step->get_data()['run']['phase'] && ! isset( $first_step->get_data()['run']['history'] ) && ! isset( $first_step->get_data()['run']['pending_plan'] ) && ! isset( $first_step->get_data()['run']['configuration'] ), 'Agent content identifies Bhranti and exposes only its settled public phase without private run data' );
 	$first_step_data = $first_step->get_data();
 	$loop_event = end( $first_step_data['events'] );
 	bhranti_action_check( ! empty( $loop_event['action_id'] ) && ! empty( $loop_event['rollback_available'] ), 'Action timeline exposes the concrete rollback identifier' );
@@ -658,12 +658,15 @@ try {
 
 	Bhranti_QA_Model::$responses = array_fill( 0, 13, wp_json_encode( array( 'type' => 'tool', 'tool' => 'site_search', 'args' => array( 'search' => $action_marker, 'per_page' => 1 ) ) ) );
 	$bounded_run = bhranti_action_start_run( $session, 'Exercise the bounded search loop using only QA markers.' );
+	$bounded_state = get_post_meta( $session, 'bhranti_run', true );
+	$bounded_state['configuration']['max_steps'] = 12;
+	update_post_meta( $session, 'bhranti_run', wp_slash( $bounded_state ) );
 	$before_bound = count( Bhranti_QA_Model::$calls );
 	for ( $index = 0; $index < 13; ++$index ) {
 		$bounded_step = bhranti_action_rest( 'POST', '/sessions/' . $session . '/step', array( 'run_id' => $bounded_run ) );
 		bhranti_action_check( 200 === $bounded_step->get_status(), 'Bounded loop step ' . $index . ' completes through REST' );
 	}
-	bhranti_action_check( 'failed' === $bounded_step->get_data()['run']['status'] && 12 === $bounded_step->get_data()['run']['step'] && $before_bound + 12 === count( Bhranti_QA_Model::$calls ), 'A run performs at most twelve model calls and tools (status=' . $bounded_step->get_data()['run']['status'] . ', step=' . $bounded_step->get_data()['run']['step'] . ', calls=' . ( count( Bhranti_QA_Model::$calls ) - $before_bound ) . ')' );
+	bhranti_action_check( 'failed' === $bounded_step->get_data()['run']['status'] && 12 === $bounded_step->get_data()['run']['step'] && $before_bound + 12 === count( Bhranti_QA_Model::$calls ), 'A run respects its captured twelve-step fixture limit (status=' . $bounded_step->get_data()['run']['status'] . ', step=' . $bounded_step->get_data()['run']['step'] . ', calls=' . ( count( Bhranti_QA_Model::$calls ) - $before_bound ) . ')' );
 	$privacy_login = 'bhranti_action_qa_' . str_replace( '-', '', wp_generate_uuid4() );
 	$privacy_email = $privacy_login . '@example.test';
 	$privacy_user = wp_insert_user( array( 'user_login' => $privacy_login, 'user_pass' => wp_generate_password(), 'role' => 'administrator', 'user_email' => $privacy_email ) );

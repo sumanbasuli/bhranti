@@ -23,7 +23,7 @@ Switch changes take effect when you save. If saving fails, your local edits rema
 
 ## Action permissions: every switch
 
-Routine switches are enabled by default. **Delete plugins** is disabled by default. Both you and Bhranti’s WordPress account must have permission for the action, even when its switch is enabled. Some operations require more than one switch.
+Routine switches are enabled by default. **Delete plugins** is disabled by default. WordPress permissions still apply when a switch is enabled. Most actions require both your account’s and Bhranti’s account’s permissions. Approved plugin operations run as your account. Some operations require more than one switch.
 
 | Switch | What it allows |
 | --- | --- |
@@ -35,9 +35,9 @@ Routine switches are enabled by default. **Delete plugins** is disabled by defau
 | **Manage navigation** | Changes to supported navigation and menu items. Some menu and category operations are unavailable. |
 | **Manage templates and design** | Supported template customizations, template parts and global styles. It does not grant access to theme source files. |
 | **Change site settings** | Supported WordPress and WooCommerce setup settings. Credentials and security settings cannot be changed. |
-| **Install plugins** | Installation from the WordPress.org plugin directory. Installing plugins from ZIP files or other URLs through chat is not supported. |
-| **Activate or deactivate plugins** | Activating or deactivating supported plugins. Roll back can restore the status, but other effects of activation may remain. |
-| **Delete plugins** | Permanent uninstall of eligible inactive plugins, only after an explicit approval. Uninstall can remove plugin data and cannot be rolled back. |
+| **Install plugins** | Install the current WordPress.org directory package after its Approve/Cancel card. The card may include activation when both switches allow it. ZIP files and other package URLs are unsupported. |
+| **Activate or deactivate plugins** | Allow activation listed on an installation card, or a later status change with its own approval. Roll back restores status only; lifecycle effects may remain. |
+| **Delete plugins** | Permanent uninstall of eligible inactive plugins, only after its own Approve/Cancel card. Uninstall can remove plugin data and cannot be rolled back. |
 
 Your site’s server configuration must also allow permanent plugin deletion before Delete plugins becomes available. If the switch is unavailable, ask the person who manages your site or hosting. Bhranti and the AI/connector plugins it depends on are protected from changes that would stop them working.
 

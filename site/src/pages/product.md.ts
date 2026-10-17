@@ -49,7 +49,7 @@ Bhranti works through reviewed WordPress APIs and the permissions you enable. He
 | [02 Design & navigation](/docs/content-workflows/#build-a-new-page-or-redesign) | Work with supported native design settings, shared template parts, and navigation. |
 | [03 Media & images](/docs/content-workflows/#use-existing-media) | Find and use your media. Generate images when your native connector and site support it. |
 | [04 WooCommerce](/docs/store-and-plugins/) | Prepare simple products and categories, plus supported store, shipping, and offline payment settings. |
-| [05 Directory plugins](/docs/store-and-plugins/#install-or-activate-a-plugin) | Use reviewed WordPress.org installation and activation operations when enabled in your settings. |
+| [05 Directory plugins](/docs/store-and-plugins/#install-or-activate-a-plugin) | Review the listed WordPress.org plugin changes; one installation approval can include activation. |
 | [06 Longer tasks](/docs/working-with-bhranti/#continue-after-closing-the-browser) | Continue persisted work through WordPress scheduling, with visible progress and a Stop control. |
 
 Background continuation needs site traffic or a configured native WordPress cron runner. Available image tools depend on your native AI connector.
@@ -81,7 +81,7 @@ Illustrative action details, using a fictional page.
 
 ### A human yes. Or no.
 
-Content Trash always pauses for an explicit Approve or Deny button. Approvals are stored on the server, bound to the specific item state, and expire after ten minutes.
+Plugin changes and content Trash pause for approval. One plugin installation card can include activation. Approvals bind to the exact operation, expire after ten minutes, and remain in the task history after your decision.
 
 ### Undo with a memory.
 
@@ -89,7 +89,7 @@ Supported changes keep seven-day snapshots. Undo checks that the item still matc
 
 ### A record you can follow.
 
-Expandable chat details show each action’s outcome. A separate Logs screen records activity and the human requester and managed actor.
+Expandable chat details show each action’s outcome. A separate Logs screen records activity, the requester, and the account that performed each action.
 
 ### Clear limits are part of the product.
 

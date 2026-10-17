@@ -4,7 +4,7 @@ Tags: ai, assistant, content, productivity, automation
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.8
+Stable tag: 0.6.9
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -32,9 +32,9 @@ Small edits can happen directly. For larger projects, Bhranti asks about your au
 
 = Stay in control =
 
-Choose which actions Bhranti may take in Bhranti > Settings. Deleting a plugin is disabled by default. Every supported deletion or move to Trash needs your approval through a button in the chat, even when that action is enabled.
+Choose which actions Bhranti may take in Bhranti > Settings. Review an Approve/Cancel card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Supported deletion or Trash also needs approval. Cancelling stops the current task. Deleting a plugin is disabled by default.
 
-Changes run through WordPress as a dedicated Bhranti account. Both your account and the Bhranti account must have the required permissions. Bhranti does not edit WordPress core, theme or plugin source files, or change accounts, roles, credentials or security settings.
+Approved plugin changes and explicit plugin Undo run as your authenticated WordPress account. Other site actions use a dedicated Bhranti account and require both accounts’ permissions. Logs identify the account that performed each action. Bhranti does not edit WordPress core, theme or plugin source files, or change accounts, roles, credentials or security settings.
 
 While it works on a supported clean editor, saved updates can appear in front of you. A control overlay helps prevent accidental edits; existing unsaved work remains protected. You can stop a task between steps.
 
@@ -119,8 +119,8 @@ Bundled third-party code keeps its own notices: Bootstrap Icons uses MIT (assets
 
 == Changelog ==
 
-= 0.6.8 =
-* Block recognizable credentials before saving chat messages or sending AI requests, with a warning that lets you edit the message.
-* Keep credentials out of private memory and withhold sensitive tool text while preserving completed action records.
+= 0.6.9 =
+* Ask for Approve or Cancel before plugin changes; one installation approval can include activation.
+* Perform approved native plugin actions as the signed-in user and keep decisions in compact task history.
 
 Earlier release notes are included in changelog.txt.

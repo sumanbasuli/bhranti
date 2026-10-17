@@ -22,7 +22,7 @@ export async function GET() {
     '',
     '## Product boundaries',
     '',
-    'Action permissions and human deletion approvals remain authoritative. Bhranti does not edit arbitrary source code, accounts, credentials, or security settings. Undo is supported only for specific changes. Automated accessibility checks are not a full conformance certification.',
+    'Action permissions and individual human approvals for plugin changes and deletions remain authoritative. One plugin installation approval may include activation when the card lists both; otherwise the package installs inactive and later status changes need approval. Bhranti does not edit arbitrary source code, accounts, credentials, or security settings. Undo is supported only for specific changes. Automated accessibility checks are not a full conformance certification.',
     '',
   ].join('\n');
   return new Response(text, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });

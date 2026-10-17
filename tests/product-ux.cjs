@@ -1378,6 +1378,64 @@ async function testExactApprovalControls() {
   }
 }
 
+async function testPluginApprovalHistory() {
+  const actionLabels = { install: 'Approve installation', activate: 'Approve activation', deactivate: 'Approve deactivation', delete: 'Approve deletion' };
+  for (const [action, label] of Object.entries(actionLabels)) {
+    for (const approved of [true, false]) {
+      const target = { type: 'plugin', title: 'Fixture <Plugin> & tools', slug: 'fixture-plugin' };
+      const pending = session('awaiting_confirmation', { step: 9 });
+      pending.events = [tool('prior-read')];
+      pending.confirmation = { id: 'plugin-' + action, action, summary: action === 'delete' ? 'Uninstall can permanently remove plugin data. Reinstall does not restore that data.' : action === 'install' ? 'Install and activate Fixture Plugin from WordPress.org.' : 'Review this exact plugin change before continuing.', target };
+      const completed = clone(pending); delete completed.confirmation; completed.run.status = approved ? 'complete' : 'cancelled';
+      completed.events.push({ id: 'decision-' + action, type: 'confirmation', approved, status: approved ? 'approved' : 'denied', action, target, summary: (approved ? 'Approved: ' : 'Denied: ') + action + ' Fixture Plugin.', run_id: runId, created: '2026-10-09T00:00:03Z' });
+      if (approved) completed.events.push(tool('plugin-result', 'write', { target, created: '2026-10-09T00:00:04Z' }));
+      const held = deferred(), page = fixture({ session: pending, handler: async (request) => {
+        if (request.path.endsWith('/confirm') && request.method === 'POST') return held.promise;
+        throw new Error('Plugin approval presentation must use only its existing confirmation request.');
+      } });
+      try {
+        const doc = page.w.document;
+        page.w.confirm = page.w.alert = page.w.prompt = () => { throw new Error('Plugin approval must stay in chat.'); };
+        page.api.state.draft = 'Preserve my next question'; page.api.rememberDraft(); page.api.render();
+        const card = doc.querySelector('.bhranti-confirmation');
+        equal(card.closest('details'), null, action + ': pending approval remains outside folded task history');
+        equal(card.querySelector('.bhranti-confirmation-target').textContent, target.title, action + ': plugin name remains visible even without a navigable target URL');
+        equal(card.querySelectorAll('plugin').length, 0, action + ': plugin names are rendered as inert text');
+        equal(doc.getElementById('bhranti-confirm').textContent, label, action + ': approve explicitly identifies the requested operation');
+        equal(doc.getElementById('bhranti-cancel').textContent, 'Cancel', action + ': plugin changes use the requested Cancel label');
+        check(card.textContent.includes(pending.confirmation.summary), action + ': the full server explanation remains visible');
+        equal(doc.getElementById(card.getAttribute('aria-labelledby')).textContent, action[0].toUpperCase() + action.slice(1) + ' plugin', action + ': approval section has its action as an accessible name');
+        for (const id of ['bhranti-confirm', 'bhranti-cancel']) check(doc.getElementById(id).getAttribute('aria-describedby').split(' ').every((value) => doc.getElementById(value)), action + ': both decisions reference existing action, target and explanation elements');
+        const control = doc.getElementById(approved ? 'bhranti-confirm' : 'bhranti-cancel'); control.focus(); control.click();
+        await until(() => count(page, '/confirm', 'POST') === 1, page);
+        equal(JSON.stringify(page.requests[0].data), JSON.stringify({ confirmation_id: 'plugin-' + action, approved }), action + ': only the owned confirmation ID and decision are submitted');
+        held.resolve(completed); await until(() => idle(page), page); await page.advance(20);
+        equal(doc.querySelector('.bhranti-confirmation'), null, action + ': settled approval removes the pending box');
+        const group = doc.querySelector('.bhranti-tool-group');
+        check(group && !group.open, action + ': settled decision folds into the compact task chain');
+        equal(group.querySelector('summary').textContent, (approved ? 3 : 2) + ' task events', action + ': mixed history does not call a decision a completed mutation');
+        const records = [...group.querySelectorAll('.bhranti-tool-event')];
+        check(records[1].querySelector('.bhranti-tool-label').textContent.startsWith(approved ? 'Approved' : 'Cancelled'), action + ': the decision remains in its exact chronological position');
+        chooseDisclosure(page, group, true); chooseDisclosure(page, records[1], true);
+        check(records[1].textContent.includes(target.title) && records[1].textContent.includes(completed.events[1].summary), action + ': expanded decision retains action, outcome and the exact plugin name');
+        equal(records[1].querySelector('[role="img"]').getAttribute('aria-label'), approved ? 'Approved' : 'Cancelled', action + ': approval is never announced as successful installation');
+        equal(doc.getElementById('bhranti-composer').value, 'Preserve my next question', action + ': approval leaves the next draft intact');
+        equal(doc.activeElement.id, 'bhranti-composer', action + ': focus returns to the composer after its decision control disappears');
+        equal(page.requests.length, 1, action + ': opening the decision history cannot issue another request');
+      } finally { held.resolve(completed); await flush(); page.close(); }
+    }
+  }
+  for (const [status, label] of [['expired', 'Approval expired'], ['conflict', 'Approval invalidated']]) {
+    const current = session('cancelled'); current.events = [tool('earlier'), { id: status, type: 'confirmation', approved: false, status, action: 'delete', target: { type: 'plugin', title: 'Fixture Plugin' }, summary: 'No plugin change ran.', created: '2026-10-09T00:00:03Z', run_id: runId }];
+    const page = fixture({ session: current });
+    try {
+      const event = page.w.document.querySelector('.bhranti-tool-event.is-error');
+      check(event && event.open && !event.closest('.bhranti-tool-group'), status + ': unresolved approval issues remain visible outside completed task groups');
+      check(event.querySelector('.bhranti-tool-label').textContent.startsWith(label), status + ': the actual failure cannot be mislabeled as a human denial');
+    } finally { page.close(); }
+  }
+}
+
 async function testChatListRefreshOnOpen() {
   const workspace = { sessions: [{ id: 2429, title: 'New frontend conversation' }, { id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
   const held = deferred();
@@ -2030,6 +2088,7 @@ async function main() {
   await testTruthfulTaskDock();
   await testLiveRequestElapsed();
   await testExactApprovalControls();
+  await testPluginApprovalHistory();
   await testChatMenuJumpAndCopy();
   await testDirectChatNavigation();
   await testComposerKeyboardSubmit();

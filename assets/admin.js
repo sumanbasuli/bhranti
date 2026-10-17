@@ -889,10 +889,11 @@
 	}
 	async function confirmAction(approved) {
 		if (state.busy || !state.session || !state.session.confirmation) return;
+		const restoreFocus = ['bhranti-confirm', 'bhranti-cancel'].includes(document.activeElement && document.activeElement.id);
 		const id = state.session.id, confirmationId = state.session.confirmation.id, runId = currentRun() && currentRun().id, previousEvents = new Set((state.session.events || []).map((event) => String(event.id))); let completed = false; state.busy = true; render();
 		try { state.session = await runRequest('/sessions/' + encodeURIComponent(id) + '/confirm', { confirmation_id: confirmationId, approved }, approved ? __('Applying approved action…', 'bhranti') : __('Cancelling action…', 'bhranti')); completed = true; }
 		catch (error) { notify(errorMessage(error)); await reloadAfterError(); }
-		finally { state.busy = false; render(); }
+		finally { state.busy = false; render(); if (restoreFocus && state.open && !root.querySelector('#bhranti-confirmation') && document.activeElement === document.body) root.querySelector('#bhranti-composer').focus(); }
 		if (!completed || !approved || !revealNewTarget(previousEvents, runId)) continueRun();
 	}
 	async function rollback(actionId) {
@@ -1003,24 +1004,36 @@
 		plan.id = 'bhranti-work-plan';
 		return plan;
 	}
+	function pluginApprovalLabels(action) {
+		const labels = {
+			install: [__('Install plugin', 'bhranti'), __('Approve installation', 'bhranti')],
+			activate: [__('Activate plugin', 'bhranti'), __('Approve activation', 'bhranti')],
+			deactivate: [__('Deactivate plugin', 'bhranti'), __('Approve deactivation', 'bhranti')],
+			delete: [__('Delete plugin', 'bhranti'), __('Approve deletion', 'bhranti')],
+		};
+		return ['install', 'activate', 'deactivate', 'delete'].includes(action) ? labels[action] : null;
+	}
+	function approvalDecision(value) { return value.type === 'confirmation' && typeof value.approved === 'boolean'; }
 	function toolEvent(value) {
-		const failed = value.type === 'error' || value.success === false, success = value.type === 'action' && value.success === true;
+		const decision = approvalDecision(value), action = decision && value.target && value.target.type === 'plugin' && pluginApprovalLabels(value.action);
+		const failed = decision ? ['expired', 'conflict'].includes(value.status) : value.type === 'error' || value.success === false, success = value.type === 'action' && value.success === true;
+		const decisionLabel = decision ? (value.status === 'expired' ? __('Approval expired', 'bhranti') : value.status === 'conflict' ? __('Approval invalidated', 'bhranti') : value.approved ? __('Approved', 'bhranti') : action ? __('Cancelled', 'bhranti') : __('Denied', 'bhranti')) : '';
 		const types = { post: __('post', 'bhranti'), page: __('page', 'bhranti'), attachment: __('media', 'bhranti'), wp_template: __('template', 'bhranti'), wp_template_part: __('template part', 'bhranti'), plugin: __('plugin', 'bhranti') };
 		const type = value.target && types[value.target.type];
 		const labels = { image: __('Generated image', 'bhranti'), rollback: __('Restored changes', 'bhranti'), write: value.summary || __('WordPress action completed', 'bhranti'), read: type ? sprintf(__('Read %s', 'bhranti'), type) : value.summary || __('Read site information', 'bhranti') };
-		const name = failed ? 'error' : { image: 'image', rollback: 'rollback', write: 'write', read: type ? 'document' : 'search' }[value.operation] || 'context';
-		const title = element('span', 'bhranti-tool-title', element('span', 'bhranti-tool-label', failed ? __('Action issue', 'bhranti') : labels[value.operation] || value.summary || __('WordPress action', 'bhranti')), value.target && value.target.title ? element('span', 'bhranti-tool-target', value.target.title) : null);
-		const summary = element('summary', 'bhranti-tool-summary', element('span', 'bhranti-tool-icon', icon(name)), title, statusIcon(failed ? 'error' : success ? 'check' : 'clock', failed ? __('Failed', 'bhranti') : success ? __('Completed', 'bhranti') : __('Recorded', 'bhranti'), 'bhranti-tool-state'), element('span', 'bhranti-chevron', icon('chevron')));
+		const name = decision ? (action ? 'plugin' : 'check') : failed ? 'error' : { image: 'image', rollback: 'rollback', write: 'write', read: type ? 'document' : 'search' }[value.operation] || 'context';
+		const title = element('span', 'bhranti-tool-title', element('span', 'bhranti-tool-label', decision ? (action ? sprintf(__('%s · %s', 'bhranti'), decisionLabel, action[0]) : decisionLabel) : failed ? __('Action issue', 'bhranti') : labels[value.operation] || value.summary || __('WordPress action', 'bhranti')), value.target && value.target.title ? element('span', 'bhranti-tool-target', value.target.title) : null);
+		const summary = element('summary', 'bhranti-tool-summary', element('span', 'bhranti-tool-icon', icon(name)), title, statusIcon(failed ? 'error' : decision ? (value.approved ? 'check' : 'close') : success ? 'check' : 'clock', decision ? decisionLabel : failed ? __('Failed', 'bhranti') : success ? __('Completed', 'bhranti') : __('Recorded', 'bhranti'), 'bhranti-tool-state'), element('span', 'bhranti-chevron', icon('chevron')));
 		const key = 'event:' + (value.id || [value.run_id, value.created, value.summary].join(':')), date = element('time', 'bhranti-event-date', displayTime(value.created)); if (value.created) date.dateTime = value.created;
 		const link = targetLink(value.target); if (link) link.id = viewId(key + ':target');
-		const body = element('div', 'bhranti-tool-body', element('p', '', value.summary || ''), date, link);
+		const body = element('div', 'bhranti-tool-body', element('p', '', value.summary || ''), decision && value.target && value.target.title && !link ? element('p', '', value.target.title) : null, date, link);
 		if (value.rollback_available && value.action_id) { const undo = button(__('Roll back', 'bhranti'), 'bhranti-inline-button', () => rollback(value.action_id), viewId(key + ':rollback')); undo.disabled = state.busy || !!activeRun(); body.appendChild(undo); }
 		return disclosure(key, 'bhranti-tool-event ' + (failed ? 'is-error' : success ? 'is-success' : 'is-note'), summary, [body], failed);
 	}
 	function toolGroup(values) {
 		if (values.length === 1) return toolEvent(values[0]);
-		const run = currentRun(), open = run && run.status === 'running' && values[0].run_id === run.id;
-		return disclosure('group:' + (values[0].run_id || '') + ':' + values[0].id, 'bhranti-tool-group', element('summary', 'bhranti-tool-group-summary', icon('check'), element('span', '', sprintf(__('%d completed actions', 'bhranti'), values.length)), element('span', 'bhranti-chevron', icon('chevron'))), values.map(toolEvent), !!open);
+		const decisions = values.some(approvalDecision), run = currentRun(), open = !decisions && run && run.status === 'running' && values[0].run_id === run.id;
+		return disclosure('group:' + (values[0].run_id || '') + ':' + values[0].id, 'bhranti-tool-group', element('summary', 'bhranti-tool-group-summary', icon(decisions ? 'history' : 'check'), element('span', '', sprintf(decisions ? __('%d task events', 'bhranti') : __('%d completed actions', 'bhranti'), values.length)), element('span', 'bhranti-chevron', icon('chevron'))), values.map(toolEvent), !!open);
 	}
 	function recoveryCard(title, text, label, action) {
 		const card = element('section', 'bhranti-recovery-card', element('h3', '', title), element('p', '', text)); card.setAttribute('role', 'status');
@@ -1041,7 +1054,7 @@
 			const flushActions = () => { if (actions.length) stream.appendChild(toolGroup(actions)); actions = []; };
 			timeline.forEach(({ kind, value }) => {
 				if (kind === 'event') {
-					if (value.type === 'action' && value.success === true) { if (actions.length && actions[0].run_id !== value.run_id) flushActions(); actions.push(value); }
+					if (value.type === 'action' && value.success === true || approvalDecision(value) && !['expired', 'conflict'].includes(value.status)) { if (actions.length && actions[0].run_id !== value.run_id) flushActions(); actions.push(value); }
 					else { flushActions(); stream.appendChild(toolEvent(value)); } return;
 				}
 				flushActions();
@@ -1071,9 +1084,15 @@
 		const status = !activeRun() && runStatus(); if (status) stream.appendChild(status);
 		const confirmation = state.session && state.session.confirmation;
 		if (confirmation) {
-			const card = element('section', 'bhranti-confirmation', element('h3', '', __('Approval required', 'bhranti')), element('p', '', confirmation.summary || ''), targetLink(confirmation.target));
-			card.id = 'bhranti-confirmation';
-			const yes = button(__('Approve', 'bhranti'), 'bhranti-small-button is-primary', () => confirmAction(true), 'bhranti-confirm'), no = button(__('Deny', 'bhranti'), 'bhranti-small-button', () => confirmAction(false), 'bhranti-cancel'); yes.disabled = no.disabled = state.busy;
+			const action = confirmation.target && confirmation.target.type === 'plugin' && pluginApprovalLabels(confirmation.action);
+			const heading = element('h3', '', icon(action ? 'plugin' : 'clock'), action ? action[0] : __('Approval required', 'bhranti')); heading.id = 'bhranti-confirmation-title';
+			const target = confirmation.target && confirmation.target.title ? element('p', 'bhranti-confirmation-target', targetLink(confirmation.target) || confirmation.target.title) : null;
+			if (target) target.id = 'bhranti-confirmation-target';
+			const description = element('p', 'bhranti-confirmation-description', confirmation.summary || ''); description.id = 'bhranti-confirmation-description';
+			const card = element('section', 'bhranti-confirmation', heading, target, description);
+			card.id = 'bhranti-confirmation'; card.setAttribute('aria-labelledby', heading.id);
+			const yes = button(action ? action[1] : __('Approve', 'bhranti'), 'bhranti-small-button is-primary', () => confirmAction(true), 'bhranti-confirm'), no = button(action ? __('Cancel', 'bhranti') : __('Deny', 'bhranti'), 'bhranti-small-button', () => confirmAction(false), 'bhranti-cancel'); yes.disabled = no.disabled = state.busy;
+			[yes, no].forEach((control) => control.setAttribute('aria-describedby', [heading.id, target && target.id, description.id].filter(Boolean).join(' ')));
 			card.appendChild(element('div', 'bhranti-confirmation-actions', yes, no)); stream.appendChild(card);
 		}
 		if ((state.loading || state.busy) && !activeRun()) { const status = element('div', 'bhranti-progress', state.loading ? __('Loading…', 'bhranti') : __('Working…', 'bhranti')); status.setAttribute('role', 'status'); stream.appendChild(status); }

@@ -1,25 +1,33 @@
 ---
 title: "Approvals and Undo"
-description: "Review destructive actions and restore supported changes with Roll back."
+description: "Approve individual plugin changes and deletions, and restore supported changes with Roll back."
 order: 6
 group: "Control the work"
 ---
 
-Your saved action switches and WordPress permissions determine what Bhranti can change. Approval cards let you review deletions, and Roll back can restore supported changes.
+Your saved action switches and WordPress permissions determine what Bhranti can change. Approval cards let you review each plugin change and supported deletion. Roll back can restore supported changes.
 
 For the exact meaning of every switch, see [Settings and permissions](/docs/settings/).
 
-## Review a Trash approval
+## Review an approval
 
-1. Ask for the specific item to be moved to Trash.
+1. Ask for the specific plugin change or item to be moved to Trash.
 2. Wait for the **Approval required** card in the conversation.
 3. Read the action summary and check the named item. Open the item link if you need to inspect it.
-4. Select **Approve** to allow that action, or **Deny** to decline it.
-5. Read the resulting action status.
+4. Select **Approve** only if you want the listed changes. For a plugin change, select **Cancel** to stop.
+5. Read the resulting action status. Declining approval stops the current task; earlier saved changes remain.
+
+After a decision, the card folds into the task’s chronological action history. Expand the entry to review it later.
 
 A typed “yes,” “approve,” or “go ahead” is not a replacement for this card. The approval applies only to your request and that item as you reviewed it. It expires after **ten minutes** and can be used only once. If it expires or the item changes, request a fresh review and approval.
 
-Bhranti cannot approve a deletion for you while running in the background. Permanent content deletion is blocked.
+Background work pauses for your approval before any plugin change or supported deletion. Permanent content deletion is blocked.
+
+## Approve plugin changes
+
+Each plugin installation or later status change or uninstall needs an approval card, even when its switches are enabled. An installation card can list **install and activate** together: one approval performs both, with no second prompt. If activation is not listed, the current WordPress.org directory package installs inactive. Later activation or deactivation needs a new card.
+
+Approved plugin operations run directly as your signed-in WordPress account. Plugin status Roll back also runs as your account after its explicit confirmation. Logs retain the actual acting user.
 
 ## Understand plugin deletion
 
@@ -50,6 +58,7 @@ Rolling back newly created content may move it to Trash. Rolling back an update 
 | Supported page or post edit | Restore the earlier content while the saved copy is available, provided nobody has edited it since. |
 | Image added to a page | Restoring the page does not delete the generated image from Media Library. |
 | Plugin activation or deactivation | Restore the plugin’s earlier active/inactive status. Other effects of activation or deactivation may remain. |
+| Plugin installation | Has no automatic removal Undo. |
 | Permanent plugin uninstall | Cannot be rolled back. Reinstallation does not recover removed data. |
 | New Contact Form 7 form | Cannot automatically delete the new form. You can separately roll back the page change that added it. |
 | Emails, webhooks or other third-party side effects | Are not necessarily reversed when the site content is restored. |

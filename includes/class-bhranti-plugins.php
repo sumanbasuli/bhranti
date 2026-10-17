@@ -26,7 +26,7 @@ final class Bhranti_Plugins {
 		}
 		$catalog = array(
 			'plugin_request' => array(
-				'description' => 'Manage plugins through native WordPress core REST routes. GET /wp/v2/plugins lists installed plugins; GET /wp/v2/plugins/<plugin> reads one, using the returned plugin identifier without .php. POST /wp/v2/plugins with {"slug":"wordpress-org-directory-slug","status":"inactive"} installs the current directory package without activation. Installation has no automatic file/data undo. Reinstalling a deleted directory plugin installs its current directory version inactive; it does not restore removed data, previous versions or configuration. POST an item with {"status":"active"} or {"status":"inactive"} changes its activation state; rollback restores that state only, not lifecycle-hook side effects. DELETE, when explicitly enabled, permanently removes an inactive plugin after human confirmation and has no data rollback. No uploads, package URLs, updates, network plugin changes, or changes to Bhranti/native AI dependencies. Read first and never silently retry an uncertain install, activation or deletion.',
+				'description' => 'Manage plugins through native WordPress core REST routes. GET /wp/v2/plugins lists installed plugins; GET /wp/v2/plugins/<plugin> reads one, using the returned plugin identifier without .php. POST /wp/v2/plugins with {"slug":"wordpress-org-directory-slug","status":"active"} proposes installing and activating the current directory package in one explicitly approved native action. Use status inactive when activation is not requested. Installation has no automatic file/data undo. Reinstalling a deleted directory plugin installs its current directory version inactive; it does not restore removed data, previous versions or configuration. POST an item with {"status":"active"} or {"status":"inactive"} changes its activation state; rollback restores that state only, not lifecycle-hook side effects. DELETE, when explicitly enabled, permanently removes an inactive plugin after human confirmation and has no data rollback. No uploads, package URLs, updates, network plugin changes, or changes to Bhranti/native AI dependencies. Every installation, activation, deactivation and deletion pauses for the authenticated user to review its exact approval card. The installation card must state whether activation is included; that one human approval covers only the displayed installation and status. Settings switches and text requests never replace that button. Read first and never silently retry an uncertain install, activation or deletion.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -225,7 +225,7 @@ final class Bhranti_Plugins {
 		$details = array(
 			'method'      => $method,
 			'path'        => $path,
-			'target_id'   => $review['plugin'],
+			'target_id'   => $review['create'] ? $review['command']['args']['params']['slug'] : $review['plugin'],
 			'target_type' => 'plugin',
 		);
 		$before  = self::state( $review );
@@ -237,26 +237,38 @@ final class Bhranti_Plugins {
 		if ( $expected_fingerprint && ! hash_equals( $expected_fingerprint, $fingerprint ) ) {
 			return self::error( 'bhranti_plugin_conflict', __( 'The plugin changed after the action was reviewed.', 'bhranti' ), 409 );
 		}
-		if ( 'DELETE' === $method && ! $confirmed ) {
-			$summary = __( 'Permanently delete this inactive plugin? WordPress will run its uninstall hooks. Plugin files and data cannot be restored by Bhranti.', 'bhranti' );
-			$logged  = self::audit( 'plugin_confirmation_required', $summary, $session_id, $details, $requester_id, $actor_id );
+		$action = $review['create'] ? 'install' : ( 'DELETE' === $method ? 'delete' : ( 'active' === ( $review['command']['args']['params']['status'] ?? '' ) ? 'activate' : 'deactivate' ) );
+		if ( $review['create'] ) {
+			$target = self::target( $review['command']['args']['params']['slug'], $review['command']['args']['params']['slug'] );
+		}
+		if ( 'GET' !== $method && ! $confirmed ) {
+			$summaries = array(
+				'install'    => __( 'Install the current WordPress.org package for this plugin? It will stay inactive. Activation needs a separate approval. Installation has no automatic file or data rollback.', 'bhranti' ),
+				'activate'   => __( 'Activate this plugin? WordPress will run its activation hooks. Undo restores its previous status, but cannot reverse every plugin side effect.', 'bhranti' ),
+				'deactivate' => __( 'Deactivate this plugin? Features that depend on it may stop working. Undo restores its previous status, but cannot reverse every plugin side effect.', 'bhranti' ),
+				'delete'     => __( 'Permanently delete this inactive plugin? WordPress will run its uninstall hooks. Plugin files and data cannot be restored by Bhranti.', 'bhranti' ),
+			);
+			$summary   = $review['create'] && 'active' === $review['command']['args']['params']['status'] ? __( 'Install and activate the current WordPress.org package for this plugin? Your approval covers both changes. Installation has no automatic file or data rollback; plugin hooks may have lasting effects.', 'bhranti' ) : $summaries[ $action ];
+			$logged    = self::audit( 'plugin_confirmation_required', $summary, $session_id, $details, $requester_id, $actor_id );
 			if ( is_wp_error( $logged ) ) {
 				return $logged;
 			}
 			return array(
 				'confirmation_required' => true,
+				'action'                => $action,
 				'command'               => $review['command'],
 				'summary'               => $summary,
 				'target'                => $target,
 				'fingerprint'           => $fingerprint,
 			);
 		}
-		if ( 'DELETE' === $method && ( ! $expected_fingerprint || ! $confirmed ) ) {
-			return self::error( 'bhranti_plugin_confirmation', __( 'Plugin deletion requires a current server-owned confirmation.', 'bhranti' ), 403 );
+		if ( 'GET' !== $method && ( ! $expected_fingerprint || ! $confirmed || ! Bhranti_Agent::consume_plugin_approval( $review['command'], $requester_id, $session_id, $expected_fingerprint ) ) ) {
+			return self::error( 'bhranti_plugin_confirmation', __( 'This plugin action requires its current approval button.', 'bhranti' ), 403 );
 		}
+		$executing_id         = 'GET' === $method ? $actor_id : $requester_id;
 		$action_id            = 'GET' === $method ? '' : 'plugin_' . wp_generate_uuid4();
 		$details['action_id'] = $action_id;
-		$logged               = self::audit( 'plugin_started', __( 'A reviewed native WordPress plugin request started.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+		$logged               = self::audit( 'plugin_started', __( 'A reviewed native WordPress plugin request started.', 'bhranti' ), $session_id, $details, $requester_id, $executing_id );
 		if ( is_wp_error( $logged ) ) {
 			return $logged;
 		}
@@ -264,7 +276,7 @@ final class Bhranti_Plugins {
 			$snapshot = array(
 				'id'                => $action_id,
 				'requester_id'      => (int) $requester_id,
-				'actor_id'          => (int) $actor_id,
+				'actor_id'          => (int) $executing_id,
 				'session_id'        => (int) $session_id,
 				'created'           => time(),
 				'expires'           => time() + 7 * DAY_IN_SECONDS,
@@ -287,25 +299,26 @@ final class Bhranti_Plugins {
 				$snapshot['state'] = 'blocked';
 				self::save_snapshot( $session_id, $snapshot );
 			}
-			self::audit( 'plugin_blocked', __( 'The plugin or its permissions changed before the request could run.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+			self::audit( 'plugin_blocked', __( 'The plugin or its permissions changed before the request could run.', 'bhranti' ), $session_id, $details, $requester_id, $executing_id );
 			return is_wp_error( $fresh ) ? $fresh : self::error( 'bhranti_plugin_conflict', __( 'The plugin changed before the request could run. Review it again.', 'bhranti' ), 409 );
 		}
-		$data = self::dispatch( $fresh, $actor_id );
+		$data = self::dispatch( $fresh, $actor_id, $requester_id );
 		if ( is_wp_error( $data ) ) {
 			if ( isset( $snapshot ) ) {
 				$snapshot['state'] = 'failed';
 				self::save_snapshot( $session_id, $snapshot );
 			}
-			self::audit( 'plugin_failed', __( 'The native plugin request failed or may be incomplete. Review WordPress Plugins before retrying.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $actor_id );
+			self::audit( 'plugin_failed', __( 'The native plugin request failed or may be incomplete. Review WordPress Plugins before retrying.', 'bhranti' ), $session_id, $details + array( 'code' => $data->get_error_code() ), $requester_id, $executing_id );
 			return $data;
 		}
 		$rollback = false;
 		if ( isset( $snapshot ) ) {
-			$plugin             = $review['create'] ? ( $data['plugin'] ?? '' ) : $review['plugin'];
-			$snapshot['target'] = self::target( $plugin, $data['name'] ?? ( $before['name'] ?? '' ) );
-			$snapshot['plugin'] = $plugin;
-			$snapshot['state']  = 'completed';
-			$verify_error       = false;
+			$plugin               = $review['create'] ? ( $data['plugin'] ?? '' ) : $review['plugin'];
+			$details['target_id'] = $plugin;
+			$snapshot['target']   = self::target( $plugin, $data['name'] ?? ( $before['name'] ?? '' ) );
+			$snapshot['plugin']   = $plugin;
+			$snapshot['state']    = 'completed';
+			$verify_error         = false;
 			if ( 'delete' === $snapshot['kind'] ) {
 				wp_clean_plugins_cache( false );
 				if ( empty( $data['deleted'] ) || file_exists( WP_PLUGIN_DIR . '/' . $plugin . '.php' ) || isset( get_plugins()[ $plugin . '.php' ] ) ) {
@@ -332,7 +345,7 @@ final class Bhranti_Plugins {
 			if ( $verify_error ) {
 				$snapshot['state'] = 'failed';
 				self::save_snapshot( $session_id, $snapshot );
-				self::audit( 'plugin_failed', __( 'WordPress did not confirm the requested plugin state. Review Plugins before retrying.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+				self::audit( 'plugin_failed', __( 'WordPress did not confirm the requested plugin state. Review Plugins before retrying.', 'bhranti' ), $session_id, $details, $requester_id, $executing_id );
 				return self::error( 'bhranti_plugin_state', __( 'WordPress did not confirm the requested plugin state. Review Plugins before retrying.', 'bhranti' ), 500 );
 			}
 			$snapshot['rollback_available'] = $rollback;
@@ -342,8 +355,8 @@ final class Bhranti_Plugins {
 			}
 			$target = $snapshot['target'];
 		}
-		$summary = 'GET' === $method ? __( 'Native WordPress plugin information retrieved.', 'bhranti' ) : ( $review['create'] ? __( 'Plugin installed inactive from WordPress.org. Activation is a separate action; installation has no automatic file or data rollback.', 'bhranti' ) : ( 'DELETE' === $method ? __( 'Plugin permanently deleted through WordPress. Its uninstall effects have no Bhranti rollback.', 'bhranti' ) : __( 'Plugin activation state changed. Rollback restores activation state only; lifecycle-hook effects are not restored.', 'bhranti' ) ) );
-		$logged  = self::audit( 'plugin_completed', $summary, $session_id, $details + array( 'status' => $data['status'] ?? '' ), $requester_id, $actor_id );
+		$summary = 'GET' === $method ? __( 'Native WordPress plugin information retrieved.', 'bhranti' ) : ( $review['create'] ? ( 'active' === $review['command']['args']['params']['status'] ? __( 'Plugin installed and activated from WordPress.org after your approval. Installation and plugin hook effects have no automatic file or data rollback.', 'bhranti' ) : __( 'Plugin installed inactive from WordPress.org after your approval. Installation has no automatic file or data rollback.', 'bhranti' ) ) : ( 'DELETE' === $method ? __( 'Plugin permanently deleted through WordPress. Its uninstall effects have no Bhranti rollback.', 'bhranti' ) : __( 'Plugin activation state changed. Rollback restores activation state only; lifecycle-hook effects are not restored.', 'bhranti' ) ) );
+		$logged  = self::audit( 'plugin_completed', $summary, $session_id, $details + array( 'status' => $data['status'] ?? '' ), $requester_id, $executing_id );
 		if ( is_wp_error( $logged ) ) {
 			return self::error( 'bhranti_plugin_audit', __( 'The plugin request ran, but its completion log could not be saved. Review WordPress Plugins before retrying.', 'bhranti' ), 500 );
 		}
@@ -368,6 +381,9 @@ final class Bhranti_Plugins {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
+		}
+		if ( Bhranti_Runner::is_background() ) {
+			return self::error( 'bhranti_plugin_confirmation', __( 'Plugin Undo requires the signed-in user.', 'bhranti' ), 403 );
 		}
 		$actor_id = Bhranti_Actions::ensure_actor();
 		if ( is_wp_error( $actor_id ) ) {
@@ -407,7 +423,7 @@ final class Bhranti_Plugins {
 				'target_id'   => $snapshot['plugin'],
 				'target_type' => 'plugin',
 			);
-			$logged  = self::audit( 'plugin_rollback_started', __( 'Plugin activation state rollback started.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+			$logged  = self::audit( 'plugin_rollback_started', __( 'Plugin activation state rollback started.', 'bhranti' ), $session_id, $details, $requester_id, $requester_id );
 			if ( is_wp_error( $logged ) ) {
 				return $logged;
 			}
@@ -421,13 +437,13 @@ final class Bhranti_Plugins {
 			if ( is_wp_error( $fresh ) || is_wp_error( $current ) || self::fingerprint( $current ) !== $snapshot['after_fingerprint'] || ! self::owns_lock( $lock ) ) {
 				$snapshot['state'] = 'completed';
 				self::save_snapshot( $session_id, $snapshot );
-				self::audit( 'plugin_rollback_blocked', __( 'The plugin changed before rollback could run.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+				self::audit( 'plugin_rollback_blocked', __( 'The plugin changed before rollback could run.', 'bhranti' ), $session_id, $details, $requester_id, $requester_id );
 				return is_wp_error( $fresh ) ? $fresh : self::error( 'bhranti_plugin_conflict', __( 'The plugin changed before rollback could run.', 'bhranti' ), 409 );
 			}
-			$data     = self::dispatch( $fresh, $actor_id );
+			$data     = self::dispatch( $fresh, $actor_id, $requester_id );
 			$restored = is_wp_error( $data ) ? $data : self::state( $review );
 			if ( is_wp_error( $data ) || is_wp_error( $restored ) || ( $data['status'] ?? '' ) !== $snapshot['before_status'] || ( $restored['status'] ?? '' ) !== $snapshot['before_status'] ) {
-				self::audit( 'plugin_rollback_failed', __( 'Plugin state rollback failed or may be incomplete. Review Plugins before retrying.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
+				self::audit( 'plugin_rollback_failed', __( 'Plugin state rollback failed or may be incomplete. Review Plugins before retrying.', 'bhranti' ), $session_id, $details, $requester_id, $requester_id );
 				return is_wp_error( $data ) ? $data : self::error( 'bhranti_plugin_state', __( 'WordPress did not confirm the previous plugin state.', 'bhranti' ), 500 );
 			}
 			$snapshot['state']              = 'rolled_back';
@@ -437,7 +453,7 @@ final class Bhranti_Plugins {
 				return $saved;
 			}
 			$summary = __( 'Previous plugin activation state restored. Lifecycle-hook effects are not restored.', 'bhranti' );
-			$logged  = self::audit( 'plugin_rollback_completed', $summary, $session_id, $details, $requester_id, $actor_id );
+			$logged  = self::audit( 'plugin_rollback_completed', $summary, $session_id, $details, $requester_id, $requester_id );
 			if ( is_wp_error( $logged ) ) {
 				return self::error( 'bhranti_plugin_audit', __( 'Plugin state was restored, but its completion log could not be saved.', 'bhranti' ), 500 );
 			}
@@ -515,10 +531,22 @@ final class Bhranti_Plugins {
 			return self::error( 'bhranti_plugin_blocked', __( 'Only the reviewed native plugin parameters are allowed.', 'bhranti' ), 403 );
 		}
 		if ( $create ) {
-			if ( ! is_string( $params['slug'] ?? null ) || ! preg_match( '/\A[a-z0-9][a-z0-9-]{0,99}\z/', $params['slug'] ) || ( isset( $params['status'] ) && 'inactive' !== $params['status'] ) ) {
-				return self::error( 'bhranti_plugin_invalid', __( 'Install one WordPress.org directory slug inactive. Activation is a separate action.', 'bhranti' ) );
+			if ( ! is_string( $params['slug'] ?? null ) || ! preg_match( '/\A[a-z0-9][a-z0-9-]{0,99}\z/', $params['slug'] ) || ( isset( $params['status'] ) && ! in_array( $params['status'], array( 'active', 'inactive' ), true ) ) ) {
+				return self::error( 'bhranti_plugin_invalid', __( 'Install one WordPress.org directory slug with an explicit active or inactive status.', 'bhranti' ) );
 			}
-			$params['status'] = 'inactive';
+			$params['status'] = $params['status'] ?? 'inactive';
+			if ( 'active' === $params['status'] ) {
+				$activation_allowed = Bhranti_Settings::allows( 'plugins_activate' );
+				if ( is_wp_error( $activation_allowed ) ) {
+					return $activation_allowed;
+				}
+				if ( true !== $activation_allowed ) {
+					return self::error( 'bhranti_plugin_disabled', __( 'Installing and activating together requires both plugin action switches.', 'bhranti' ), 403 );
+				}
+				if ( ! user_can( $requester_id, 'activate_plugins' ) ) {
+					return self::error( 'bhranti_plugin_permission', __( 'Your account must be allowed to activate plugins for this installation.', 'bhranti' ), 403 );
+				}
+			}
 		} elseif ( 'POST' === $method && ( ! isset( $params['status'] ) || ! in_array( $params['status'], array( 'active', 'inactive' ), true ) ) ) {
 			return self::error( 'bhranti_plugin_invalid', __( 'Choose the native active or inactive plugin status.', 'bhranti' ) );
 		}
@@ -556,7 +584,7 @@ final class Bhranti_Plugins {
 		if ( is_wp_error( $valid ) ) {
 			return self::error( 'bhranti_plugin_invalid', __( 'WordPress rejected the native plugin route arguments.', 'bhranti' ) );
 		}
-		$caps       = $create ? array( 'install_plugins' ) : ( 'DELETE' === $method ? array( 'activate_plugins', 'delete_plugins' ) : array( 'activate_plugins' ) );
+		$caps       = $create ? ( 'active' === $params['status'] ? array( 'install_plugins', 'activate_plugins' ) : array( 'install_plugins' ) ) : ( 'DELETE' === $method ? array( 'activate_plugins', 'delete_plugins' ) : array( 'activate_plugins' ) );
 		$permission = self::permission( $request, $matched['endpoint']['permission_callback'], $requester_id, $actor_id, $caps );
 		if ( is_wp_error( $permission ) ) {
 			return $permission;
@@ -667,10 +695,11 @@ final class Bhranti_Plugins {
 	 * Invoke core REST, enforcing directory package metadata only during installation.
 	 *
 	 * @param array $review Reviewed request.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Managed actor for reads.
+	 * @param int   $requester_id Approving user for native mutations.
 	 * @return array|WP_Error
 	 */
-	private static function dispatch( $review, $actor_id ) {
+	private static function dispatch( $review, $actor_id, $requester_id = 0 ) {
 		$slug           = $review['create'] ? $review['command']['args']['params']['slug'] : '';
 		$directory_only = static function ( $result, $action, $args ) use ( $slug ) {
 			if ( 'plugin_information' !== $action || is_wp_error( $result ) ) {
@@ -686,13 +715,21 @@ final class Bhranti_Plugins {
 			add_filter( 'plugins_api_result', $directory_only, PHP_INT_MAX, 3 );
 		}
 		try {
-			$response = self::as_actor(
-				$actor_id,
-				$review['caps'],
-				static function () use ( $review ) {
-					return rest_do_request( $review['request'] );
+			if ( 'GET' === $review['command']['args']['method'] ) {
+				$response = self::as_actor(
+					$actor_id,
+					$review['caps'],
+					static function () use ( $review ) {
+						return rest_do_request( $review['request'] );
+					}
+				);
+			} else {
+				if ( ! $requester_id || get_current_user_id() !== (int) $requester_id || Bhranti_Runner::is_background() ) {
+					return self::error( 'bhranti_plugin_confirmation', __( 'A native plugin change requires the signed-in user.', 'bhranti' ), 403 );
 				}
-			);
+				// The approval/Undo click performs core's action as the real user, without temporary capability grants.
+				$response = rest_do_request( $review['request'] );
+			}
 			if ( is_wp_error( $response ) ) {
 				return $response;
 			}
@@ -991,6 +1028,13 @@ final class Bhranti_Plugins {
 	 * @return int|WP_Error
 	 */
 	private static function audit( $type, $summary, $session_id, $details, $requester_id, $actor_id ) {
+		$run = get_post_meta( $session_id, 'bhranti_run', true );
+		if ( is_array( $run ) && (int) ( $run['requester_id'] ?? 0 ) === (int) $requester_id && ! empty( $run['id'] ) && 'running' === ( $run['status'] ?? '' ) ) {
+			$details += array(
+				'run_id' => $run['id'],
+				'step'   => (int) ( $run['step'] ?? 0 ),
+			);
+		}
 		return Bhranti_Audit::record( $type, $summary, $session_id, $details, $requester_id, $actor_id );
 	}
 

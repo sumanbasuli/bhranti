@@ -57,16 +57,18 @@ State whether visitors should see the store while you work and which products ma
 
 1. Name the plugin and why it is needed.
 2. Ask Bhranti to inspect installed plugins first.
-3. If installation is needed, ask for the specific WordPress.org plugin and say whether to activate it.
-4. Review the recorded installation and activation actions.
-5. Complete any account connections or other setup the plugin requires.
+3. Review the installation card for that specific WordPress.org plugin. Check whether it lists **install and activate** or installation only.
+4. Select **Approve** to perform exactly the listed changes, or **Cancel** to stop. Installation with activation uses one approval, with no second prompt. Installation alone leaves the current directory package inactive.
+5. Review the recorded results, then complete any account connections or other setup.
+
+Later activation or deactivation needs its own approval card. **Cancel stops the current task**. Resolved decisions fold into the task history in order and remain expandable. Approved plugin changes run as your signed-in WordPress account; Logs records the actual acting user.
 
 Bhranti supports plugin changes on single-site WordPress installations. **Install plugins** allows installation from WordPress.org; use WordPress directly for ZIP uploads and plugin updates. **Activate or deactivate plugins** controls activation changes separately. Bhranti cannot deactivate or delete itself or the AI plugins it depends on.
 
 ## Deactivate or delete a plugin
 
-Deactivation and deletion are different operations. Deactivation changes status; deletion permanently uninstalls an eligible inactive plugin.
+Deactivation and deletion are different operations, each requiring its own **Approve/Cancel** card. Deactivation changes status; deletion permanently uninstalls an eligible inactive plugin.
 
-**Delete plugins** is disabled by default. An administrator can enable it in **Bhranti → Settings**. Bhranti then asks you to approve each uninstall through an **Approve/Deny** card. Uninstalling can permanently remove plugin data; reinstalling does not recover it.
+**Delete plugins** is disabled by default. An administrator can enable it in **Bhranti → Settings**. Bhranti then asks you to approve each uninstall through an **Approve/Cancel** card. Uninstalling can permanently remove plugin data; reinstalling does not recover it.
 
-Rolling back activation restores the plugin’s active or inactive status. It does not reverse emails or other changes the plugin made while starting or stopping. See [Approvals and Undo](/docs/permissions-and-undo/) for restoration limits.
+Explicit plugin Roll back runs as your account and restores the plugin’s active or inactive status. It does not reverse emails or other changes the plugin made while starting or stopping. See [Approvals and Undo](/docs/permissions-and-undo/) for restoration limits.

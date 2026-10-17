@@ -27,7 +27,9 @@ An administrator who can create users must initialize Bhranti's dedicated accoun
 
 ## Your site, your controls
 
-Choose the actions Bhranti may take. Every supported deletion needs an approval button, and permanent plugin uninstall is disabled by default. Both your account and Bhranti's dedicated account must have permission for each action.
+Choose the actions Bhranti may take. Review an **Approve/Cancel** card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Supported deletion also needs approval. Cancelling stops the current task. Permanent plugin uninstall is disabled by default.
+
+Approved plugin changes and explicit plugin Undo run as your WordPress account. Other site actions use Bhranti's dedicated account and require both accounts' permissions. Logs identify the account that performed each action.
 
 Supported changes can be rolled back for seven days if no conflicting edits have happened. Some actions have no automatic Undo, including plugin installation/uninstall, generated media and newly created forms. Emails and other plugin side effects cannot always be reversed. Bhranti does not edit core, theme or plugin source code, or change accounts, roles or credentials.
 

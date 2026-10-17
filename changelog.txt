@@ -1,5 +1,9 @@
 === Bhranti release history ===
 
+= 0.6.9 =
+* Ask for Approve or Cancel before plugin changes; one installation approval can include activation.
+* Perform approved native plugin actions as the signed-in user and keep decisions in compact task history.
+
 = 0.6.8 =
 * Block recognizable credentials before chat storage, settings saves and native AI requests, with an editable warning.
 * Reject secrets in private memory, including older saved entries, and withhold sensitive tool text without repeating completed actions.

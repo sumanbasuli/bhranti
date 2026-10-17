@@ -53,7 +53,7 @@ Earlier records remain as they happened. A later recovery adds its own event; it
 
 ### See who requested and performed the work
 
-Under **People**, **Requested by** identifies the person who asked for the action. **Acting user** identifies the WordPress account that performed it. Bhranti uses a dedicated account for site changes. When you save settings yourself, your account can appear in both places.
+Under **People**, **Requested by** identifies the person who asked for the action. **Acting user** identifies the WordPress account that performed it. Approved plugin operations and explicit plugin Undo run as your account. Other site actions use Bhranti’s dedicated account. When you approve a plugin change or save settings yourself, your account can appear in both places.
 
 **Conversation activity** shows the related audit records. **Task activity** narrows them to a particular task when its ID is available. **View chat** reopens the messages only for your own conversations that still exist. Seeing another person's site activity does not give you access to their private chat.
 
