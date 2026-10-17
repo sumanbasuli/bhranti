@@ -1,0 +1,428 @@
+---
+import WordPressMark from './WordPressMark.astro';
+
+/* Bootstrap Icons, MIT. Copyright (c) 2019–2024 The Bootstrap Authors.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+const paths: Record<string, string> = {
+  sparkle: 'M7.657 6.247c.11-.33.576-.33.686 0l.645 1.937a2.89 2.89 0 0 0 1.829 1.828l1.936.645c.33.11.33.576 0 .686l-1.937.645a2.89 2.89 0 0 0-1.828 1.829l-.645 1.936a.361.361 0 0 1-.686 0l-.645-1.937a2.89 2.89 0 0 0-1.828-1.828l-1.937-.645a.361.361 0 0 1 0-.686l1.937-.645a2.89 2.89 0 0 0 1.828-1.828zM3.794 1.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387A1.73 1.73 0 0 0 4.593 5.69l-.387 1.162a.217.217 0 0 1-.412 0L3.407 5.69A1.73 1.73 0 0 0 2.31 4.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387A1.73 1.73 0 0 0 3.407 2.31zM10.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.16 1.16 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.16 1.16 0 0 0-.732-.732L9.1 2.137a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732z',
+  chat: 'M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4.414a1 1 0 0 0-.707.293L.854 15.146A.5.5 0 0 1 0 14.793zm3.5 1a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1zm0 2.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1zm0 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z',
+  plus: 'M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2',
+  settings: 'M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z',
+  document: 'M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0M9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1M4.5 9a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1zM4 10.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 1 0-1h4a.5.5 0 0 1 0 1z',
+  send: 'M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5',
+  check: 'M13.485 1.929a.75.75 0 0 1 .086 1.056l-7 8.25a.75.75 0 0 1-1.08.065l-4-3.5a.75.75 0 1 1 .988-1.13l3.426 3L12.43 2.015a.75.75 0 0 1 1.056-.086',
+  chevron: 'M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708',
+  close: 'M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z',
+};
+const icon = (name: string) => `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="${paths[name]}"/></svg>`;
+const id = `product-demo-${Math.random().toString(36).slice(2, 9)}`;
+const stages = [{ key: 'context', label: 'Context' }, { key: 'edit', label: 'Edit' }, { key: 'review', label: 'Review' }];
+---
+
+<bhranti-product-demo data-stage="edit" data-undone="false">
+  <figure class="pd-figure">
+    <div class="pd-controls">
+      <span class="pd-demo-label"><span class="pd-demo-mark" aria-hidden="true"></span> A small edit. The whole picture.</span>
+      <div class="pd-tabs" role="tablist" aria-label="Explore the example workflow">
+        {stages.map((stage, index) => (
+          <button type="button" role="tab" id={`${id}-${stage.key}-tab`} aria-controls={`${id}-${stage.key}`} aria-selected={stage.key === 'edit'} tabindex={stage.key === 'edit' ? 0 : -1} data-stage-button={stage.key}>
+            <span class="pd-tab-number" aria-hidden="true">0{index + 1}</span>{stage.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div class="pd-workspace">
+      <div class="pd-editor" aria-hidden="true">
+        <div class="pd-toolbar">
+          <div class="pd-toolbar-start">
+            <span class="pd-wordpress"><WordPressMark size={32} /></span>
+            <span class="pd-add pd-icon" set:html={icon('plus')}></span>
+            <svg class="pd-toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 6 6v3" /></svg>
+            <svg class="pd-toolbar-icon pd-list-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 12h12M4 18h8" /></svg>
+          </div>
+          <span class="pd-document-title">Home <span>· Draft</span></span>
+          <div class="pd-toolbar-end"><span class="pd-saved">Saved</span><span class="pd-publish">Publish</span><span class="pd-more">⋮</span></div>
+        </div>
+
+        <div class="pd-editor-canvas">
+          <div class="pd-page">
+            <div class="pd-site-header"><span class="pd-studio-logo">form<span>&</span>field<span class="pd-logo-period">.</span></span><span class="pd-site-nav">The studio <span>Our work</span> Visit us ↗</span></div>
+            <div class="pd-site-content">
+              <div class="pd-site-copy">
+                <div class="pd-site-eyebrow">INDEPENDENT CREATIVE STUDIO</div>
+                <div class="pd-site-heading">Good things<br />take <em>shape.</em></div>
+                <p class="pd-site-description">A space for curious minds,<br />considered design, and new beginnings.</p>
+                <div class="pd-selected-block">
+                  <span class="pd-block-tag">Paragraph</span>
+                  <span>Our doors open <strong class="pd-date-before">17 October.</strong><strong class="pd-date-after">24 October.</strong></span>
+                  <span class="pd-selection-handle"></span>
+                </div>
+                <div class="pd-site-link">Come say hello <span>↗</span></div>
+              </div>
+              <div class="pd-artwork">
+                <svg viewBox="0 0 230 310" fill="none" role="presentation">
+                  <path fill="#e5e0d1" d="M0 0h230v310H0z" />
+                  <path fill="#d6d1c3" d="M0 240h230v70H0z" />
+                  <ellipse cx="130" cy="266" rx="72" ry="13" fill="#b8b5a5" />
+                  <path d="M103 183c12-32 15-71 1-111M111 139c18-16 31-34 34-60M107 119C85 102 71 94 49 94" stroke="#555c3d" stroke-width="2" />
+                  <path d="M104 83C77 66 83 40 92 24c19 18 28 33 12 59Z" fill="#5b6545" />
+                  <path d="M135 104c-5-25 14-45 40-46-1 26-13 43-40 46Z" fill="#65704c" />
+                  <path d="M71 103C49 118 24 106 17 87c23-6 39-1 54 16Z" fill="#65704c" />
+                  <path d="M89 109c-18-5-24-22-21-39 20 8 29 20 21 39Z" fill="#7b825b" />
+                  <path d="M113 142c10-25 32-29 50-20-12 23-31 31-50 20Z" fill="#7b825b" />
+                  <path d="M82 171h63l-5 17c-2 7 1 14 9 23 14 17 12 43-3 54H80c-15-11-17-37-3-54 8-9 11-16 9-23l-4-17Z" fill="#a04f35" />
+                  <path d="M84 176h56l-4 14c-2 7 0 15 9 26 13 16 10 35-1 46H99c-9-18-10-36-3-53 6-15 3-23-12-33Z" fill="#b66647" />
+                  <ellipse cx="113" cy="172" rx="31" ry="5" fill="#7b3a29" />
+                  <ellipse cx="113" cy="171" rx="25" ry="2" fill="#512f26" />
+                  <path d="M110 173v-29" stroke="#555c3d" stroke-width="2" />
+                  <path d="M36 36v-8h8M194 274v8h-8" stroke="#9e9c8c" />
+                </svg>
+                <span class="pd-artwork-caption">Room to grow.</span>
+              </div>
+            </div>
+            <div class="pd-site-footer"><span>Thoughtfully made. Open to possibility.</span><span>01 — THE BEGINNING</span></div>
+          </div>
+          <div class="pd-change-note"><span class="pd-icon" set:html={icon('check')}></span><span class="pd-change-copy">Opening date updated</span><span class="pd-change-detail">The rest stays yours.</span></div>
+        </div>
+        <div class="pd-editor-footer"><span>Page <span>›</span> Group <span>›</span> Paragraph</span><span class="pd-editor-status">Draft saved</span></div>
+      </div>
+
+      <div class="pd-sidebar">
+        <div class="pd-panel-header">
+          <span class="pd-panel-brand"><span class="pd-icon pd-sparkle" set:html={icon('sparkle')}></span>Bhranti</span>
+          <div class="pd-header-glyphs" aria-hidden="true"><span class="pd-icon" set:html={icon('chat')}></span><span class="pd-icon" set:html={icon('plus')}></span><span class="pd-icon" set:html={icon('settings')}></span><span class="pd-icon pd-close" set:html={icon('close')}></span></div>
+        </div>
+        <div class="pd-conversation">
+          <div class="pd-thread-name">A new beginning</div>
+          <div class="pd-user-message"><span class="pd-message-label">You</span><p>Move our opening day to 24 October. Keep the tone and layout as they are.</p></div>
+
+          <section class="pd-stage" id={`${id}-context`} role="tabpanel" tabindex="0" aria-labelledby={`${id}-context-tab`} data-stage-panel="context" hidden>
+            <div class="pd-assistant-label"><span class="pd-icon" set:html={icon('sparkle')}></span>Bhranti</div>
+            <p>I found the opening date on your Home page. It’s in the introduction, just above “Come say hello”.</p>
+            <details class="pd-tool" open><summary><span class="pd-icon pd-check" set:html={icon('check')}></span><span>Read current page</span><span class="pd-icon pd-chevron" set:html={icon('chevron')}></span></summary><div class="pd-tool-body"><span class="pd-tool-target">Home · Paragraph block</span><p>“Our doors open 17 October.”</p></div></details>
+            <p class="pd-assistant-note">The page and selected block provide the context for this edit.</p>
+          </section>
+
+          <section class="pd-stage" id={`${id}-edit`} role="tabpanel" tabindex="0" aria-labelledby={`${id}-edit-tab`} data-stage-panel="edit">
+            <div class="pd-assistant-label"><span class="pd-icon" set:html={icon('sparkle')}></span>Bhranti</div>
+            <p>The opening date is now <strong>24 October</strong>. Your wording and layout are unchanged, and the page is saved as a draft.</p>
+            <details class="pd-tool" open><summary><span class="pd-icon pd-check" set:html={icon('check')}></span><span>Updated Home</span><span class="pd-tool-count">1 change</span><span class="pd-icon pd-chevron" set:html={icon('chevron')}></span></summary><div class="pd-tool-body"><span class="pd-tool-target">Opening date</span><div class="pd-diff"><span><span class="pd-diff-sign">−</span><del>17 October</del></span><span><span class="pd-diff-sign">+</span><ins>24 October</ins></span></div></div></details>
+            <div class="pd-complete"><span class="pd-icon" set:html={icon('check')}></span>Draft saved</div>
+          </section>
+
+          <section class="pd-stage" id={`${id}-review`} role="tabpanel" tabindex="0" aria-labelledby={`${id}-review-tab`} data-stage-panel="review" hidden>
+            <div class="pd-assistant-label"><span class="pd-icon" set:html={icon('sparkle')}></span>Bhranti</div>
+            <p>One paragraph updated on <strong>Home</strong>. The action record keeps the change and its outcome together.</p>
+            <details class="pd-tool" open><summary><span class="pd-icon pd-check" set:html={icon('check')}></span><span>Page updated</span><span class="pd-icon pd-chevron" set:html={icon('chevron')}></span></summary><div class="pd-tool-body"><span class="pd-tool-target">Home · Saved as draft</span><p class="pd-review-value">Opening day: 17 → 24 October</p><button class="pd-undo" type="button" data-undo>↶ Undo demo edit</button></div></details>
+            <p class="pd-assistant-note">Try Undo to restore the original date in this preview.</p>
+          </section>
+        </div>
+        <div class="pd-composer" aria-hidden="true">
+          <div class="pd-context-chips"><span><span class="pd-icon" set:html={icon('document')}></span>Home</span><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="m8 1 6 3v8l-6 3-6-3V4l6-3Zm0 6 6-3M8 7 2 4m6 3v8" /></svg>Paragraph</span></div>
+          <span class="pd-composer-placeholder">What would you like to do?</span>
+          <div class="pd-composer-bottom"><span class="pd-icon" set:html={icon('plus')}></span><span class="pd-send pd-icon" set:html={icon('send')}></span></div>
+        </div>
+        <span class="pd-composer-note">Preview only · Explore with the tabs above</span>
+      </div>
+    </div>
+
+    <span class="pd-sr-only" role="status" aria-live="polite" aria-atomic="true" data-announcement></span>
+    <figcaption class="pd-caption"><span><span class="pd-caption-mark" aria-hidden="true">↳</span> Illustrative interface <span class="pd-caption-dot">·</span> Fictional sample site</span><span class="pd-stage-caption">A focused change, in the editor you know.</span></figcaption>
+  </figure>
+</bhranti-product-demo>
+
+<script>
+  class BhrantiProductDemo extends HTMLElement {
+    connectedCallback() {
+      if (this.dataset.ready) return;
+      this.dataset.ready = 'true';
+      const tabs = [...this.querySelectorAll<HTMLButtonElement>('[data-stage-button]')];
+      const panels = [...this.querySelectorAll<HTMLElement>('[data-stage-panel]')];
+      const announcement = this.querySelector<HTMLElement>('[data-announcement]')!;
+      const caption = this.querySelector<HTMLElement>('.pd-stage-caption')!;
+      const captions: Record<string, string> = {
+        context: 'Your page. Your blocks. Shared context.',
+        edit: 'A focused change, in the editor you know.',
+        review: 'See what changed. Restore when needed.',
+      };
+      const selectStage = (stage: string) => {
+        this.dataset.stage = stage;
+        tabs.forEach((tab) => {
+          const selected = tab.dataset.stageButton === stage;
+          tab.setAttribute('aria-selected', String(selected));
+          tab.tabIndex = selected ? 0 : -1;
+        });
+        panels.forEach((panel) => { panel.hidden = panel.dataset.stagePanel !== stage; });
+        caption.textContent = captions[stage];
+        if (stage === 'edit') setUndone(false);
+      };
+      const undoButton = this.querySelector<HTMLButtonElement>('[data-undo]')!;
+      const setUndone = (undone: boolean) => {
+        this.dataset.undone = String(undone);
+        undoButton.textContent = undone ? '↻ Reapply demo edit' : '↶ Undo demo edit';
+        this.querySelector<HTMLElement>('.pd-review-value')!.textContent = undone ? 'Opening day restored to 17 October' : 'Opening day: 17 → 24 October';
+        this.querySelector<HTMLElement>('.pd-change-copy')!.textContent = undone ? 'Original date restored' : 'Opening date updated';
+      };
+      tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => selectStage(tab.dataset.stageButton!));
+        tab.addEventListener('keydown', (event) => {
+          let next = index;
+          if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+          else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+          else if (event.key === 'Home') next = 0;
+          else if (event.key === 'End') next = tabs.length - 1;
+          else return;
+          event.preventDefault();
+          selectStage(tabs[next].dataset.stageButton!);
+          tabs[next].focus();
+        });
+      });
+      undoButton.addEventListener('click', () => {
+        const undone = this.dataset.undone !== 'true';
+        setUndone(undone);
+        announcement.textContent = undone ? 'Demo edit undone. The sample opening date is 17 October.' : 'Demo edit reapplied. The sample opening date is 24 October.';
+      });
+    }
+  }
+  if (!customElements.get('bhranti-product-demo')) customElements.define('bhranti-product-demo', BhrantiProductDemo);
+</script>
+
+<style>
+  bhranti-product-demo { display: block; min-width: 0; color: #f0f0f1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; font-weight: 400; line-height: 1.6; text-align: left; }
+  .pd-figure, .pd-figure p { margin: 0; }
+  .pd-figure *, .pd-figure *::before, .pd-figure *::after { box-sizing: border-box; }
+  .pd-figure button { font: inherit; cursor: pointer; }
+  .pd-figure button:focus-visible, .pd-figure summary:focus-visible, .pd-stage:focus-visible { outline: 2px solid #72aee6; outline-offset: 4px; }
+  .pd-controls { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 20px; }
+  .pd-demo-label { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #b4b9be; }
+  .pd-demo-mark { width: 5px; height: 5px; background: #72aee6; box-shadow: 0 0 0 4px #72aee612; }
+  .pd-tabs { display: flex; gap: 5px; }
+  .pd-tabs button { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 40px; padding: 6px 14px; color: #b4b9be; background: transparent; border: 1px solid transparent; border-radius: 3px; transition: color 150ms, background 150ms, border-color 150ms; }
+  .pd-tabs button:hover { color: #f0f0f1; background: #ffffff08; }
+  .pd-tabs button[aria-selected='true'] { color: #f0f0f1; background: #2b2d2f; border-color: #45494d; border-bottom-color: #72aee6; }
+  .pd-tab-number { color: #8c8f94; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .pd-tabs button[aria-selected='true'] .pd-tab-number { color: #72aee6; }
+  .pd-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 350px; overflow: hidden; padding: 7px 0 7px 7px; border: 1px solid #45494d; border-radius: 14px 0 0 14px; background: #1e1e1e; box-shadow: 0 25px 70px #00000025; }
+  .pd-editor { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: 8px; background: #f0f0f1; color: #1e1e1e; }
+  .pd-toolbar { min-height: 59px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-right: 15px; background: white; border-bottom: 1px solid #dddddf; }
+  .pd-toolbar-start, .pd-toolbar-end { display: flex; align-items: center; gap: 15px; }
+  .pd-wordpress { display: grid; place-items: center; flex-shrink: 0; height: 59px; width: 56px; color: #fff; background: #1e1e1e; }
+  .pd-wordpress :global(svg) { display: block; width: 32px; height: 32px; }
+  .pd-add { display: grid; place-items: center; width: 25px; height: 25px; background: #3858e9; color: white; border-radius: 2px; }
+  .pd-toolbar-icon { height: 20px; width: 20px; }
+  .pd-document-title { font-size: 11px; white-space: nowrap; }
+  .pd-document-title span { color: #757575; }
+  .pd-saved { color: #757575; font-size: 10px; }
+  .pd-publish { background: #3858e9; border-radius: 2px; padding: 6px 12px; color: white; font-size: 10px; }
+  .pd-more { font-size: 24px; line-height: 1; }
+  .pd-editor-canvas { position: relative; display: flex; flex: 1; flex-direction: column; justify-content: center; padding: 27px 25px 35px; }
+  .pd-page { position: relative; container-type: inline-size; min-width: 0; background: #f5f3eb; border: 1px solid #e2e0d9; box-shadow: 0 2px 4px #1e1e1e03; }
+  .pd-site-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 30px; padding: 23px 0 19px; border-bottom: 1px solid #d8d7cc; }
+  .pd-studio-logo { font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 700; letter-spacing: -1.5px; white-space: nowrap; }
+  .pd-studio-logo > span { font-size: 16px; font-style: italic; font-weight: normal; padding: 0 2px; }
+  .pd-studio-logo .pd-logo-period { color: #a04f35; font-size: 25px; padding: 0; }
+  .pd-site-nav { display: flex; gap: 20px; font-size: 8px; white-space: nowrap; }
+  .pd-site-content { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; padding: 33px 30px 32px; align-items: center; }
+  .pd-site-eyebrow { font-size: 7px; font-weight: 600; letter-spacing: 1.4px; color: #6c6e5d; margin-bottom: 19px; }
+  .pd-site-heading { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(30px, 7.5cqw, 59px); letter-spacing: -.065em; line-height: .99; font-weight: 400; white-space: nowrap; }
+  .pd-site-heading em { color: #68704c; font-weight: 400; }
+  .pd-site-description { padding-top: 21px; font-size: 9px; line-height: 1.8; color: #68695d; }
+  .pd-selected-block { position: relative; margin: 21px -8px 0; padding: 11px 8px; outline: 1.5px solid #3858e9; font-size: 9px; white-space: nowrap; }
+  .pd-selected-block strong { font-weight: 500; }
+  .pd-block-tag { position: absolute; left: -1px; top: -15px; padding: 1px 5px; background: #3858e9; color: #fff; font-size: 7px; line-height: 14px; }
+  .pd-selection-handle { position: absolute; right: -4px; bottom: -4px; width: 7px; height: 7px; background: white; border: 1.5px solid #3858e9; }
+  .pd-date-after { background: #d8e2c7; padding: 3px 2px; }
+  .pd-date-before { display: none; }
+  .pd-site-link { display: flex; align-items: center; gap: 26px; margin-top: 16px; font-size: 9px; font-weight: 500; }
+  .pd-site-link span { font-size: 16px; }
+  .pd-artwork { position: relative; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding-top: 3px; }
+  .pd-artwork > svg { width: 100%; height: auto; display: block; }
+  .pd-artwork-caption { position: absolute; right: 9px; bottom: 10px; font: italic 14px Georgia, serif; color: #555844; }
+  .pd-site-footer { display: flex; justify-content: space-between; gap: 12px; margin: 0 30px; padding: 16px 0; border-top: 1px solid #d8d7cc; font-size: 6.5px; letter-spacing: .2px; color: #6c6e5d; }
+  .pd-site-footer > span:last-child { letter-spacing: 1px; }
+  .pd-change-note { align-self: center; display: flex; align-items: center; gap: 8px; padding: 8px 13px; margin-top: 17px; background: #fff; color: #353e37; border: 1px solid #dadeda; border-radius: 4px; box-shadow: 0 2px 4px #1e1e1e04; font-size: 10px; }
+  .pd-change-note .pd-icon { color: #16843c; width: 12px; height: 12px; }
+  .pd-change-detail { color: #757575; margin-left: 3px; }
+  .pd-editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 30px; padding: 0 13px; border-top: 1px solid #ddd; font-size: 9px; color: #6e6e73; background: white; }
+  .pd-editor-footer > span:first-child { display: flex; gap: 9px; }
+  .pd-editor-footer > span:first-child > span { color: #a7aaad; }
+  .pd-sidebar { display: flex; flex-direction: column; min-width: 0; background: #1e1e1e; }
+  .pd-panel-header { display: flex; align-items: center; justify-content: space-between; min-height: 53px; padding: 9px 19px; }
+  .pd-panel-brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; letter-spacing: 0; }
+  .pd-header-glyphs { display: flex; align-items: center; gap: 19px; color: #b4b9be; }
+  .pd-icon { display: inline-flex; flex-shrink: 0; height: 16px; width: 16px; }
+  .pd-icon :global(svg) { display: block; width: 100%; height: 100%; }
+  .pd-panel-brand .pd-sparkle { height: 19px; width: 19px; }
+  .pd-header-glyphs .pd-icon { width: 14px; height: 14px; }
+  .pd-header-glyphs .pd-close { width: 12px; height: 12px; margin-left: 1px; }
+  .pd-conversation { flex: 1; padding: 0 21px 22px; }
+  .pd-thread-name { padding: 3px 0 16px; color: #8c8f94; font-size: 10px; }
+  .pd-user-message { margin-left: 19px; }
+  .pd-message-label { display: block; text-align: right; margin-bottom: 6px; color: #a7aaad; font-size: 10px; }
+  .pd-user-message p { padding: 12px 16px; border-radius: 20px 20px 5px 20px; background: #2f2f2f; font-size: 12px; line-height: 1.7; color: #f0f0f1; }
+  .pd-stage { margin-top: 24px; font-size: 12px; line-height: 1.8; }
+  .pd-stage[hidden] { display: none; }
+  .pd-assistant-label { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 10px; color: #a7aaad; }
+  .pd-assistant-label .pd-icon { width: 14px; height: 14px; }
+  .pd-stage strong { font-weight: 550; color: #f0f0f1; }
+  .pd-stage .pd-assistant-note { margin-top: 12px; color: #a7aaad; font-size: 11px; }
+  .pd-tool { margin-top: 18px; color: #c3c4c7; font-size: 11px; }
+  .pd-tool summary { display: flex; align-items: center; gap: 8px; min-height: 36px; margin: 0 -5px; padding: 4px 5px; border-radius: 4px; cursor: pointer; list-style: none; }
+  .pd-tool summary::-webkit-details-marker { display: none; }
+  .pd-tool summary:hover { background: #292929; }
+  .pd-tool .pd-check { color: #6fbd83; width: 14px; height: 14px; }
+  .pd-tool .pd-chevron { width: 10px; height: 10px; margin-left: auto; color: #8c8f94; }
+  .pd-tool[open] .pd-chevron { transform: rotate(90deg); }
+  .pd-tool-count { margin-left: auto; font-size: 10px; color: #a7aaad; }
+  .pd-tool-count + .pd-chevron { margin-left: 3px; }
+  .pd-tool-body { padding: 4px 0 5px 20px; border-left: 1px solid #45494d; margin-left: 7px; }
+  .pd-tool-target { display: block; color: #8c8f94; font-size: 10px; margin-bottom: 5px; }
+  .pd-diff { display: grid; gap: 2px; font-size: 11px; }
+  .pd-diff > span { display: flex; align-items: center; gap: 10px; }
+  .pd-diff > span:first-child { color: #a7aaad; }
+  .pd-diff > span:last-child { color: #a1caa6; }
+  .pd-diff-sign { width: 8px; text-align: center; }
+  .pd-diff ins { text-decoration: none; }
+  .pd-complete { display: flex; align-items: center; gap: 6px; margin-top: 17px; color: #a7aaad; font-size: 10px; }
+  .pd-complete .pd-icon { width: 13px; height: 13px; }
+  .pd-undo { min-height: 34px; margin-top: 6px; padding: 2px 0; background: none; border: 0; color: #72aee6; text-decoration: underline; text-underline-offset: 3px; }
+  .pd-undo:hover { color: #a7d3fc; }
+  .pd-composer { padding: 12px 12px 10px; margin: 0 15px; border: 1px solid #50575e; border-radius: 15px; background: #2b2b2b; }
+  .pd-context-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 13px; }
+  .pd-context-chips > span { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #50575e; border-radius: 5px; padding: 3px 5px; font-size: 9px; line-height: 1.4; color: #c3c4c7; }
+  .pd-context-chips .pd-icon, .pd-context-chips svg { width: 10px; height: 10px; }
+  .pd-composer-placeholder { display: block; color: #a7aaad; font-size: 11px; }
+  .pd-composer-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+  .pd-composer-bottom > .pd-icon:first-child { color: #a7aaad; margin-left: 2px; }
+  .pd-send { width: 27px; height: 27px; padding: 6px; border-radius: 50%; background: #f0f0f1; color: #1e1e1e; }
+  .pd-composer-note { padding: 9px 12px 7px; text-align: center; color: #a7aaad; font-size: 10px; }
+  .pd-caption { display: flex; justify-content: space-between; gap: 15px; padding-top: 17px; font-size: 11px; color: #a7aaad; }
+  .pd-caption-mark { color: #72aee6; margin-right: 7px; }
+  .pd-caption-dot { margin: 0 6px; }
+  .pd-stage-caption { color: #b4b9be; text-align: right; }
+  .pd-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  bhranti-product-demo[data-stage='context'] .pd-date-before, bhranti-product-demo[data-undone='true'] .pd-date-before { display: inline; }
+  bhranti-product-demo[data-stage='context'] .pd-date-after, bhranti-product-demo[data-undone='true'] .pd-date-after { display: none; }
+  bhranti-product-demo[data-stage='context'] .pd-change-note { visibility: hidden; }
+  bhranti-product-demo[data-stage='context'] .pd-selected-block { outline-color: #3858e9; }
+  @media (max-width: 1050px) {
+    .pd-workspace { grid-template-columns: minmax(0, 1fr) 320px; }
+    .pd-toolbar-start { gap: 12px; }
+    .pd-toolbar-end { gap: 10px; }
+    .pd-list-icon, .pd-saved { display: none; }
+    .pd-editor-canvas { padding: 19px 17px 25px; }
+    .pd-site-header { margin: 0 23px; }
+    .pd-site-nav { gap: 10px; }
+    .pd-site-nav > span { display: none; }
+    .pd-site-content { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); padding: 35px 23px; gap: 14px; }
+    .pd-site-eyebrow { font-size: 6px; letter-spacing: .8px; }
+    .pd-site-description { font-size: 8px; }
+    .pd-selected-block { font-size: 8px; }
+    .pd-site-footer { margin: 0 23px; font-size: 6px; }
+    .pd-site-footer > span:last-child, .pd-change-detail { display: none; }
+    .pd-artwork-caption { font-size: 12px; }
+    .pd-conversation { padding-left: 18px; padding-right: 18px; }
+    .pd-header-glyphs { gap: 17px; }
+  }
+  @media (max-width: 800px) {
+    .pd-controls { align-items: flex-start; flex-direction: column; gap: 10px; padding-bottom: 16px; }
+    .pd-tabs { width: 100%; }
+    .pd-tabs button { flex: 1; }
+    .pd-workspace { grid-template-columns: minmax(0, 1fr) 300px; }
+    .pd-toolbar-icon, .pd-document-title > span, .pd-more { display: none; }
+    .pd-toolbar-start { gap: 10px; }
+    .pd-wordpress { width: 43px; }
+    .pd-toolbar { min-height: 52px; padding-right: 10px; }
+    .pd-document-title { font-size: 10px; }
+    .pd-artwork { display: none; }
+    .pd-site-content { display: block; padding: 25px; }
+    .pd-site-header { padding-top: 18px; padding-bottom: 16px; }
+    .pd-studio-logo { font-size: 21px; }
+    .pd-site-nav { display: none; }
+    .pd-site-heading { font-size: 47px; }
+    .pd-site-description { font-size: 9px; }
+    .pd-selected-block { margin-top: 25px; font-size: 9px; }
+    .pd-site-footer { font-size: 7px; }
+    .pd-editor-canvas { padding: 16px 14px 22px; }
+    .pd-editor-status { display: none; }
+    .pd-caption { font-size: 10px; }
+  }
+  @media (max-width: 650px) {
+    .pd-workspace { grid-template-columns: minmax(0, 1fr); padding: 5px 5px 0; border-radius: 10px 10px 0 0; }
+    .pd-editor { border-radius: 6px; }
+    .pd-toolbar { min-height: 43px; }
+    .pd-wordpress { width: 43px; height: 43px; }
+    .pd-wordpress :global(svg) { width: 28px; height: 28px; }
+    .pd-toolbar-icon, .pd-list-icon, .pd-document-title > span, .pd-more { display: block; }
+    .pd-toolbar-icon { width: 16px; height: 16px; }
+    .pd-document-title { display: flex; gap: 5px; }
+    .pd-publish { font-size: 9px; padding: 4px 10px; }
+    .pd-editor-canvas { padding: 12px; }
+    .pd-site-header { padding: 11px 0; margin: 0 20px; }
+    .pd-studio-logo { font-size: 20px; }
+    .pd-site-nav { display: flex; font-size: 7px; }
+    .pd-site-content { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; padding: 24px 20px 20px; }
+    .pd-site-eyebrow { margin-bottom: 12px; font-size: 5.5px; }
+    .pd-site-heading { font-size: clamp(30px, 7.5cqw, 49px); }
+    .pd-site-description { font-size: 7px; padding-top: 13px; }
+    .pd-selected-block { font-size: 7px; padding: 8px 5px; margin: 22px -5px 0; }
+    .pd-block-tag { font-size: 6px; top: -13px; line-height: 12px; }
+    .pd-site-link { margin-top: 10px; font-size: 7px; gap: 15px; }
+    .pd-site-link > span { font-size: 13px; }
+    .pd-artwork { display: flex; }
+    .pd-artwork-caption { font-size: 11px; bottom: 7px; right: 6px; }
+    .pd-site-footer { margin: 0 20px; padding: 10px 0; font-size: 5.5px; }
+    .pd-site-footer > span:last-child { display: block; }
+    .pd-change-note { margin-top: 9px; font-size: 8px; padding: 5px 9px; }
+    .pd-change-note .pd-icon { width: 10px; height: 10px; }
+    .pd-editor-footer { min-height: 23px; font-size: 7px; padding: 0 10px; }
+    .pd-editor-status { display: block; }
+    .pd-sidebar { padding-top: 4px; }
+    .pd-panel-header { padding: 11px 15px; }
+    .pd-header-glyphs { gap: 20px; }
+    .pd-conversation { padding: 0 16px 22px; }
+    .pd-thread-name { padding-bottom: 11px; }
+    .pd-user-message { margin-left: 25px; }
+    .pd-user-message p { font-size: 12px; }
+    .pd-stage { margin-top: 21px; font-size: 12px; }
+    .pd-tool { margin-top: 12px; }
+    .pd-composer { margin: 0 12px; }
+    .pd-composer-note { padding-bottom: 14px; }
+    .pd-caption { flex-direction: column; gap: 3px; padding-top: 12px; font-size: 10px; }
+    .pd-stage-caption { text-align: left; margin-left: 18px; }
+  }
+  @media (max-width: 380px) {
+    .pd-demo-label { font-size: 10px; }
+    .pd-tabs button { padding: 6px 7px; gap: 7px; font-size: 11px; }
+    .pd-tab-number { font-size: 9px; }
+    .pd-list-icon, .pd-more { display: none; }
+    .pd-toolbar-start { gap: 8px; }
+    .pd-site-header { margin: 0 14px; }
+    .pd-site-content { padding: 19px 14px 15px; gap: 11px; }
+    .pd-site-heading { font-size: 28px; }
+    .pd-site-description { font-size: 6px; }
+    .pd-site-eyebrow { font-size: 5px; letter-spacing: .5px; }
+    .pd-selected-block { font-size: 6px; }
+    .pd-artwork-caption { font-size: 9px; }
+    .pd-site-footer { margin: 0 14px; font-size: 5px; }
+    .pd-site-footer > span:last-child { display: none; }
+    .pd-header-glyphs { gap: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pd-tabs button { transition: none; } }
+</style>

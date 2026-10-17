@@ -79,6 +79,9 @@ final class Bhranti_Media {
 	 * @return array|WP_Error
 	 */
 	public static function execute( $command, $requester_id, $session_id ) {
+		if ( Bhranti_Credentials::contains( $command ) ) {
+			return Bhranti_Credentials::error( 'response' );
+		}
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;

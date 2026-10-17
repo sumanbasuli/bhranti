@@ -1,0 +1,43 @@
+---
+import type { CollectionEntry } from 'astro:content';
+interface Props { docs: CollectionEntry<'docs'>[]; current?: string; }
+const { docs, current = 'index' } = Astro.props;
+const groups = [...new Set(docs.map(doc => doc.data.group))];
+---
+<aside class="docs-sidebar" aria-label="Documentation navigation">
+  <nav aria-label="Documentation" class="docs-desktop-nav">
+    <a href="/docs/" class:list={['overview', { selected: current === 'index' }]} aria-current={current === 'index' ? 'page' : undefined}>Documentation <span aria-hidden="true">↗</span></a>
+    {groups.map(group => <div class="nav-group">
+      <p>{group}</p>
+      <ul>{docs.filter(doc => doc.data.group === group).map(doc => <li><a href={`/docs/${doc.id}/`} class:list={{ selected: current === doc.id }} aria-current={current === doc.id ? 'page' : undefined}>{doc.data.title}</a></li>)}</ul>
+    </div>)}
+  </nav>
+  <details class="docs-mobile-nav">
+    <summary>In the documentation <span aria-hidden="true">⌄</span></summary>
+    <nav aria-label="Documentation"><a href="/docs/" aria-current={current === 'index' ? 'page' : undefined}>Overview</a>{docs.map(doc => <a href={`/docs/${doc.id}/`} aria-current={current === doc.id ? 'page' : undefined}>{doc.data.title}</a>)}</nav>
+  </details>
+</aside>
+<style>
+  .docs-sidebar { min-width: 0; position:sticky; top:112px; }
+  .docs-desktop-nav { font-size: 14px; max-height:calc(100dvh - 140px); overflow-y:auto; scrollbar-width:thin; padding-right:5px; }
+  .overview { display:flex; justify-content:space-between; align-items:center; font-weight:650; padding: 10px 12px; margin-bottom: 30px; color:var(--color-text); text-decoration:none; }
+  .overview span { color:var(--color-muted); font-size:17px; }
+  .nav-group + .nav-group { margin-top:28px; }
+  .nav-group p { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--color-muted); font-weight:600; padding:0 12px; margin:0 0 9px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li a { display:block; padding:9px 12px; color:var(--color-muted); text-decoration:none; border-radius:4px; line-height:1.4; }
+  a:hover { color:var(--color-text); background:rgba(255,255,255,.035); }
+  a.selected, a[aria-current='page'] { color:var(--color-accent); background:rgba(114,174,230,.075); }
+  a:focus-visible, summary:focus-visible { outline:2px solid var(--color-accent); outline-offset:4px; }
+  .docs-mobile-nav { display:none; }
+  @media (max-width: 850px) {
+    .docs-sidebar { position:static; }
+    .docs-desktop-nav { display:none; }
+    .docs-mobile-nav { display:block; border-block:1px solid var(--color-border); }
+    summary { display:flex; justify-content:space-between; cursor:pointer; font-size:14px; padding:15px 0; list-style:none; }
+    summary::-webkit-details-marker { display:none; }
+    summary span { color:var(--color-accent); }
+    .docs-mobile-nav nav { display:grid; gap:3px; padding-bottom:16px; }
+    .docs-mobile-nav a { color:var(--color-muted); text-decoration:none; padding:10px; border-radius:4px; font-size:14px; }
+  }
+</style>

@@ -266,6 +266,9 @@ final class Bhranti_Actions {
 	 * @return array|WP_Error Result or confirmation proposal.
 	 */
 	public static function execute( $command, $requester_id, $session_id, $confirmed = false, $expected_fingerprint = '' ) {
+		if ( Bhranti_Credentials::contains( $command ) ) {
+			return Bhranti_Credentials::error( 'response' );
+		}
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
@@ -333,16 +336,20 @@ final class Bhranti_Actions {
 		}
 		$review = self::review( $command, $requester_id, $actor_id );
 		if ( is_wp_error( $review ) ) {
-			self::audit( 'action_blocked', __( 'A tool request was blocked by Bhranti guardrails.', 'bhranti' ), $session_id, array( 'code' => $review->get_error_code() ), $requester_id, $actor_id );
+			self::audit( 'action_blocked', __( 'A tool request was blocked by Bhranti guardrails.', 'bhranti' ), $session_id, self::audit_command( $command ) + array( 'code' => $review->get_error_code() ), $requester_id, $actor_id );
 			return $review;
 		}
 		$command = $review['command'];
 		$method  = $command['args']['method'];
 		$path    = $command['args']['path'];
 		$details = array(
+			'tool'   => 'wp_request',
 			'method' => $method,
 			'path'   => $path,
 		);
+		if ( 'GET' !== $method && ! empty( $command['args']['params'] ) ) {
+			$details['field'] = implode( ' ', array_keys( $command['args']['params'] ) );
+		}
 		if ( 'GET' === $method ) {
 			$logged = self::audit( 'action_started', __( 'Reading WordPress information.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
 			if ( is_wp_error( $logged ) ) {
@@ -387,7 +394,7 @@ final class Bhranti_Actions {
 
 		$policy = self::policy( $review );
 		if ( is_wp_error( $policy ) ) {
-			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
+			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details + array( 'code' => $policy->get_error_code() ), $requester_id, $actor_id );
 			return $policy;
 		}
 		$before = array();
@@ -399,7 +406,7 @@ final class Bhranti_Actions {
 		}
 		$policy = self::policy( $review, $before );
 		if ( is_wp_error( $policy ) ) {
-			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
+			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details + array( 'code' => $policy->get_error_code() ), $requester_id, $actor_id );
 			return $policy;
 		}
 		$content_patch = isset( $command['args']['content_patch'] );
@@ -569,7 +576,7 @@ final class Bhranti_Actions {
 		if ( is_wp_error( $policy ) ) {
 			$snapshot['state'] = 'failed';
 			self::save_snapshot( $session_id, $snapshot );
-			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details, $requester_id, $actor_id );
+			self::audit( 'action_blocked', $policy->get_error_message(), $session_id, $details + array( 'code' => $policy->get_error_code() ), $requester_id, $actor_id );
 			return $policy;
 		}
 		try {
@@ -601,8 +608,10 @@ final class Bhranti_Actions {
 				$summary,
 				$session_id,
 				array(
+					'tool'      => 'wp_request',
 					'method'    => $method,
 					'path'      => $path,
+					'field'     => $details['field'] ?? '',
 					'target'    => $snapshot['target'],
 					'action_id' => $action_id,
 				),
@@ -627,7 +636,24 @@ final class Bhranti_Actions {
 			}
 			return $result;
 		} catch ( Throwable $error ) {
-			return self::uncertain( self::error( 'bhranti_action_failed', __( 'The action may have run, but its final result could not be verified. Review the item before continuing.', 'bhranti' ), 500 ) );
+			$failure = self::uncertain( self::error( 'bhranti_action_failed', __( 'The action may have run, but its final result could not be verified. Review the item before continuing.', 'bhranti' ), 500 ) );
+			try {
+				self::audit(
+					'action_failed',
+					__( 'The action was interrupted and its final result could not be verified. Review the item before retrying.', 'bhranti' ),
+					$session_id,
+					$details + array(
+						'code'   => 'bhranti_action_failed',
+						'reason' => 'uncertain_action',
+					),
+					$requester_id,
+					$actor_id
+				);
+			} catch ( Throwable $audit_error ) {
+				// An audit failure must not replace the original uncertain outcome.
+				return $failure;
+			}
+			return $failure;
 		}
 	}
 
@@ -749,6 +775,7 @@ final class Bhranti_Actions {
 			return self::error( 'bhranti_action_blocked', __( 'WordPress Trash must be enabled to undo this creation.', 'bhranti' ), 409 );
 		}
 		$details = array(
+			'tool'      => 'wp_request',
 			'method'    => $write['command']['args']['method'],
 			'path'      => $path,
 			'action_id' => $action_id,
@@ -1985,6 +2012,37 @@ final class Bhranti_Actions {
 	 */
 	private static function block_fields( $collection ) {
 		return $collection ? array( 'name', 'title', 'category', 'is_dynamic' ) : array( 'name', 'title', 'description', 'category', 'attributes', 'supports', 'is_dynamic', 'uses_context', 'provides_context', 'styles', 'api_version' );
+	}
+
+	/**
+	 * Retain useful context from a refused command without retaining its values.
+	 *
+	 * A rejected request has not passed native review. Never copy parameters,
+	 * URLs, queries or arbitrary tool names from it into the durable log.
+	 *
+	 * @param mixed $command Proposed command.
+	 * @return array Bounded operation identifiers only.
+	 */
+	private static function audit_command( $command ) {
+		if ( ! is_array( $command ) || ! in_array( $command['tool'] ?? null, array( 'wp_request', 'site_search', 'open_item' ), true ) ) {
+			return array();
+		}
+		$details = array( 'tool' => $command['tool'] );
+		$args    = is_array( $command['args'] ?? null ) ? $command['args'] : array();
+		if ( 'site_search' === $command['tool'] ) {
+			return $details + array(
+				'method' => 'GET',
+				'path'   => '/wp/v2/search',
+			);
+		}
+		$method = 'open_item' === $command['tool'] ? 'GET' : ( $args['method'] ?? null );
+		if ( is_string( $method ) && in_array( strtoupper( $method ), array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ), true ) ) {
+			$details['method'] = strtoupper( $method );
+		}
+		if ( is_string( $args['path'] ?? null ) && preg_match( '#\A/wp/v2/[a-zA-Z0-9_/-]{1,280}\z#', $args['path'] ) ) {
+			$details['path'] = $args['path'];
+		}
+		return $details;
 	}
 
 	/**

@@ -103,7 +103,8 @@ final class Bhranti_Panel {
 		wp_enqueue_style( 'bhranti-admin', plugins_url( 'assets/admin.css', BHRANTI_FILE ), array( 'buttons', 'dashicons' ), BHRANTI_VERSION );
 		wp_enqueue_script( 'bhranti-render', plugins_url( 'assets/render-check.js', BHRANTI_FILE ), array( 'wp-i18n' ), BHRANTI_VERSION, true );
 		wp_set_script_translations( 'bhranti-render', 'bhranti' );
-		wp_enqueue_script( 'bhranti-admin', plugins_url( 'assets/admin.js', BHRANTI_FILE ), array( 'bhranti-render', 'wp-api-fetch', 'wp-data', 'wp-notices', 'wp-i18n', 'wp-date' ), BHRANTI_VERSION, true );
+		Bhranti_Credentials::enqueue();
+		wp_enqueue_script( 'bhranti-admin', plugins_url( 'assets/admin.js', BHRANTI_FILE ), array( 'bhranti-credentials', 'bhranti-render', 'wp-api-fetch', 'wp-data', 'wp-notices', 'wp-i18n', 'wp-date' ), BHRANTI_VERSION, true );
 		wp_set_script_translations( 'bhranti-admin', 'bhranti' );
 		$screen = is_admin() ? get_current_screen() : null;
 		if ( $screen && 'post' === $screen->base && in_array( $screen->post_type, array( 'post', 'page' ), true ) && $screen->is_block_editor() ) {

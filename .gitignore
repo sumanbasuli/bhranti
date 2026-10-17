@@ -6,3 +6,8 @@
 /coverage/
 /*.zip
 /*.tar.gz
+
+# Generated plugin packages and Python bytecode.
+/build/
+__pycache__/
+*.pyc

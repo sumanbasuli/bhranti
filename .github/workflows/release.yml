@@ -1,0 +1,269 @@
+name: Release plugin
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional existing tag; leave blank to build the selected branch'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bhranti-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+      publish: ${{ steps.version.outputs.publish }}
+      auto_tag: ${{ steps.version.outputs.auto_tag }}
+    env:
+      INPUT_TAG: ${{ inputs.tag || '' }}
+      PUSH_BEFORE: ${{ github.event.before || '' }}
+    steps:
+      - name: Check out the build commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || (github.ref_type == 'tag' && github.ref) || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify version and decide whether to publish
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'VERSION must contain major.minor.patch.' >&2
+            exit 1
+          fi
+          tag="v$version"
+          requested_tag="$INPUT_TAG"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            requested_tag="${GITHUB_REF#refs/tags/}"
+          fi
+          if [[ -n "$requested_tag" && "$requested_tag" != "$tag" ]]; then
+            echo "Requested tag $requested_tag must match $tag." >&2
+            exit 1
+          fi
+
+          publish=false
+          auto_tag=false
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            if [[ "$PUSH_BEFORE" =~ ^[0-9a-f]{40}$ && "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]] && \
+              git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              if git diff --quiet "$PUSH_BEFORE" HEAD -- VERSION; then
+                echo 'VERSION is unchanged; save this build as an Actions artifact only.'
+              else
+                diff_status=$?
+                if [[ "$diff_status" -ne 1 ]]; then
+                  echo 'Could not compare VERSION with the previous main commit.' >&2
+                  exit 1
+                fi
+                publish=true
+                auto_tag=true
+              fi
+            else
+              echo 'Previous main commit is unavailable; save this build as an Actions artifact only.'
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* ]] || \
+            [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && -n "$INPUT_TAG" ]]; then
+            publish=true
+            if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+              echo 'Release tags must point to a commit on main.' >&2
+              exit 1
+            fi
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "auto_tag=$auto_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends php-cli python3 nodejs
+
+      - name: Build the installable plugin
+        run: ./build.sh
+
+      - name: Check package reproducibility and exclusions
+        run: python3 tests/build.py
+
+      - name: Verify the versioned package checksum
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd build
+          sha256sum -c "bhranti-$RELEASE_VERSION.zip.sha256"
+          cmp bhranti.zip "bhranti-$RELEASE_VERSION.zip"
+
+      - name: Save the installable ZIP for this run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bhranti-${{ steps.version.outputs.version }}-${{ github.run_attempt }}
+          path: |
+            build/bhranti-${{ steps.version.outputs.version }}.zip
+            build/bhranti-${{ steps.version.outputs.version }}.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  release:
+    needs: package
+    if: needs.package.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.package.outputs.version }}
+      RELEASE_TAG: ${{ needs.package.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.package.outputs.commit }}
+      ALLOW_TAG_CREATION: ${{ needs.package.outputs.auto_tag }}
+    steps:
+      - name: Download the checked package
+        shell: bash
+        run: |
+          release_dir="$RUNNER_TEMP/bhranti-release"
+          mkdir -p "$release_dir"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "bhranti-$RELEASE_VERSION-$GITHUB_RUN_ATTEMPT" --dir "$release_dir"
+          cd "$release_dir"
+          sha256sum -c "bhranti-$RELEASE_VERSION.zip.sha256"
+
+      - name: Prepare notes from the packaged changelog
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import zipfile
+
+          version = os.environ['RELEASE_VERSION']
+          release_dir = Path(os.environ['RUNNER_TEMP']) / 'bhranti-release'
+          with zipfile.ZipFile(release_dir / f'bhranti-{version}.zip') as package:
+              if package.testzip() is not None:
+                  raise SystemExit('Release ZIP integrity check failed')
+              readme = package.read('bhranti/readme.txt').decode('utf-8')
+          changelog = readme.partition('== Changelog ==')[2]
+          if not changelog:
+              raise SystemExit('Missing packaged changelog')
+          lines = changelog.splitlines()
+          marker = f'= {version} ='
+          if lines.count(marker) != 1:
+              raise SystemExit(f'Expected one changelog entry for {version}')
+          start = lines.index(marker) + 1
+          end = next((i for i in range(start, len(lines)) if re.fullmatch(r'= .+ =', lines[i])), len(lines))
+          notes = '\n'.join(lines[start:end]).strip()
+          if not notes:
+              raise SystemExit(f'Empty changelog entry for {version}')
+          (release_dir / 'release-notes.md').write_text(notes + '\n', encoding='utf-8')
+          PY
+
+      - name: Publish the matching GitHub release
+        shell: bash
+        run: |
+          release_dir="$RUNNER_TEMP/bhranti-release"
+          zip="$release_dir/bhranti-$RELEASE_VERSION.zip"
+          checksum="$zip.sha256"
+          notes="$release_dir/release-notes.md"
+          lookup_error="$release_dir/lookup-error.txt"
+
+          tag_exists=false
+          if tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+            --jq '[.object.type, .object.sha] | @tsv' 2>"$lookup_error"); then
+            tag_exists=true
+            read -r object_type object_sha <<< "$tag_object"
+            for attempt in 1 2 3 4 5; do
+              if [[ "$object_type" != tag ]]; then
+                break
+              fi
+              tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" \
+                --jq '[.object.type, .object.sha] | @tsv')
+              read -r object_type object_sha <<< "$tag_object"
+            done
+            if [[ "$object_type" != commit || "$object_sha" != "$RELEASE_COMMIT" ]]; then
+              echo "$RELEASE_TAG does not point to the checked build commit." >&2
+              exit 1
+            fi
+          elif grep -q 'HTTP 404' "$lookup_error"; then
+            if [[ "$ALLOW_TAG_CREATION" != true ]]; then
+              echo "Existing tag $RELEASE_TAG is required for this run." >&2
+              exit 1
+            fi
+          else
+            cat "$lookup_error" >&2
+            exit 1
+          fi
+
+          release_exists=false
+          if existing=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,targetCommitish \
+            --jq '[.isDraft, .targetCommitish] | @tsv' 2>"$lookup_error"); then
+            release_exists=true
+            read -r is_draft target_commit <<< "$existing"
+            if [[ "$tag_exists" == false && "$target_commit" != "$RELEASE_COMMIT" ]]; then
+              echo 'Existing draft targets a different commit.' >&2
+              exit 1
+            fi
+            if [[ "$is_draft" == false ]]; then
+              if [[ "$tag_exists" == false ]]; then
+                echo 'Published release is missing its matching tag.' >&2
+                exit 1
+              fi
+              echo "$RELEASE_TAG is already published; the checked ZIP remains in Actions artifacts."
+              exit 0
+            fi
+          else
+            # The CLI also finds drafts; confirm a missing result through REST
+            # before treating it as a new release.
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+              --jq '.id' >/dev/null 2>"$lookup_error"; then
+              echo 'A release exists but could not be inspected.' >&2
+              exit 1
+            elif ! grep -q 'HTTP 404' "$lookup_error"; then
+              cat "$lookup_error" >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "$tag_exists" == false ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" >/dev/null
+          fi
+
+          if [[ "$release_exists" == true ]]; then
+            gh release upload "$RELEASE_TAG" "$zip" "$checksum" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --draft=false --title "Bhranti $RELEASE_VERSION" \
+              --notes-file "$notes" --prerelease="$([[ "$RELEASE_VERSION" == 0.* ]] && echo true || echo false)"
+            exit 0
+          fi
+
+          create_options=(--repo "$GITHUB_REPOSITORY" \
+            --title "Bhranti $RELEASE_VERSION" --notes-file "$notes" --verify-tag)
+          if [[ "$RELEASE_VERSION" == 0.* ]]; then
+            create_options+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" "$zip" "$checksum" "${create_options[@]}"

@@ -67,6 +67,9 @@ final class Bhranti_Progress {
 			$data['site_action'] = 'bhranti_inspect' === $tool && in_array( $args['resource'] ?? '', array( 'content', 'rendered' ), true );
 			$data['method']      = 'GET';
 		}
+		if ( 'bhranti_inspect' === $tool && 'logs' === ( $args['resource'] ?? '' ) ) {
+			$data['summary'] = __( 'Reading Bhranti activity logs', 'bhranti' );
+		}
 		if ( 'bhranti_inspect' === $tool && 'rendered' === ( $args['resource'] ?? '' ) ) {
 			$data['summary'] = __( 'Checking actual desktop and mobile rendering', 'bhranti' );
 			$data['details'] = array( __( 'Automated accessibility, layout, images and anchors', 'bhranti' ) );

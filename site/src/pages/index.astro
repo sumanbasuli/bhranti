@@ -1,0 +1,270 @@
+---
+import Base from '../layouts/Base.astro';
+import Mark from '../components/Mark.astro';
+import Arrow from '../components/Arrow.astro';
+import ProductDemo from '../components/ProductDemo.astro';
+import WordPressMark from '../components/WordPressMark.astro';
+---
+
+<Base title="Bhranti" description="A helping hand for your WordPress. Bhranti brings a context-aware assistant beside your editor, with native actions, visible progress, and you in control." markdownHref="/index.md" active="home" pageClass="home-page">
+  <section class="container hero" aria-labelledby="hero-title">
+    <div class="hero-heading">
+      <p class="eyebrow"><Mark class="small-mark" /> A helping hand for WordPress</p>
+      <h1 id="hero-title">More creating.<br /><span class="serif">Less clicking.</span></h1>
+    </div>
+    <div class="hero-intro">
+      <p>Meet Bhranti. Your WordPress-aware assistant for turning a thought into something on your site.</p>
+      <p class="hero-detail">Content, design, and the everyday work in between. Right beside your editor.</p>
+      <div class="hero-actions">
+        <a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>
+        <a class="text-link" href="/docs/get-started/">Get started <Arrow /></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container demo-section" aria-label="An illustrative look at Bhranti">
+    <ProductDemo />
+  </section>
+
+  <section class="container native-section" aria-labelledby="native-title">
+    <div class="native-title">
+      <WordPressMark class="wordpress-mark" size={51} />
+      <h2 id="native-title">At home <br />in WordPress.</h2>
+    </div>
+    <p>Bhranti works with the WordPress you already know: your blocks, your content, and your native AI connector. Open it from the admin bar. Keep your work in view. Pick up where you are.</p>
+    <a class="text-link" href="/docs/get-started/">Find your starting point <Arrow /></a>
+  </section>
+
+  <section class="container work-section section-rule section-space" aria-labelledby="work-title">
+    <div class="section-heading">
+      <p class="section-label"><span>01</span> A little help goes a long way</p>
+      <h2 id="work-title">For the work between<br /><span class="serif">idea and done.</span></h2>
+      <p>You bring the intention. Bhranti can help with the next practical step.</p>
+    </div>
+    <div class="capabilities">
+      <div class="capability">
+        <span class="capability-number" aria-hidden="true">↳</span>
+        <h3>Words into pages.</h3>
+        <p>Draft and refine content, update pages, and work with the blocks already on your site.</p>
+        <span class="capability-example">“Give this page a clearer introduction.”</span>
+      </div>
+      <div class="capability">
+        <span class="capability-number" aria-hidden="true">↳</span>
+        <h3>The details, handled.</h3>
+        <p>Work on navigation, design settings, and media through reviewed native WordPress operations.</p>
+        <span class="capability-example">“Add our new page to the navigation.”</span>
+      </div>
+      <div class="capability">
+        <span class="capability-number" aria-hidden="true">↳</span>
+        <h3>A store taking shape.</h3>
+        <p>Prepare simple WooCommerce products, categories, and supported store settings. New products start as drafts.</p>
+        <span class="capability-example">“Draft a product for our new workshop.”</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="context-section section-rule">
+    <div class="container context-inner">
+      <div class="context-copy">
+        <p class="section-label"><span>02</span> Right here, with you</p>
+        <h2>Less explaining.<br /><span class="serif">More context.</span></h2>
+        <p>The page you’re on. The block you’ve selected. The reference you’ve attached. Start with what’s in front of you, and give Bhranti the context to help.</p>
+        <a class="text-link" href="/product/#context">Explore how context works <Arrow /></a>
+      </div>
+      <figure class="context-figure" aria-label="Illustration showing a selected heading used as context in a Bhranti message">
+        <div class="context-page">
+          <div class="context-page-label"><span class="document-glyph" aria-hidden="true"></span> About us <span>Page</span></div>
+          <div class="context-block"><span class="block-tag">Heading</span><p>A small studio.<br />A big imagination.</p><span class="block-handle" aria-hidden="true"></span></div>
+          <div class="context-text" aria-hidden="true"><i></i><i></i><i></i></div>
+        </div>
+        <div class="context-connector" aria-hidden="true"><span></span><Arrow /></div>
+        <div class="context-prompt">
+          <div class="context-chips"><span><span aria-hidden="true">▤</span> About us</span><span><span aria-hidden="true">⊞</span> Selected heading</span></div>
+          <p>Make this sound a little more like us.</p>
+          <span class="prompt-send" aria-hidden="true">↑</span>
+        </div>
+        <figcaption>Illustrative page and selected-block context.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="container control-section section-space section-rule" aria-labelledby="control-title">
+    <div class="control-title">
+      <p class="section-label"><span>03</span> Helpful, with boundaries</p>
+      <h2 id="control-title">Your site.<br /><span class="serif">Your say.</span></h2>
+      <p>Good help makes its work clear.<br />And leaves you in control.</p>
+      <a class="text-link" href="/product/#control">Understand the safeguards <Arrow /></a>
+    </div>
+    <div class="control-rules">
+      <article><span aria-hidden="true">01</span><div><h3>Follow the work.</h3><p>See the intended action and affected item before it runs. Open the details, check the outcome, or stop the task.</p></div></article>
+      <article><span aria-hidden="true">02</span><div><h3>Have the final word.</h3><p>Moving content to Trash waits for your Approve or Deny button. Permission switches keep supported actions within the boundaries you choose.</p></div></article>
+      <article><span aria-hidden="true">03</span><div><h3>Room to change your mind.</h3><p>Supported changes keep a seven-day Undo. If someone has edited the item since, Bhranti refuses to overwrite their work.</p></div></article>
+    </div>
+  </section>
+
+  <section class="possibilities" aria-labelledby="possibilities-title">
+    <div class="container possibilities-inner">
+      <Mark class="possibilities-mark" />
+      <div>
+        <p class="section-label">Make it your own</p>
+        <h2 id="possibilities-title">A familiar way of working.<br /><span class="serif">A little more you.</span></h2>
+      </div>
+      <div class="possibilities-copy">
+        <p>Give an agent a role. Add your writing style or a repeatable workflow as a Markdown skill. Keep your preferences close to the work.</p>
+        <a class="text-link" href="/docs/agents-and-skills/">Meet agents &amp; skills <Arrow /></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="container end-note" aria-labelledby="start-title">
+    <h2 id="start-title">What will you<br /><span class="serif">make next?</span></h2>
+    <div>
+      <p>Get to know Bhranti, connect your native WordPress AI provider, and start with one useful task.</p>
+      <div class="end-actions"><a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a><a class="text-link" href="/docs/">Read the docs <Arrow /></a></div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero { display: grid; grid-template-columns: 1.5fr 1fr; column-gap: 68px; padding-top: 92px; padding-bottom: 76px; align-items: end; }
+  .hero .eyebrow { margin-bottom: 28px; }
+  .hero h1 { font-size: clamp(3.5rem, 6.45vw, 5.55rem); line-height: 1.04; letter-spacing: -.065em; }
+  .hero h1 .serif { color: #e3e0d9; }
+  .hero-intro { padding-bottom: 4px; }
+  .hero-intro > p:first-child { max-width: 390px; font-size: 20px; line-height: 1.55; letter-spacing: -.025em; }
+  .hero-detail { margin-top: 14px; max-width: 360px; color: var(--color-muted); font-size: 14px; }
+  .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 23px; margin-top: 28px; }
+  .hero-actions .button { gap: 31px; }
+  .hero-actions .text-link { font-size: 13px; }
+  .native-section { display: grid; grid-template-columns: 1fr 1.25fr .8fr; gap: 40px; align-items: center; padding-block: 75px 87px; }
+  .native-title { display: flex; gap: 20px; align-items: center; }
+  .native-title :global(.wordpress-mark) { display: block; flex-shrink: 0; color: #c3c4c7; }
+  .native-title h2 { font-size: 23px; line-height: 1.2; letter-spacing: -.03em; }
+  .native-section > p { color: var(--color-muted); font-size: 14px; max-width: 420px; }
+  .native-section > a { justify-self: end; font-size: 13px; }
+  .section-heading { display: grid; grid-template-columns: 1.35fr 1fr; column-gap: 100px; align-items: end; }
+  .section-heading .section-label { grid-column: 1 / -1; margin-bottom: 31px; }
+  .section-heading > p:last-child { color: var(--color-muted); max-width: 300px; margin-bottom: 6px; font-size: 16px; }
+  .capabilities { display: grid; grid-template-columns: repeat(3, 1fr); gap: 50px; margin-top: 64px; }
+  .capability { border-top: 1px solid var(--color-border); padding-top: 20px; }
+  .capability-number { display: block; color: var(--color-accent); margin-bottom: 25px; font-size: 25px; font-weight: 300; line-height: 1; }
+  .capability h3 { font-size: 24px; }
+  .capability > p { margin-top: 16px; color: var(--color-muted); font-size: 14px; }
+  .capability-example { display: block; margin-top: 28px; max-width: 260px; font-family: var(--font-serif); font-style: italic; color: #d0d3d5; font-size: 17px; line-height: 1.5; }
+  .context-section { background: #232323; }
+  .context-inner { display: grid; grid-template-columns: 1fr 1.1fr; gap: 105px; align-items: center; padding-block: 105px; }
+  .context-copy .section-label { margin-bottom: 30px; }
+  .context-copy > p:not(.section-label) { color: var(--color-muted); margin-top: 26px; max-width: 340px; font-size: 15px; }
+  .context-copy > a { margin-top: 24px; }
+  .context-figure { position: relative; width: 100%; max-width: 520px; justify-self: end; padding-top: 12px; }
+  .context-page { background: #f0f0eb; color: #28312b; width: 85%; margin-left: 15%; padding: 21px 32px 26px; box-shadow: 0 12px 28px rgb(0 0 0 / 8%); }
+  .context-page-label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #5a645c; padding-bottom: 18px; border-bottom: 1px solid #d1d4ce; }
+  .context-page-label > span:last-child { margin-left: auto; color: #616b64; }
+  .document-glyph { width: 8px; height: 10px; display: inline-block; border: 1px solid currentColor; }
+  .context-block { position: relative; outline: 1px solid #2271b1; padding: 15px 12px 16px; margin: 39px -12px 20px; }
+  .context-block p { font-family: var(--font-serif); font-size: clamp(25px, 2.5vw, 34px); line-height: 1.08; letter-spacing: -.03em; }
+  .block-tag { position: absolute; top: -22px; left: -1px; padding: 2px 7px; background: #2271b1; color: white; font-size: 10px; }
+  .block-handle { position: absolute; width: 7px; height: 7px; background: #2271b1; right: -4px; bottom: -4px; }
+  .context-text { display: flex; gap: 7px; flex-direction: column; padding-block: 4px 7px; }
+  .context-text i { width: 100%; height: 3px; background: #c6ccc4; }
+  .context-text i:last-child { width: 65%; }
+  .context-connector { display: flex; position: relative; width: 60px; height: 55px; align-items: flex-end; margin-left: 20%; color: var(--color-accent); }
+  .context-connector span { display: block; width: 44px; height: 38px; border-left: 1px solid var(--color-accent); border-bottom: 1px solid var(--color-accent); transform: translateY(-10px); }
+  .context-connector svg { margin-left: -15px; }
+  .context-prompt { position: relative; width: 91%; margin-top: -12px; background: var(--color-bg); border: 1px solid #565e64; padding: 17px 18px 49px; box-shadow: 0 14px 28px rgb(0 0 0 / 10%); }
+  .context-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .context-chips > span { border: 1px solid var(--color-border); padding: 3px 7px; font-size: 10px; color: #dcdcde; }
+  .context-chips > span > span { color: var(--color-muted); margin-right: 4px; }
+  .context-prompt > p { font-size: 14px; }
+  .prompt-send { display: grid; place-items: center; position: absolute; right: 13px; bottom: 12px; background: var(--color-accent); color: var(--color-accent-ink); width: 27px; height: 27px; font-size: 20px; }
+  .context-figure figcaption { margin-top: 20px; font-size: 10px; color: var(--color-muted); }
+  .control-section { display: grid; grid-template-columns: 1fr 1.1fr; gap: 105px; }
+  .control-title .section-label { margin-bottom: 30px; }
+  .control-title > p:not(.section-label) { margin-top: 26px; color: var(--color-muted); font-size: 15px; }
+  .control-title > a { margin-top: 24px; }
+  .control-rules article { display: flex; gap: 28px; padding: 26px 0; border-top: 1px solid var(--color-border); }
+  .control-rules article:first-child { padding-top: 0; border-top: 0; }
+  .control-rules article:last-child { padding-bottom: 0; }
+  .control-rules article > span { font-size: 11px; margin-top: 5px; color: var(--color-accent); }
+  .control-rules h3 { font-size: 23px; }
+  .control-rules p { margin-top: 12px; font-size: 14px; color: var(--color-muted); }
+  .possibilities { background: #b8d6ee; color: #213747; }
+  .possibilities-inner { display: grid; grid-template-columns: 70px 1.5fr 1fr; gap: 38px; padding-block: 76px; align-items: center; }
+  .possibilities-inner :global(.possibilities-mark) { width: 58px; height: 65px; color: #385d79; }
+  .possibilities h2 { font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.1; }
+  .possibilities .section-label { color: #3c5970; margin-bottom: 20px; }
+  .possibilities-copy p { font-size: 14px; }
+  .possibilities .text-link { margin-top: 14px; }
+  .possibilities .text-link:hover { color: #172635; text-decoration: underline; }
+  .possibilities :focus-visible { outline-color: #172635; }
+  @media (max-width: 1100px) {
+    .hero { column-gap: 35px; }
+    .hero-intro > p:first-child { font-size: 18px; }
+    .hero-actions { gap: 12px 20px; }
+    .native-section { grid-template-columns: .9fr 1.2fr; gap: 28px 50px; }
+    .native-section > a { grid-column: 2; justify-self: start; margin-top: -16px; }
+    .context-inner, .control-section { gap: 60px; }
+    .possibilities-inner { grid-template-columns: 44px 1.5fr 1fr; gap: 28px; }
+    .possibilities-inner :global(.possibilities-mark) { width: 44px; }
+  }
+  @media (max-width: 800px) {
+    .hero { grid-template-columns: 1fr; gap: 35px; padding-block: 65px 52px; }
+    .hero h1 { font-size: clamp(3.6rem, 9.7vw, 5.5rem); }
+    .hero-intro { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0 40px; }
+    .hero-intro > p:first-child { font-size: 17px; max-width: 360px; }
+    .hero-detail { margin-top: 0; align-self: start; }
+    .hero-actions { grid-column: 1 / -1; margin-top: 24px; }
+    .section-heading { gap: 40px; }
+    .section-heading .section-label { margin-bottom: -10px; }
+    .capabilities { gap: 25px; margin-top: 45px; }
+    .capability h3 { font-size: 21px; }
+    .context-inner, .control-section { gap: 38px; }
+    .context-inner { padding-block: 80px; }
+    .context-copy h2, .control-title h2 { font-size: 42px; }
+    .context-page { padding-inline: 20px; }
+    .context-block p { font-size: 25px; }
+    .context-prompt { width: 100%; }
+    .control-rules article { gap: 18px; }
+    .possibilities-inner { grid-template-columns: 1fr 1fr; gap: 28px; padding-block: 60px; }
+    .possibilities-inner :global(.possibilities-mark) { display: none; }
+  }
+  @media (max-width: 640px) {
+    .hero { padding-top: 54px; }
+    .hero h1 { font-size: clamp(2.8rem, 11.2vw, 4.25rem); }
+    .hero .eyebrow { font-size: 10px; margin-bottom: 24px; }
+    .hero-intro { display: block; }
+    .hero-intro > p:first-child { font-size: 18px; max-width: 390px; }
+    .hero-detail { margin-top: 12px; max-width: 330px; }
+    .hero-actions { gap: 12px 22px; }
+    .hero-actions .button { gap: 25px; }
+    .native-section { grid-template-columns: 1fr; gap: 24px; padding-block: 50px 58px; }
+    .native-section > a { grid-column: auto; margin-top: -12px; }
+    .native-title h2 br { display: none; }
+    .native-title :global(.wordpress-mark) { width: 42px; height: 42px; }
+    .native-title { gap: 16px; }
+    .native-title h2 { font-size: 22px; }
+    .section-heading { grid-template-columns: 1fr; gap: 23px; }
+    .section-heading .section-label { margin-bottom: 6px; }
+    .section-heading > p:last-child { max-width: 300px; font-size: 15px; }
+    .capabilities { grid-template-columns: 1fr; gap: 32px; margin-top: 38px; }
+    .capability { display: grid; grid-template-columns: 22px 1fr; column-gap: 14px; }
+    .capability-number { grid-row: 1 / 4; margin-top: 2px; margin-bottom: 0; }
+    .capability h3 { font-size: 24px; }
+    .capability p { margin-top: 13px; max-width: 380px; }
+    .capability-example { margin-top: 18px; max-width: 300px; font-size: 16px; }
+    .context-inner { grid-template-columns: 1fr; gap: 35px; padding-block: 64px; }
+    .context-copy h2, .control-title h2 { font-size: clamp(2.25rem, 8vw, 3rem); }
+    .context-copy > p:not(.section-label) { max-width: 380px; }
+    .context-copy > a { margin-top: 18px; }
+    .context-figure { max-width: 440px; justify-self: center; }
+    .context-page { padding-inline: 28px; }
+    .context-block p { font-size: clamp(24px, 7vw, 32px); }
+    .context-prompt { width: 92%; }
+    .control-section { grid-template-columns: 1fr; gap: 40px; }
+    .control-rules article { gap: 25px; }
+    .control-rules h3 { font-size: 24px; }
+    .possibilities-inner { grid-template-columns: 1fr; gap: 26px; padding-block: 54px; }
+    .possibilities h2 { font-size: clamp(2rem, 6vw, 2.5rem); }
+    .possibilities-copy { max-width: 380px; }
+  }
+</style>

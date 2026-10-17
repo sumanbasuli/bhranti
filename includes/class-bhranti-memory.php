@@ -142,6 +142,9 @@ final class Bhranti_Memory {
 		if ( get_current_user_id() !== (int) $requester_id || ! Bhranti_Settings::can_manage() || ! $post || 'bhranti_session' !== $post->post_type || 'private' !== $post->post_status || (int) $post->post_author !== (int) $requester_id ) {
 			return self::error( 'permission', 403 );
 		}
+		if ( Bhranti_Credentials::contains( $command ) ) {
+			return Bhranti_Credentials::error( 'memory' );
+		}
 		$actor = Bhranti_Actions::ensure_actor();
 		if ( is_wp_error( $actor ) || ! user_can( $actor, 'manage_options' ) ) {
 			return self::error( 'permission', 403 );
@@ -179,6 +182,9 @@ final class Bhranti_Memory {
 		} else {
 			if ( ! self::authorized( $session_id, $args['evidence'], 'POST' === $method ? 'remember' : 'forget' ) ) {
 				return self::error( 'explicit_request', 403 );
+			}
+			if ( 'POST' === $method && Bhranti_Credentials::memory_secret( $args['evidence'] ) ) {
+				return Bhranti_Credentials::error( 'memory' );
 			}
 			if ( 'POST' === $method && ( ! self::preference_text( $args['text'] ) || false === strpos( $args['evidence'], $args['text'] ) ) ) {
 				return self::error( 'explicit_request', 403 );
@@ -245,7 +251,7 @@ final class Bhranti_Memory {
 				continue;
 			}
 			$instruction = $message['content'];
-			return false !== strpos( $instruction, $evidence ) && ! preg_match( '/\b(?:do\s+not|don[\x{2019}\x{0027}]?t|never|stop|avoid|not|no\s+need)\s+(?:\w+\s+){0,3}(?:remember|save|keep|forget|remove)\b/iu', $instruction );
+			return ( 'remember' !== $verb || ! Bhranti_Credentials::memory_secret( $instruction ) ) && false !== strpos( $instruction, $evidence ) && ! preg_match( '/\b(?:do\s+not|don[\x{2019}\x{0027}]?t|never|stop|avoid|not|no\s+need)\s+(?:\w+\s+){0,3}(?:remember|save|keep|forget|remove)\b/iu', $instruction );
 		}
 		return false;
 	}
@@ -257,7 +263,7 @@ final class Bhranti_Memory {
 	 * @return bool
 	 */
 	private static function preference_text( $text ) {
-		return is_string( $text ) && '' !== trim( $text ) && mb_strlen( $text ) <= 240 && sanitize_text_field( $text ) === $text && ! preg_match( '/(?:password|credential|api[ _-]?key|access[ _-]?token|secret[ _-]?key|private[ _-]?key|BEGIN [A-Z ]*KEY|\bsk-[a-z0-9]|https?:\/\/|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i', $text );
+		return is_string( $text ) && ! Bhranti_Credentials::memory_secret( $text ) && '' !== trim( $text ) && mb_strlen( $text ) <= 240 && sanitize_text_field( $text ) === $text && ! preg_match( '/(?:password|credential|api[ _-]?key|access[ _-]?token|secret[ _-]?key|private[ _-]?key|BEGIN [A-Z ]*KEY|\bsk-[a-z0-9]|https?:\/\/|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i', $text );
 	}
 
 	/**

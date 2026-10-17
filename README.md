@@ -2,6 +2,14 @@
 
 A WordPress-aware assistant accessed as **Bhranti** in the WordPress admin bar. Its chat sidebar uses native WordPress colors and stays alongside the current editor or site page. It uses the site's native WordPress AI Client and Settings → Connectors, with no provider settings or credentials inside this plugin.
 
+## Build and release
+
+Run `./build.sh` from this repository to make `build/bhranti.zip`, the versioned ZIP, a clean plugin folder, and SHA-256 checksums. Python 3, PHP CLI and Node.js are required. `./build.sh --check` validates inputs without writing a package; `python3 tests/build.py` verifies packaging and exclusions.
+
+Use `VERSION` for release versioning and keep the plugin header, `BHRANTI_VERSION`, `readme.txt` Stable tag and changelog in sync. The GitHub workflow builds pushes to `main` and publishes a new version when `VERSION` changes. Matching `v<version>` tags can also publish; manual runs without a tag only produce artifacts. Versions below 1.0 are marked as prereleases.
+
+See [Build and release](docs/release.md) for outputs, first-release instructions and workflow behavior. The Astro website in `site/` has its own `npm run build`; it is excluded from the installable plugin ZIP.
+
 ## Working behavior
 
 - `bhranti_inspect resource=rendered` inspects an exact saved post/page in the administrator’s browser at 1280, 390 and 320 CSS-pixel widths. It runs locally bundled axe-core 4.14.0 WCAG A/AA rules, image/fragment checks and page overflow measurements. Passing evidence is distinct from native saved-state readback and invalidates when the known page/theme state changes. Engine-incomplete findings and bounded loading failures do not count as a pass. It does not submit forms, click controls, capture screenshots or certify full WCAG conformance. Normal installed frontend scripts load in the authenticated preview; this is not an isolated or anonymous visitor browser. The job waits without spending model steps when the browser closes and resumes on reopening the conversation.

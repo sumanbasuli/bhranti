@@ -141,6 +141,7 @@ class TM_Post_Type {
 final class Bhranti_Settings { public static function task_catalog() { return array(); } }
 final class Bhranti_Commerce { public static function catalog() { return array(); } }
 final class Bhranti_Audit { public static function record( ...$args ) { $GLOBALS['tm_audits'][] = $args; return count( $GLOBALS['tm_audits'] ); } }
+require dirname( __DIR__ ) . '/includes/class-bhranti-credentials.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-references.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-site.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-actions.php';

@@ -6,16 +6,16 @@
 	const __ = wp.i18n ? wp.i18n.__ : (value) => value;
 	const sprintf = wp.i18n && wp.i18n.sprintf ? wp.i18n.sprintf : (value, ...args) => value.replace(/%[ds]/g, () => String(args.shift()));
 	const apiPath = (settings.apiPath || '/bhranti/v1').replace(/\/+$/, '');
-	const state = { open: false, initialized: false, loading: false, busy: false, stepping: false, stopRequested: false, pausedForEditor: false, editor: null, editorError: '', progress: null, menu: false, workspace: { sessions: [], ai: {} }, session: null, draft: '', drafts: new Map(), screenshots: new Map(), screenshot: null, capturing: false, error: '', reconnecting: 0, connectionError: '', results: new Map(), notices: [], seen: new Set(), width: 350, attachPage: true, attachBlock: true, agentId: 'bhranti' };
+	const state = { open: false, initialized: false, loading: false, busy: false, stepping: false, stopRequested: false, pausedForEditor: false, editor: null, editorError: '', progress: null, menu: false, workspace: { sessions: [], ai: {} }, session: null, draft: '', drafts: new Map(), screenshots: new Map(), screenshot: null, capturing: false, error: '', credentialWarning: false, reconnecting: 0, connectionError: '', results: new Map(), notices: [], seen: new Set(), width: 350, attachPage: true, attachBlock: true, agentId: 'bhranti' };
 	let renderController = null;
 	let noticeSequence = 0, lastTrigger = null, contextFingerprint = '', progressTimer = null, heartbeatTimer = null, backgroundTimer = null, heartbeatRequest = null, heartbeatQueued = false, heartbeatFingerprint = '', backgroundReading = false, pageSuspended = false, interacting = false, composing = false, renderPending = false, interactionTimer = null, pageFormDirty = false, streamSession = null;
 	const storageKey = 'bhranti-session:' + (settings.connectorsUrl || window.location.origin);
 	const openStorageKey = 'bhranti-admin-open:' + (settings.connectorsUrl || window.location.origin) + ':' + (settings.userId || 0);
-	const scrollPositions = new Map(), disclosureStates = new Map(), referenceRemovals = new Map();
+	const scrollPositions = new Map(), disclosureStates = new Map(), referenceRemovals = new Map(), credentialDrafts = new Map();
 	let renderedFingerprint = '', menuScroll = 0, chatSearch = '', chatListRequest = null;
 	const editorSync = { baselines: new Map(), pending: null, timer: null, request: null, fetching: false, generation: 0, snapshot: null, message: '' };
 	let editorControl = null, siteControl = null;
-	let pendingAction = null, stopRunKey = '', blockedObservation = null;
+	let pendingAction = null, stopRunKey = '', blockedObservation = null, credentialReview = false;
 	const settingsEvents = new Map();
 	let triggerFingerprint = '';
 	function rememberOpen(open) { if (settings.isAdmin) { try { if (open) window.sessionStorage.setItem(openStorageKey, '1'); else window.sessionStorage.removeItem(openStorageKey); } catch (error) { /* Storage can be unavailable in private browsing. */ } } }
@@ -123,11 +123,11 @@
 	function draftKey(id) { return openStorageKey + ':draft:' + (id || 'new'); }
 	function rememberDraft() {
 		const key = draftKey(state.session && state.session.id); state.drafts.set(key, state.draft); if (state.screenshot) state.screenshots.set(key, state.screenshot); else state.screenshots.delete(key);
-		try { if (state.draft) window.sessionStorage.setItem(key, state.draft); else window.sessionStorage.removeItem(key); } catch (error) { /* In-memory drafts still survive chat switches. */ }
+		try { if (state.draft && credentialDrafts.get(key) !== state.draft && !containsCredentials(state.draft)) window.sessionStorage.setItem(key, state.draft); else window.sessionStorage.removeItem(key); } catch (error) { /* In-memory drafts still survive chat switches. */ }
 	}
 	function restoreDraft(id) {
 		const key = draftKey(id); if (state.drafts.has(key)) return state.drafts.get(key);
-		try { return (window.sessionStorage.getItem(key) || '').slice(0, 12000); } catch (error) { return ''; }
+		try { const draft = (window.sessionStorage.getItem(key) || '').slice(0, 12000); if (containsCredentials(draft)) { state.drafts.set(key, draft); try { window.sessionStorage.removeItem(key); } catch (error) { /* Keep the recovered draft in memory when storage is read-only. */ } } return draft; } catch (error) { return ''; }
 	}
 	function retainedReferenceImage() {
 		const run = currentRun(), reference = run && run.reference_image;
@@ -628,7 +628,7 @@
 	}
 	async function openSession(id, preserveDraft = false) {
 		if (state.busy || state.loading || state.capturing || state.stepping) return;
-		rememberDraft(); state.busy = true; state.error = ''; state.menu = false; render();
+		rememberDraft(); state.busy = true; state.error = ''; state.credentialWarning = false; state.menu = false; render();
 		try { state.session = await loadSession(id); if (!preserveDraft) { state.draft = restoreDraft(state.session && state.session.id); state.screenshot = state.screenshots.get(draftKey(state.session && state.session.id)) || null; } state.agentId = state.session && state.session.agent_id || 'bhranti'; rememberSession(state.session && state.session.id); markExistingEvents(); }
 		catch (error) { state.error = errorMessage(error); }
 		finally { state.busy = false; render(); }
@@ -699,7 +699,7 @@
 	}
 	function newChat() {
 		if (state.busy || state.loading || state.capturing || activeRun()) return;
-		rememberDraft(); state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; state.error = ''; state.menu = false; state.seen.clear(); rememberSession(null); render(); root.querySelector('#bhranti-composer').focus();
+		rememberDraft(); state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; state.error = ''; state.credentialWarning = false; state.menu = false; state.seen.clear(); rememberSession(null); render(); root.querySelector('#bhranti-composer').focus();
 	}
 	function acceptedSubmission(session, content, previousCount, previousRunId) {
 		return !!(session && session.run && typeof session.run.id === 'string' && session.run.id && session.run.id !== previousRunId && (session.messages || []).slice(previousCount).some((message) => message.role === 'user' && message.content === content));
@@ -723,16 +723,46 @@
 		if (state.session) await openSession(state.session.id, true);
 		else { state.initialized = false; await openPanel(); }
 	}
+	function containsCredentials(value) { return !!(window.bhrantiCredentials && window.bhrantiCredentials.contains(value)); }
+	function submissionHasCredentials(content, context = attachedContext()) {
+		const textContext = { ...context };
+		if (textContext.screenshot) { const { data, ...metadata } = textContext.screenshot; textContext.screenshot = metadata; }
+		return containsCredentials({ content, context: textContext });
+	}
+	function credentialWarning() { if (state.credentialWarning === 'history') return __('This conversation contains older text that looks like a credential. Start a new chat without it. This request was not saved or sent to AI.', 'bhranti'); if (state.credentialWarning === 'settings') return __('Your Bhranti instructions appear to contain credentials. Remove them in Bhranti Settings before sending. Manage provider credentials in WordPress Connectors.', 'bhranti'); return __('This message or its attached context appears to contain a password, API key, token or other credential. Remove it before sending. Manage provider credentials in WordPress Connectors.', 'bhranti'); }
+	function updateCredentialWarning(input = root.querySelector('#bhranti-composer'), warning = root.querySelector('#bhranti-credential-warning')) {
+		if (warning) warning.hidden = !state.credentialWarning;
+		if (input) { input.setAttribute('aria-describedby', 'bhranti-composer-hint bhranti-disclosure' + (state.credentialWarning ? ' bhranti-credential-warning' : '')); if (state.credentialWarning) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid'); }
+	}
+	async function rejectCredentialSubmission(content, id, messages, context) {
+		if (pageSuspended || (state.session && state.session.id || null) !== id) return;
+		const rejectedSession = state.session;
+		if (rejectedSession) rejectedSession.messages = messages;
+		state.draft = content; credentialDrafts.set(draftKey(id), content); state.error = ''; state.credentialWarning = ['history', 'settings'].includes(context) ? context : true;
+		if (!id) return;
+		credentialReview = true; render();
+		try {
+			const fresh = await request('/sessions/' + encodeURIComponent(id));
+			if (!pageSuspended && state.session === rejectedSession && fresh && fresh.id === id) state.session = fresh;
+		} catch (error) { /* The rejected content was never accepted; keep its editable draft. */ }
+		finally { credentialReview = false; }
+	}
 	async function sendMessage() {
-		const content = state.draft.trim();
+		const draft = state.draft, content = draft.trim();
 		if (!content || state.busy || state.loading || state.capturing || state.error || activeRun()) return;
-		state.busy = true; state.draft = ''; rememberDraft(); state.stopRequested = false; state.pausedForEditor = false; render(); let previousCount = 0, previousRunId = null;
+		const context = attachedContext();
+		if (submissionHasCredentials(content, context)) { state.credentialWarning = true; rememberDraft(); render(); focusComposer(); return; }
+		state.busy = true; state.credentialWarning = false; state.draft = ''; rememberDraft(); state.stopRequested = false; state.pausedForEditor = false; render(); let previousCount = 0, previousRunId = null, submissionId = null, messages = [];
 		try {
 			if (!state.session) state.session = await request('/sessions', 'POST', {});
-			rememberSession(state.session.id); previousCount = (state.session.messages || []).length; previousRunId = currentRun() && currentRun().id || null;
-			state.session.messages = (state.session.messages || []).concat({ role: 'user', content, created: new Date().toISOString() }); render();
-			state.session = await request('/sessions/' + encodeURIComponent(state.session.id) + '/messages', 'POST', { content, context: attachedContext(), agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id);
-		} catch (error) { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount, previousRunId) && acceptedSubmission(state.session, content, previousCount, previousRunId)) { state.error = ''; state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id); } }
+			submissionId = state.session.id; messages = state.session.messages || [];
+			rememberSession(submissionId); previousCount = messages.length; previousRunId = currentRun() && currentRun().id || null;
+			state.session.messages = messages.concat({ role: 'user', content, created: new Date().toISOString() }); render();
+			state.session = await request('/sessions/' + encodeURIComponent(submissionId) + '/messages', 'POST', { content, context, agent_id: state.agentId }); state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id);
+		} catch (error) {
+			if (error.code === 'bhranti_credentials') await rejectCredentialSubmission(draft, submissionId, messages, error.data && error.data.credential_context);
+			else { state.error = errorMessage(error); if (await reloadAfterError(content, previousCount, previousRunId) && acceptedSubmission(state.session, content, previousCount, previousRunId)) { state.error = ''; state.screenshot = null; state.screenshots.delete(draftKey(null)); clearReferenceRemoval(state.session && state.session.id); } }
+		}
 		finally { await refreshWorkspaceQuietly(); state.busy = false; rememberDraft(); render(); }
 		markExistingEvents(); continueRun(); focusComposer();
 	}
@@ -878,7 +908,7 @@
 		if (state.busy || state.loading || state.capturing || activeRun() || !state.session) return;
 		if (!window.confirm(__('Delete this conversation permanently? Site actions and their audit records are not undone by deleting a chat.', 'bhranti'))) return;
 		state.busy = true; render();
-		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); clearReferenceRemoval(state.session.id); state.drafts.delete(key); state.screenshots.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
+		try { await request('/sessions/' + encodeURIComponent(state.session.id), 'DELETE'); const key = draftKey(state.session.id); clearReferenceRemoval(state.session.id); state.drafts.delete(key); credentialDrafts.delete(key); state.screenshots.delete(key); try { window.sessionStorage.removeItem(key); } catch (error) { /* Storage may be unavailable. */ } state.session = null; state.draft = restoreDraft(null); state.screenshot = state.screenshots.get(draftKey(null)) || null; rememberSession(null); await refreshWorkspaceQuietly(); state.menu = false; }
 		catch (error) { notify(errorMessage(error)); }
 		finally { state.busy = false; render(); }
 	}
@@ -1065,12 +1095,12 @@
 			const remove = iconButton(__('Remove reference image', 'bhranti'), 'bhranti-chip-remove', removeReferenceImage, 'close', 'bhranti-remove-reference-image'); remove.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 			chips.appendChild(element('span', 'bhranti-context-chip', icon('image'), element('span', '', __('Reference image', 'bhranti')), remove));
 		}
-		const input = root.querySelector('#bhranti-composer') || element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; if (input.value !== state.draft) input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-composer-hint bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun();
+		const input = root.querySelector('#bhranti-composer') || element('textarea', 'bhranti-composer'); input.id = 'bhranti-composer'; input.rows = 2; input.maxLength = 12000; if (input.value !== state.draft) input.value = state.draft; input.placeholder = activeRun() ? __('Draft your next message…', 'bhranti') : __('Ask anything…', 'bhranti'); input.setAttribute('aria-label', __('Message Bhranti', 'bhranti')); input.setAttribute('aria-describedby', 'bhranti-composer-hint bhranti-disclosure'); input.disabled = state.loading || state.capturing || state.busy && !state.stepping && !activeRun() && !credentialReview;
 		const sendingBlocked = () => state.busy || state.loading || state.capturing || !!state.error || !!activeRun() || !state.draft.trim();
 		const send = iconButton(__('Send message', 'bhranti'), 'bhranti-send-button', sendMessage, 'send', 'bhranti-send'); send.disabled = sendingBlocked();
 		if (!input.dataset.bound) {
 			input.dataset.bound = '1';
-			input.addEventListener('input', () => { state.draft = input.value; rememberDraft(); const control = root.querySelector('#bhranti-send'); if (control) control.disabled = sendingBlocked(); sizeComposer(input); });
+			input.addEventListener('input', () => { state.draft = input.value; if (state.credentialWarning) { state.credentialWarning = submissionHasCredentials(state.draft); updateCredentialWarning(); } rememberDraft(); const control = root.querySelector('#bhranti-send'); if (control) control.disabled = sendingBlocked(); sizeComposer(input); });
 			input.addEventListener('keydown', (event) => {
 				if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.isComposing || composing || event.keyCode === 229) return;
 				event.preventDefault();
@@ -1087,7 +1117,8 @@
 		const upload = iconButton(__('Attach reference image', 'bhranti'), 'bhranti-icon-button', () => file.click(), 'image', 'bhranti-attach-image'); upload.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const screenshot = iconButton(state.capturing ? __('Choosing screenshot…', 'bhranti') : __('Attach tab screenshot', 'bhranti'), 'bhranti-icon-button', attachScreenshot, 'camera', 'bhranti-screenshot'); screenshot.disabled = state.busy || state.loading || state.capturing || !!activeRun();
 		const hint = element('span', 'screen-reader-text', __('Enter to send. Shift+Enter for new line.', 'bhranti')); hint.id = 'bhranti-composer-hint';
-		form.appendChild(file); form.appendChild(chips); form.appendChild(input); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, upload, screenshot), hint, send)); return form;
+		const warning = element('p', 'bhranti-credential-warning', credentialWarning()); warning.id = 'bhranti-credential-warning'; warning.setAttribute('role', 'alert'); warning.hidden = !state.credentialWarning;
+		form.appendChild(file); form.appendChild(chips); form.appendChild(input); form.appendChild(warning); updateCredentialWarning(input, warning); form.appendChild(element('div', 'bhranti-composer-actions', element('div', 'bhranti-header-controls', attach, upload, screenshot), hint, send)); return form;
 	}
 	function sizeComposer(input) { input.style.height = 'auto'; input.style.height = Math.max(48, Math.min(150, input.scrollHeight)) + 'px'; }
 	function resizeHandle() {
@@ -1108,7 +1139,7 @@
 		root.querySelectorAll('details[data-bhranti-disclosure]').forEach((node) => { if (String(node.open) !== node.dataset.openAtRender) { disclosureStates.set(node.dataset.bhrantiDisclosure, node.open); node.dataset.openAtRender = String(node.open); } });
 		if (!state.busy && !state.stepping && !activeRun() && state.workspace.agents && !state.workspace.agents.some((agent) => agent.id === state.agentId)) state.agentId = 'bhranti';
 		const context = runtimeContext(), retry = currentRun() && currentRun().status === 'running' ? Math.max(0, Math.ceil(Number(currentRun().retry_at) - Date.now() / 1000)) : 0;
-		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, referenceImageRemoved(), state.capturing, state.error, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, closeUnavailable(), context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
+		const fingerprint = JSON.stringify([state.open, state.initialized, state.loading, state.busy, state.stepping, state.stopRequested, state.pausedForEditor, state.editorError, state.progress, state.menu, state.workspace, state.session, state.draft, state.screenshot, referenceImageRemoved(), state.capturing, state.error, state.credentialWarning, credentialReview, state.reconnecting, state.connectionError, state.notices, state.width, state.attachPage, state.attachBlock, state.agentId, editorSync.message, editorSummary().dirty, editorState().unsaved_changes, closeUnavailable(), context.post_type, context.title, context.selected_block && [context.selected_block.client_id, context.selected_block.name], retry, chatSearch]);
 		if (fingerprint === renderedFingerprint) { syncTrigger(); return; }
 		renderedFingerprint = fingerprint;
 		const focused = document.activeElement, focusId = focused && root.contains(focused) ? focused.id : null, selection = ['bhranti-composer', 'bhranti-chat-search'].includes(focusId) ? [focused.selectionStart, focused.selectionEnd] : null;

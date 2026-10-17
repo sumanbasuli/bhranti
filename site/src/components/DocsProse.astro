@@ -1,0 +1,56 @@
+<div class="docs-prose"><slot /></div>
+
+<script>
+  document.querySelectorAll<HTMLTableElement>('.docs-prose table').forEach((table) => {
+    table.tabIndex = 0;
+    if (!table.hasAttribute('aria-label') && !table.caption) {
+      table.setAttribute('aria-label', 'Reference table. Scroll horizontally if needed.');
+    }
+  });
+</script>
+
+<style>
+  .docs-prose { color:var(--color-muted); font-size:16px; line-height:1.8; overflow-wrap:anywhere; }
+  .docs-prose :global(p) { margin:0 0 1.35em; }
+  .docs-prose :global(h2) { color:var(--color-text); font-size:25px; font-weight:550; letter-spacing:-.035em; line-height:1.3; margin:2.5em 0 .8em; scroll-margin-top:110px; }
+  .docs-prose :global(h2:first-child) { margin-top:0; }
+  .docs-prose :global(h3) { color:var(--color-text); font-size:20px; font-weight:550; line-height:1.4; margin:2em 0 .8em; scroll-margin-top:110px; }
+  .docs-prose :global(strong) { color:var(--color-text); font-weight:550; }
+  .docs-prose :global(a) { color:var(--color-accent); text-decoration-color:rgba(114,174,230,.4); text-underline-offset:4px; }
+  .docs-prose :global(a:hover) { text-decoration-color:var(--color-accent); }
+  .docs-prose :global(a:focus-visible) { outline:2px solid var(--color-accent); outline-offset:4px; }
+  .docs-prose :global(ol), .docs-prose :global(ul) { padding-left:1.5em; margin:0 0 1.5em; }
+  .docs-prose :global(li) { padding-left:.4em; margin:.8em 0; }
+  .docs-prose :global(li::marker) { color:var(--color-accent); }
+  .docs-prose :global(ol > li) { padding-left:.55em; margin-block:1.1em; }
+  .docs-prose :global(ol > li::marker) { font-weight:600; font-variant-numeric:tabular-nums; }
+  .docs-prose :global(li > p) { margin-bottom:.65em; }
+  .docs-prose :global(li > p:last-child) { margin-bottom:0; }
+  .docs-prose :global(li > ol), .docs-prose :global(li > ul) { margin-block:.7em 1em; }
+  .docs-prose :global(li > ol > li), .docs-prose :global(li > ul > li) { margin-block:.55em; }
+  .docs-prose :global(blockquote) { border-left:2px solid var(--color-accent); background:var(--color-surface); margin:1.8em 0; padding:22px 25px; color:var(--color-text); }
+  .docs-prose :global(blockquote p:last-child) { margin:0; }
+  .docs-prose :global(code) { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.84em; background:var(--color-surface); color:var(--color-text); padding:.15em .35em; border-radius:3px; }
+  .docs-prose :global(pre) { padding:22px; margin:1.8em 0; border:1px solid var(--color-border); border-radius:6px; overflow-x:auto; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
+  .docs-prose :global(pre code) { padding:0; background:none; }
+  .docs-prose :global(p:has(> img)), .docs-prose :global(p:has(> a > img)) { margin-block:30px 12px; line-height:0; }
+  .docs-prose :global(a:has(> img)) { display:block; width:fit-content; max-width:100%; margin-inline:auto; text-decoration:none; cursor:zoom-in; }
+  .docs-prose :global(img) { display:block; max-width:100%; height:auto; margin-inline:auto; border:1px solid var(--color-border); border-radius:5px; }
+  .docs-prose :global(a:hover > img) { border-color:var(--color-accent); }
+  .docs-prose :global(p:has(img) + p > em:only-child) { display:block; font-size:12px; line-height:1.65; font-style:normal; color:var(--color-muted); }
+  .docs-prose :global(p:has(img) + p:has(> em:only-child)) { margin-bottom:2.5em; }
+  .docs-prose :global(table) { display:block; width:100%; max-width:100%; overflow-x:auto; border-collapse:collapse; border-spacing:0; margin:28px 0 35px; font-size:13px; line-height:1.65; scrollbar-color:#686e73 var(--color-bg); scrollbar-width:thin; }
+  .docs-prose :global(table:focus-visible) { outline:2px solid var(--color-accent); outline-offset:5px; }
+  .docs-prose :global(th), .docs-prose :global(td) { min-width:110px; vertical-align:top; text-align:left; padding:14px 16px; border-bottom:1px solid var(--color-border); }
+  .docs-prose :global(th) { color:var(--color-text); background:var(--color-surface); font-weight:550; border-top:1px solid var(--color-border); }
+  .docs-prose :global(td:first-child) { color:var(--color-text); }
+  .docs-prose :global(td p:last-child) { margin-bottom:0; }
+  .docs-prose :global(hr) { border:0; border-top:1px solid var(--color-border); margin:42px 0; }
+  @media (max-width:550px) {
+    .docs-prose :global(h2) { font-size:23px; }
+    .docs-prose :global(h3) { font-size:19px; }
+    .docs-prose :global(pre), .docs-prose :global(blockquote) { padding:18px; }
+    .docs-prose :global(th), .docs-prose :global(td) { padding:12px; }
+    .docs-prose :global(p:has(> img)), .docs-prose :global(p:has(> a > img)) { margin-top:24px; }
+  }
+</style>

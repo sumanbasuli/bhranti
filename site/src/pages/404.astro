@@ -1,0 +1,14 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Page not found" description="This page could not be found. Find your way back to Bhranti or browse the documentation." markdownHref="/404.md">
+  <section class="not-found">
+    <p class="code">404</p>
+    <h1>A little off course.</h1>
+    <p>This page has moved, or the address isn’t quite right. Let’s get you back to something useful.</p>
+    <div class="links"><a href="/">Back to Bhranti <span aria-hidden="true">↗</span></a><a href="/docs/">Browse the docs</a></div>
+  </section>
+</Base>
+<style>
+  .not-found{max-width:1160px;margin:auto;padding:120px 28px 160px;min-height:65vh}.code{color:var(--color-accent);font-size:14px;letter-spacing:.12em}.not-found h1{font-size:clamp(44px,7vw,88px);line-height:1.02;letter-spacing:-.05em;font-weight:600;margin:20px 0 28px}.not-found>p:not(.code){color:var(--color-muted);max-width:520px;font-size:19px;line-height:1.65}.links{display:flex;flex-wrap:wrap;gap:24px;margin-top:40px}.links a{color:var(--color-text);text-decoration:underline;text-underline-offset:6px}.links a:first-child{color:var(--color-accent)}
+</style>

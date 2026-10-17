@@ -1,0 +1,96 @@
+---
+import '../styles/global.css';
+import Mark from '../components/Mark.astro';
+import Arrow from '../components/Arrow.astro';
+import { release } from '../data/release';
+
+interface Props {
+  title: string;
+  description: string;
+  markdownHref: string;
+  active?: 'home' | 'product' | 'docs' | 'download';
+  pageClass?: string;
+}
+
+const { title, description, markdownHref, active = 'home', pageClass = '' } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://bhranti.org');
+const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPress' : `${title} — Bhranti`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1e1e1e" />
+    <meta name="description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="Bhranti" />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="text/markdown" href={markdownHref} title="Read this page as Markdown" />
+    <title>{pageTitle}</title>
+  </head>
+  <body class={pageClass}>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <aside class="beta-announcement" aria-label="Release status">
+      <div class="container"><p>Bhranti is currently in beta.</p><a href="/docs/get-started/">Get started <Arrow /></a></div>
+    </aside>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="Bhranti home"><Mark /><span>Bhranti<span class="brand-period">.</span></span></a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="/product/" aria-current={active === 'product' ? 'page' : undefined}>Product</a>
+          <a href="/docs/" aria-current={active === 'docs' ? 'page' : undefined}>Documentation</a>
+          <a class="nav-cta" href="/download/" aria-current={active === 'download' ? 'page' : undefined}>Download Bhranti <Arrow direction="diagonal" /></a>
+        </nav>
+        <details class="mobile-menu">
+          <summary>Menu <span class="menu-lines" aria-hidden="true"></span></summary>
+          <nav aria-label="Mobile navigation">
+            <a href="/" aria-current={active === 'home' ? 'page' : undefined}>Home</a>
+            <a href="/product/" aria-current={active === 'product' ? 'page' : undefined}>Product</a>
+            <a href="/docs/" aria-current={active === 'docs' ? 'page' : undefined}>Documentation</a>
+            <a href="/download/" aria-current={active === 'download' ? 'page' : undefined}>Download Bhranti <Arrow direction="diagonal" /></a>
+            <a href="/docs/get-started/">Get started <Arrow /></a>
+          </nav>
+        </details>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"><slot /></main>
+    <footer class="site-footer">
+      <div class="container footer-top">
+        <div class="footer-intro">
+          <a class="brand" href="/" aria-label="Bhranti home"><Mark /><span>Bhranti<span class="brand-period">.</span></span></a>
+          <p>A helping hand for your WordPress.</p>
+        </div>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>
+          <a href="/product/">Explore the product <Arrow /></a>
+          <a href="/docs/">Read the documentation <Arrow /></a>
+          <a href={markdownHref} data-llm-hint="A complete text/markdown version of this page">Read this page as Markdown <span aria-hidden="true">↓</span></a>
+        </nav>
+      </div>
+      <div class="container footer-bottom">
+        <span>Made for WordPress. Made for your ideas.</span>
+        <span>Bhranti {release.version} <span class="footer-dot" aria-hidden="true">·</span> WordPress {release.wordpress} <span class="footer-dot" aria-hidden="true">·</span> PHP {release.php}</span>
+      </div>
+    </footer>
+    <script>
+      const menu = document.querySelector<HTMLDetailsElement>('.mobile-menu');
+      menu?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && menu.open) {
+          menu.open = false;
+          menu.querySelector('summary')?.focus();
+        }
+      });
+      menu?.querySelectorAll('a').forEach((link) => {
+        link.addEventListener('click', () => { menu.open = false; });
+      });
+      document.addEventListener('click', (event) => {
+        if (menu?.open && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+      });
+    </script>
+  </body>
+</html>

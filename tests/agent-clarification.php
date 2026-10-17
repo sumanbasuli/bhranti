@@ -23,6 +23,7 @@ function is_utf8_charset( $value = null ) { return true; }
 function wp_json_encode( $value, $flags = 0, $depth = 512 ) { return json_encode( $value, $flags, $depth ); }
 function get_current_user_id() { return $GLOBALS['ac']['user']; }
 function get_current_blog_id() { return 1; }
+function wp_timezone_string() { return 'UTC'; }
 function get_user_meta( $id, $key, $single = false ) { return $single ? '' : array(); }
 function user_can( $id, $cap, ...$args ) { return in_array( (int) $id, array( 7, 11 ), true ); }
 function wp_cache_delete( ...$args ) {}
@@ -77,7 +78,7 @@ final class Bhranti_Plugins { public static function catalog() { return array();
 final class Bhranti_Media { public static function catalog() { return array(); } }
 final class Bhranti_Chat { public static function render( $text ) { return '<p>' . htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' ) . '</p>'; } }
 final class Bhranti_Audit { public static function record( $type, $summary, $session, $details = array(), $requester = 0, $actor = 0 ) { if ( ( $GLOBALS['ac']['fail_audit'] ?? '' ) === $type ) { return new WP_Error( 'audit_storage', 'Audit unavailable.' ); } $GLOBALS['ac']['events'][] = compact( 'type', 'summary', 'session', 'details', 'requester', 'actor' ); return count( $GLOBALS['ac']['events'] ); } }
-foreach ( array( 'workspace', 'skills', 'task', 'agent', 'runner', 'knowledge', 'progress', 'diagnostics' ) as $class ) { require dirname( __DIR__ ) . '/includes/class-bhranti-' . $class . '.php'; }
+foreach ( array( 'credentials', 'workspace', 'skills', 'task', 'agent', 'runner', 'knowledge', 'progress', 'diagnostics' ) as $class ) { require dirname( __DIR__ ) . '/includes/class-bhranti-' . $class . '.php'; }
 function ac_check( $value, $message ) { ++$GLOBALS['ac']['checks']; if ( ! $value ) { throw new RuntimeException( $message ); } }
 function ac_private( $method, ...$args ) { return ( new ReflectionMethod( Bhranti_Agent::class, $method ) )->invoke( null, ...$args ); }
 function ac_envelope( $type, $content, $tool = 'none', $args = '{}' ) { return wp_json_encode( compact( 'type', 'content', 'tool', 'args' ) ); }

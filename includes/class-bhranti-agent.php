@@ -132,6 +132,23 @@ final class Bhranti_Agent {
 				if ( '' === $content ) {
 					return self::error( 'bhranti_empty_message', __( 'Write a message before sending.', 'bhranti' ), 400 );
 				}
+				$submitted = is_object( $request ) && method_exists( $request, 'get_json_params' ) ? $request->get_json_params() : array();
+				if ( is_object( $request ) && method_exists( $request, 'get_body' ) && '' !== $request->get_body() ) {
+					$raw_body = json_decode( $request->get_body(), true, 32 );
+					if ( ! is_array( $raw_body ) && false !== strpos( $request->get_header( 'content-type' ) ?? '', 'application/x-www-form-urlencoded' ) ) {
+						parse_str( $request->get_body(), $raw_body );
+					}
+					if ( is_array( $raw_body ) ) {
+						$submitted = $raw_body;
+					}
+				}
+				$text_context = $submitted['context'] ?? $request['context'];
+				if ( is_array( $text_context['screenshot'] ?? null ) ) {
+					unset( $text_context['screenshot']['data'] );
+				}
+				if ( Bhranti_Credentials::contains( array( $submitted['content'] ?? $content, $content, $text_context ) ) ) {
+					return Bhranti_Credentials::error();
+				}
 				if ( ! Bhranti_Workspace::ai_status()['available'] ) {
 					return self::error( 'bhranti_ai_unavailable', __( 'Configure a text provider in WordPress Settings → Connectors to start a conversation.', 'bhranti' ), 400 );
 				}
@@ -143,11 +160,22 @@ final class Bhranti_Agent {
 				if ( is_wp_error( $context ) ) {
 					return $context;
 				}
+				$checked_context = $context;
+				unset( $checked_context['screenshot']['data'] );
+				if ( Bhranti_Credentials::contains( $checked_context ) ) {
+					return Bhranti_Credentials::error();
+				}
+				if ( Bhranti_Credentials::contains( $configuration ) ) {
+					return Bhranti_Credentials::error( 'settings' );
+				}
+				$session = Bhranti_Workspace::session_data( $post );
+				if ( Bhranti_Credentials::contains( $session['messages'] ) ) {
+					return Bhranti_Credentials::error( 'history' );
+				}
 				$actor = Bhranti_Actions::ensure_actor();
 				if ( is_wp_error( $actor ) ) {
 					return $actor;
 				}
-				$session = Bhranti_Workspace::session_data( $post );
 				if ( count( $session['messages'] ) >= 200 ) {
 					return self::error( 'bhranti_session_full', __( 'Start a new conversation to continue; this conversation has reached its message limit.', 'bhranti' ), 400 );
 				}
@@ -455,13 +483,13 @@ final class Bhranti_Agent {
 					return Bhranti_Workspace::session_data( $post );
 				}
 				if ( ! empty( $run['phase'] ) ) {
-					return self::finish( $post, $run, __( 'The previous step was interrupted and will not repeat. Check Logs and the affected item before continuing.', 'bhranti' ), 'failed' );
+					return self::finish( $post, $run, __( 'The previous step was interrupted and will not repeat. Check Logs and the affected item before continuing.', 'bhranti' ), 'failed', 'interrupted_step' );
 				}
 				if ( (int) ( $run['retry_at'] ?? 0 ) > time() ) {
 					return Bhranti_Workspace::session_data( $post );
 				}
 				if ( $run['step'] >= ( $run['configuration']['max_steps'] ?? 128 ) ) {
-					return self::finish( $post, $run, __( 'Task step limit reached. Completed actions are saved. Send a new message to continue.', 'bhranti' ), 'failed' );
+					return self::finish( $post, $run, __( 'Task step limit reached. Completed actions are saved. Send a new message to continue.', 'bhranti' ), 'failed', 'step_limit' );
 				}
 				++$run['step'];
 				unset( $run['retry_at'], $run['resume_checkpoint'] );
@@ -472,7 +500,7 @@ final class Bhranti_Agent {
 				}
 				$logged = Bhranti_Audit::record( 'ai_started', __( 'WordPress AI Client requested the next step.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				if ( is_wp_error( $logged ) ) {
-					return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+					return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 				}
 				$reply = self::ask( $post, $run );
 				if ( is_wp_error( $reply ) ) {
@@ -482,11 +510,14 @@ final class Bhranti_Agent {
 					if ( ! empty( $reply->get_error_data()['retryable'] ) && empty( $run['plan_retries'] ) ) {
 						return self::retry_plan( $post, $run );
 					}
-					return self::finish( $post, $run, $reply->get_error_message(), 'failed' );
+					return self::finish( $post, $run, $reply->get_error_message(), 'failed', 'bhranti_credentials' === $reply->get_error_code() ? 'credentials_blocked' : 'ai_request_failed' );
 				}
 				Bhranti_Audit::record( 'ai_completed', __( 'WordPress AI Client returned the next step.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				$command = self::parse( $reply );
 				if ( is_wp_error( $command ) ) {
+					if ( 'bhranti_credentials' === $command->get_error_code() ) {
+						return self::finish( $post, $run, $command->get_error_message(), 'failed', 'credentials_blocked' );
+					}
 					$logged = Bhranti_Audit::record(
 						'ai_plan_failed',
 						__( 'The AI reply was not a valid action plan. No action ran.', 'bhranti' ),
@@ -499,12 +530,12 @@ final class Bhranti_Agent {
 						$run['actor_id']
 					);
 					if ( is_wp_error( $logged ) ) {
-						return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+						return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 					}
 					if ( empty( $run['plan_retries'] ) ) {
 						return self::retry_plan( $post, $run );
 					}
-					return self::finish( $post, $run, $command->get_error_message(), 'failed' );
+					return self::finish( $post, $run, $command->get_error_message(), 'failed', 'invalid_plan' );
 				}
 				$run['request_retries'] = 0;
 				if ( in_array( $command['type'], array( 'reply', 'question' ), true ) ) {
@@ -541,7 +572,7 @@ final class Bhranti_Agent {
 				}
 				if ( ! $request['defer_tool'] && ! empty( $run['context']['unsaved_changes'] ) && in_array( $command['tool'], array( 'wp_request', 'plugin_request', 'generate_image', 'bhranti_task_limit', 'commerce_request', 'form_request', 'reference_page', 'bhranti_memory' ), true ) && ( 'generate_image' === $command['tool'] || 'GET' !== strtoupper( $command['args']['method'] ?? 'GET' ) ) ) {
 					Bhranti_Audit::record( 'action_blocked', __( 'Write stopped because the editor has unsaved changes.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
-					return self::finish( $post, $run, __( 'Save or discard your editor changes, then send this request again.', 'bhranti' ), 'cancelled' );
+					return self::finish( $post, $run, __( 'Save or discard your editor changes, then send this request again.', 'bhranti' ), 'cancelled', 'unsaved_editor' );
 				}
 				$tool_command = array_intersect_key( $command, array_flip( array( 'tool', 'args' ) ) );
 				if ( class_exists( 'Bhranti_Render' ) && Bhranti_Render::is_command( $tool_command ) ) {
@@ -555,13 +586,13 @@ final class Bhranti_Agent {
 					$run['next_action']  = Bhranti_Progress::describe( $tool_command, $run['requester_id'], $run['actor_id'], $command['intent'] ?? '' );
 					$logged              = Bhranti_Audit::record( 'action_prepared', $run['next_action']['summary'], $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 					if ( is_wp_error( $logged ) ) {
-						return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+						return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 					}
 					$saved = self::save_run( $post->ID, $run );
 					return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
 				}
 				if ( Bhranti_Runner::editor_dirty( $run['requester_id'] ) && ! empty( Bhranti_Progress::describe( $tool_command, $run['requester_id'], $run['actor_id'] )['write'] ) ) {
-					return self::finish( $post, $run, __( 'Save or discard open editor changes before sending this request again.', 'bhranti' ), 'cancelled' );
+					return self::finish( $post, $run, __( 'Save or discard open editor changes before sending this request again.', 'bhranti' ), 'cancelled', 'unsaved_editor' );
 				}
 				$result = Bhranti_Actions::execute( $tool_command, $run['requester_id'], $post->ID );
 				return self::tool_result( $post, $run, $result, $tool_command );
@@ -590,7 +621,10 @@ final class Bhranti_Agent {
 					return Bhranti_Workspace::session_data( $post );
 				}
 				if ( ! isset( $run['pending_plan'] ) ) {
-					return self::finish( $post, $run, __( 'This prepared action is unavailable. Send a new request.', 'bhranti' ), 'failed' );
+					return self::finish( $post, $run, __( 'This prepared action is unavailable. Send a new request.', 'bhranti' ), 'failed', 'prepared_missing' );
+				}
+				if ( Bhranti_Credentials::contains( $run['pending_plan'] ) ) {
+					return self::finish( $post, $run, Bhranti_Credentials::error( 'response' )->get_error_message(), 'failed', 'credentials_blocked' );
 				}
 				if ( class_exists( 'Bhranti_Render' ) && Bhranti_Render::is_command( $run['pending_plan'] ) ) {
 					return self::prepare_render( $post, $run );
@@ -644,7 +678,7 @@ final class Bhranti_Agent {
 			$run['actor_id']
 		);
 		if ( is_wp_error( $logged ) ) {
-			return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+			return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 		}
 		$saved = self::save_run( $post->ID, $run );
 		return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
@@ -736,7 +770,7 @@ final class Bhranti_Agent {
 		);
 		$logged                = Bhranti_Audit::record( 'ai_plan_retry', __( 'Retrying the AI action plan once. No action ran from the unreadable response.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 		if ( is_wp_error( $logged ) ) {
-			return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+			return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 		}
 		$saved = self::save_run( $post->ID, $run );
 		return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
@@ -751,7 +785,7 @@ final class Bhranti_Agent {
 	 */
 	private static function retry_request( $post, $run ) {
 		if ( $run['step'] >= ( $run['configuration']['max_steps'] ?? 128 ) ) {
-			return self::finish( $post, $run, __( 'Task step limit reached. Completed actions are saved. Send a new message to continue.', 'bhranti' ), 'failed' );
+			return self::finish( $post, $run, __( 'Task step limit reached. Completed actions are saved. Send a new message to continue.', 'bhranti' ), 'failed', 'step_limit' );
 		}
 		$delays                = array( 5, 15, 30 );
 		$attempt               = (int) ( $run['request_retries'] ?? 0 );
@@ -765,7 +799,7 @@ final class Bhranti_Agent {
 				$run['phase']           = '';
 				$logged                 = Bhranti_Audit::record( 'ai_request_recovery', __( 'Continuing the saved task in smaller steps after a connection delay. Completed actions and images will be reused.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				if ( is_wp_error( $logged ) ) {
-					return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+					return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 				}
 				$saved = self::save_run( $post->ID, $run );
 				return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
@@ -774,14 +808,14 @@ final class Bhranti_Agent {
 				'kind' => 'model_request',
 				'step' => $run['step'],
 			);
-			return self::finish( $post, $run, __( 'The AI connection is still unavailable after automatic recovery. Completed actions and images are saved. Use Resume task to continue when the connection is available.', 'bhranti' ), 'failed' );
+			return self::finish( $post, $run, __( 'The AI connection is still unavailable after automatic recovery. Completed actions and images are saved. Use Resume task to continue when the connection is available.', 'bhranti' ), 'failed', 'ai_retries_exhausted' );
 		}
 		$run['request_retries'] = $attempt + 1;
 		$run['retry_at']        = time() + $delays[ $attempt ];
 		$run['phase']           = '';
 		$logged                 = Bhranti_Audit::record( 'ai_request_retry', __( 'Retrying the AI request after a delay. Completed actions are saved.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 		if ( is_wp_error( $logged ) ) {
-			return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+			return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 		}
 		$saved = self::save_run( $post->ID, $run );
 		return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
@@ -1094,10 +1128,10 @@ final class Bhranti_Agent {
 			$run['actor_id']
 		);
 		if ( is_wp_error( $logged ) ) {
-			return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+			return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 		}
 		if ( 3 <= $run['duplicate_proposals'] ) {
-			return self::finish( $post, $run, self::saved_items( $run ) . __( 'Completed work is saved. The AI kept proposing an already completed action, so I stopped it from repeating. The remaining work needs a different next step.', 'bhranti' ), 'incomplete' );
+			return self::finish( $post, $run, self::saved_items( $run ) . __( 'Completed work is saved. The AI kept proposing an already completed action, so I stopped it from repeating. The remaining work needs a different next step.', 'bhranti' ), 'incomplete', 'duplicate_prevented' );
 		}
 		$saved = self::save_run( $post->ID, $run );
 		return is_wp_error( $saved ) ? $saved : Bhranti_Workspace::session_data( $post );
@@ -1472,11 +1506,23 @@ final class Bhranti_Agent {
 				$instruction .= "\nSpecialist: " . $name . "\n" . $document['content'];
 			}
 		}
+		$instruction = self::configured_instruction( $run ) . $instruction;
+		$text_parts  = array( $instruction );
+		foreach ( $history as $message ) {
+			foreach ( $message->getParts() as $part ) {
+				if ( $part->getType()->isText() ) {
+					$text_parts[] = $part->getText();
+				}
+			}
+		}
+		if ( Bhranti_Credentials::contains( $text_parts ) ) {
+			return Bhranti_Credentials::error( 'provider' );
+		}
 		try {
 			$reply = Bhranti_Workspace::ai_request(
 				static function () use ( $history, $run, $instruction, $image_part ) {
 					$prompt  = static function ( $messages ) use ( $run, $instruction ) {
-						return wp_ai_client_prompt( $messages )->using_system_instruction( self::configured_instruction( $run ) . $instruction )->as_json_response( self::plan_schema() )->as_output_modalities( ModalityEnum::text() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 120.0 ) ) );
+						return wp_ai_client_prompt( $messages )->using_system_instruction( $instruction )->as_json_response( self::plan_schema() )->as_output_modalities( ModalityEnum::text() )->using_request_options( RequestOptions::fromArray( array( RequestOptions::KEY_TIMEOUT => 120.0 ) ) );
 					};
 					$builder = $prompt( $history );
 					if ( $image_part ) {
@@ -1607,6 +1653,9 @@ final class Bhranti_Agent {
 		if ( ! is_array( $data ) ) {
 			return self::error( 'bhranti_invalid_plan', __( 'The provider returned an invalid action plan. This step made no changes.', 'bhranti' ), 502 );
 		}
+		if ( Bhranti_Credentials::contains( $data ) ) {
+			return Bhranti_Credentials::error( 'response' );
+		}
 		// Native strict output uses a fixed outer schema; arbitrary reviewed arguments stay JSON data.
 		if ( 4 === count( $data ) && ! array_diff( array_keys( $data ), array( 'type', 'content', 'tool', 'args' ) ) && is_string( $data['args'] ?? null ) && is_string( $data['content'] ?? null ) ) {
 			if ( in_array( $data['type'] ?? '', array( 'reply', 'question' ), true ) && 'none' === ( $data['tool'] ?? '' ) && '{}' === trim( $data['args'] ) ) {
@@ -1617,6 +1666,9 @@ final class Bhranti_Agent {
 			} elseif ( 'tool' === ( $data['type'] ?? '' ) && strlen( $data['args'] ) <= 250000 && '{' === substr( ltrim( $data['args'] ), 0, 1 ) ) {
 				$args = json_decode( $data['args'], true, 32 );
 				if ( is_array( $args ) ) {
+					if ( Bhranti_Credentials::contains( $args ) ) {
+						return Bhranti_Credentials::error( 'response' );
+					}
 					$intent = mb_substr( sanitize_text_field( $data['content'] ), 0, 240 );
 					$data   = array(
 						'type' => 'tool',
@@ -1650,6 +1702,17 @@ final class Bhranti_Agent {
 	private static function tool_result( $post, $run, $result, $command ) {
 		$run['phase'] = '';
 		unset( $run['pending_plan'], $run['next_action'], $run['render_job'] );
+		$withheld = false;
+		if ( is_wp_error( $result ) ) {
+			if ( Bhranti_Credentials::contains( $result->get_error_message() ) ) {
+				$result = new WP_Error( $result->get_error_code(), __( 'Sensitive text was withheld from this tool error.', 'bhranti' ), Bhranti_Credentials::redact( $result->get_error_data() ) );
+			}
+		} else {
+			$withheld = Bhranti_Credentials::contains( $result );
+			if ( $withheld ) {
+				$result = Bhranti_Credentials::redact( $result );
+			}
+		}
 		if ( ! is_wp_error( $result ) && ! empty( $result['confirmation_required'] ) ) {
 			$run['status']       = 'awaiting_confirmation';
 			$run['confirmation'] = array_merge(
@@ -1661,7 +1724,7 @@ final class Bhranti_Agent {
 			);
 			$logged              = Bhranti_Audit::record( 'confirmation_requested', $result['summary'], $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 			if ( is_wp_error( $logged ) ) {
-				return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+				return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 			}
 		} else {
 			if ( ! is_wp_error( $result ) && 'bhranti_skill' === ( $command['tool'] ?? '' ) ) {
@@ -1675,7 +1738,12 @@ final class Bhranti_Agent {
 					$run['loaded_skills'][ $document['name'] ] = $document['revision'];
 				}
 			}
-			$receipt           = self::action_receipt( $run, $command, $result );
+			$receipt = self::action_receipt( $run, $command, $result );
+			if ( $withheld ) {
+				$receipt['sensitive_text_withheld'] = true;
+				$receipt['fields']                  = array();
+				$receipt['coverage']                = false;
+			}
 			$run['receipts'][] = $receipt;
 			$model_result      = $result;
 			if ( ! is_wp_error( $result ) && class_exists( 'Bhranti_Render' ) && Bhranti_Render::is_command( $command ) ) {
@@ -1735,14 +1803,14 @@ final class Bhranti_Agent {
 			$result_error_data = is_wp_error( $result ) ? $result->get_error_data() : null;
 			if ( is_array( $result_error_data ) && ! empty( $result_error_data['uncertain_action'] ) ) {
 				unset( $run['resume_checkpoint'] );
-				return self::finish( $post, $run, __( 'That action may already have changed the item. Check it in WordPress before sending another request.', 'bhranti' ), 'failed' );
+				return self::finish( $post, $run, __( 'That action may already have changed the item. Check it in WordPress before sending another request.', 'bhranti' ), 'failed', 'uncertain_action' );
 			}
 			if ( strlen( wp_json_encode( $run['receipts'] ) ) > 2000000 ) {
-				return self::finish( $post, $run, __( 'This run reached its retained action limit. Completed changes and their references are saved. Send a new message to continue from this checkpoint.', 'bhranti' ), 'incomplete' );
+				return self::finish( $post, $run, __( 'This run reached its retained action limit. Completed changes and their references are saved. Send a new message to continue from this checkpoint.', 'bhranti' ), 'incomplete', 'retained_action_limit' );
 			}
 
 			if ( ( $run['failed_call']['count'] ?? 0 ) >= 3 ) {
-				return self::finish( $post, $run, __( 'The same action was rejected three times, so I stopped retrying it. Completed changes are saved; the rejected action still needs a different approach.', 'bhranti' ), 'incomplete' );
+				return self::finish( $post, $run, __( 'The same action was rejected three times, so I stopped retrying it. Completed changes are saved; the rejected action still needs a different approach.', 'bhranti' ), 'incomplete', 'repeated_rejection' );
 			}
 		}
 		$saved = self::save_run( $post->ID, $run );
@@ -1855,19 +1923,19 @@ final class Bhranti_Agent {
 					return $saved;
 				}
 				if ( time() >= $confirmation['expires'] ) {
-					return self::finish( $post, $run, __( 'Approval expired. This deletion did not run. Send a new request.', 'bhranti' ), 'cancelled' );
+					return self::finish( $post, $run, __( 'Approval expired. This deletion did not run. Send a new request.', 'bhranti' ), 'cancelled', 'approval_expired' );
 				}
 				if ( ! $request['approved'] ) {
-					return self::finish( $post, $run, __( 'Deletion cancelled. Earlier changes are saved.', 'bhranti' ), 'cancelled' );
+					return self::finish( $post, $run, __( 'Deletion cancelled. Earlier changes are saved.', 'bhranti' ), 'cancelled', 'approval_denied' );
 				}
 				$logged = Bhranti_Audit::record( 'confirmation_approved', $confirmation['summary'], $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				if ( is_wp_error( $logged ) ) {
-					return self::finish( $post, $run, $logged->get_error_message(), 'failed' );
+					return self::finish( $post, $run, $logged->get_error_message(), 'failed', 'audit_failed' );
 				}
 				// Rebuild the canonical proposal against the current item; never trust a model's confirmation flag.
 				$current = Bhranti_Actions::execute( $confirmation['command'], $run['requester_id'], $post->ID );
 				if ( is_wp_error( $current ) || empty( $current['confirmation_required'] ) || ! hash_equals( (string) $confirmation['fingerprint'], (string) ( $current['fingerprint'] ?? '' ) ) ) {
-					return self::finish( $post, $run, __( 'The item changed after approval was requested. This deletion did not run. Review it and send a new request.', 'bhranti' ), 'cancelled' );
+					return self::finish( $post, $run, __( 'The item changed after approval was requested. This deletion did not run. Review it and send a new request.', 'bhranti' ), 'cancelled', 'approval_conflict' );
 				}
 				$result = Bhranti_Actions::execute( $confirmation['command'], $run['requester_id'], $post->ID, true, $confirmation['fingerprint'] );
 				return self::tool_result( $post, $run, $result, $confirmation['command'] );
@@ -1892,7 +1960,7 @@ final class Bhranti_Agent {
 				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || ! in_array( $run['status'] ?? '', array( 'running', 'awaiting_confirmation' ), true ) ) {
 					return self::error( 'bhranti_run_missing', __( 'This request is no longer active.', 'bhranti' ), 409 );
 				}
-				return self::finish( $post, $run, __( 'Request stopped. Earlier completed actions remain in the logs.', 'bhranti' ), 'cancelled' );
+				return self::finish( $post, $run, __( 'Request stopped. Earlier completed actions remain in the logs.', 'bhranti' ), 'cancelled', 'user_stopped' );
 			}
 		);
 	}
@@ -1935,15 +2003,74 @@ final class Bhranti_Agent {
 	}
 
 	/**
+	 * Explain a run outcome without copying its reply or error payload.
+	 *
+	 * @param array  $run Saved task identity and step.
+	 * @param string $status Actual terminal status.
+	 * @param string $reason Optional fixed diagnostic reason.
+	 * @return array Fixed public message and safe correlation metadata.
+	 */
+	private static function finish_audit( $run, $status, $reason ) {
+		$messages = array(
+			'complete'       => __( 'Bhranti finished this request. Review the recorded actions for its results.', 'bhranti' ),
+			'awaiting_input' => __( 'Waiting for the user to answer; see the conversation for the question.', 'bhranti' ),
+			'incomplete'     => __( 'The request stopped with work still to do or verify. Completed changes remain saved.', 'bhranti' ),
+			'cancelled'      => __( 'The request was stopped. Earlier completed changes remain saved.', 'bhranti' ),
+			'failed'         => __( 'The request stopped with an error. Review its related events before retrying.', 'bhranti' ),
+		);
+		$reasons  = array(
+			'interrupted_step'      => __( 'A previous step was interrupted. It was not repeated because its outcome could be uncertain.', 'bhranti' ),
+			'step_limit'            => __( 'The request reached its task step limit. Completed actions remain saved.', 'bhranti' ),
+			'credentials_blocked'   => __( 'Possible credentials were detected. Sensitive text was blocked; review the conversation warning before continuing.', 'bhranti' ),
+			'ai_request_failed'     => __( 'The AI request could not finish. Its earlier error event contains the connection diagnosis.', 'bhranti' ),
+			'invalid_plan'          => __( 'The AI action plan could not be read after its allowed retry. No action ran from that response.', 'bhranti' ),
+			'audit_failed'          => __( 'WordPress could not save a required activity record. The request stopped.', 'bhranti' ),
+			'unsaved_editor'        => __( 'The request stopped to protect unsaved editor changes. Save or discard them before continuing.', 'bhranti' ),
+			'prepared_missing'      => __( 'The prepared action was unavailable, so it did not run.', 'bhranti' ),
+			'ai_retries_exhausted'  => __( 'Automatic AI connection retries ended. Completed actions and images are saved; Resume task can continue later.', 'bhranti' ),
+			'uncertain_action'      => __( 'An action may already have changed its target. Check the item in WordPress before retrying.', 'bhranti' ),
+			'retained_action_limit' => __( 'The request reached its saved action limit. A new message can continue from the checkpoint.', 'bhranti' ),
+			'repeated_rejection'    => __( 'The same action was rejected three times. The request stopped without repeating it again.', 'bhranti' ),
+			'duplicate_prevented'   => __( 'Repeated proposals for an already completed action were stopped. No duplicate action ran.', 'bhranti' ),
+			'approval_expired'      => __( 'The deletion approval expired. This deletion did not run.', 'bhranti' ),
+			'approval_denied'       => __( 'The user denied the deletion. This deletion did not run.', 'bhranti' ),
+			'approval_conflict'     => __( 'The item changed after deletion approval was requested. This deletion did not run.', 'bhranti' ),
+			'user_stopped'          => __( 'The user stopped the request. Earlier completed changes remain saved.', 'bhranti' ),
+		);
+		$codes    = array(
+			'credentials_blocked' => 'bhranti_credentials',
+			'ai_request_failed'   => 'bhranti_ai_failed',
+			'invalid_plan'        => 'bhranti_invalid_plan',
+			'audit_failed'        => 'bhranti_audit_failed',
+			'unsaved_editor'      => 'bhranti_unsaved_changes',
+		);
+		$known    = is_string( $reason ) && isset( $reasons[ $reason ] );
+		$details  = array(
+			'run_id' => $run['id'],
+			'status' => $status,
+			'step'   => (int) ( $run['step'] ?? 0 ),
+			'reason' => $known ? $reason : ( isset( $messages[ $status ] ) ? $status : 'failed' ),
+		);
+		if ( $known && isset( $codes[ $reason ] ) ) {
+			$details['code'] = $codes[ $reason ];
+		}
+		return array(
+			'message' => $known ? $reasons[ $reason ] : ( $messages[ $status ] ?? $messages['failed'] ),
+			'details' => $details,
+		);
+	}
+
+	/**
 	 * Save the terminal reply and run state.
 	 *
 	 * @param WP_Post $post Session.
 	 * @param array   $run Run.
 	 * @param string  $text Final reply.
 	 * @param string  $status Terminal status.
+	 * @param string  $reason Fixed audit reason, never the final reply or error text.
 	 * @return array|WP_Error
 	 */
-	private static function finish( $post, $run, $text, $status = 'complete' ) {
+	private static function finish( $post, $run, $text, $status = 'complete', $reason = '' ) {
 		$run['status'] = $status;
 		$run['phase']  = '';
 		unset( $run['confirmation'], $run['pending_plan'], $run['next_action'], $run['retry_at'], $run['render_job'] );
@@ -1965,14 +2092,12 @@ final class Bhranti_Agent {
 			return $saved;
 		}
 		$saved = self::save_run( $post->ID, $run );
+		$audit = self::finish_audit( $run, $status, $reason );
 		Bhranti_Audit::record(
 			'run_' . $status,
-			'awaiting_input' === $status ? __( 'Waiting for the user to answer; see the conversation for the question.', 'bhranti' ) : __( 'Request finished; see the conversation and operation logs for details.', 'bhranti' ),
+			$audit['message'],
 			$post->ID,
-			array(
-				'run_id' => $run['id'],
-				'status' => $status,
-			),
+			$audit['details'],
 			$run['requester_id'],
 			$run['actor_id']
 		);

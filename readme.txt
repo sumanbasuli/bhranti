@@ -4,7 +4,7 @@ Tags: ai, assistant, admin, productivity
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.5
+Stable tag: 0.6.8
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -124,6 +124,19 @@ As soon as a task is ready to fetch or change the current clean post or page, a 
 No. Supported changes retain seven-day snapshots and reject conflicts or replay. Permanent content deletion and other unsupported content operations are blocked. Opted-in native plugin uninstall is an explicit irreversible exception with human approval. Generated images remain in Media Library when page content is restored. Hook side effects such as emails are outside content rollback.
 
 == Changelog ==
+
+= 0.6.8 =
+* Block recognizable credentials before chat storage, settings saves and native AI requests, with an editable warning.
+* Reject secrets in private memory, including older saved entries, and withhold sensitive tool text without repeating completed actions.
+
+= 0.6.7 =
+* Searchable activity logs with readable outcomes, people and task links, filters and numbered pagination.
+* Download matching logs as standard NDJSON and ask Bhranti to explain recorded activity.
+* Richer safe operation context and clear task outcomes without logging prompts or credentials.
+
+= 0.6.6 =
+* Use the Bhranti sparkle mark in the WordPress admin menu.
+* Add reproducible plugin ZIP builds, checksums and automatic GitHub release packaging.
 
 = 0.6.5 =
 * Refresh Chats when opened so conversations created in another tab appear without losing drafts or focus.

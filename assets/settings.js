@@ -43,6 +43,7 @@
 		return result;
 	}
 	function validate(config) {
+		if (window.bhrantiCredentials && window.bhrantiCredentials.contains(config)) return __('These settings appear to contain a password, API key, token or other credential. Remove it before saving. Manage provider credentials in WordPress Connectors.', 'bhranti');
 		if (!validPermissions(config.permissions)) return __('Action permissions must contain the supported settings as true or false values.', 'bhranti');
 		if (!Number.isInteger(config.max_steps) || config.max_steps < 12 || config.max_steps > 1000) return __('Task step limit must be a whole number from 12 to 1,000.', 'bhranti');
 		if (config.agents.length > 20 || !config.agents.some((agent) => agent.id === 'bhranti')) return __('Keep the built-in Bhranti agent and no more than 20 agents.', 'bhranti');
@@ -150,7 +151,7 @@
 				setConfig(result.config); setRevision(result.revision); setBaseline(JSON.stringify(result.config));
 				setNotice({ status: 'success', text: __('Settings saved.', 'bhranti') });
 				window.dispatchEvent(new CustomEvent('bhranti:settings-saved'));
-			} catch (failure) { setNotice({ status: 'error', text: failure.message || __('Settings could not save. Your edits are still here.', 'bhranti'), conflict: failure.data && failure.data.status === 409 }); }
+			} catch (failure) { setNotice({ status: 'error', text: failure.code === 'bhranti_credentials' ? __('These settings appear to contain a password, API key, token or other credential. Remove it before saving. Manage provider credentials in WordPress Connectors.', 'bhranti') : failure.message || __('Settings could not save. Your edits are still here.', 'bhranti'), conflict: failure.data && failure.data.status === 409 }); }
 			finally { setSaving(false); }
 		}
 		function changeAgent(agentId, fields) { setConfig((current) => ({ ...current, agents: current.agents.map((agent) => agent.id === agentId ? { ...agent, ...fields } : agent) })); }

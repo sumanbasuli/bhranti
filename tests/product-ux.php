@@ -89,6 +89,7 @@ final class Bhranti_Audit {
     }
 }
 
+require dirname( __DIR__ ) . '/includes/class-bhranti-credentials.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-workspace.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-agent.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-diagnostics.php';

@@ -51,6 +51,7 @@ require ABSPATH . WPINC . '/media.php';
 require ABSPATH . WPINC . '/php-ai-client/autoload.php';
 require ABSPATH . WPINC . '/ai-client.php';
 require ABSPATH . WPINC . '/ai-client/class-wp-ai-client-prompt-builder.php';
+require dirname( __DIR__ ) . '/includes/class-bhranti-credentials.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-media.php';
 wp_cache_init();
 function __( $text, $domain = 'default' ) { return $text; }

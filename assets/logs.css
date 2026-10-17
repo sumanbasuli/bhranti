@@ -1,0 +1,90 @@
+/* Native WordPress activity view, scoped to Bhranti Logs. */
+.bhranti-logs { color: #1d2327; }
+.bhranti-logs-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0 24px; }
+.bhranti-logs-heading h1 { padding: 0; font-size: 23px; font-weight: 500; }
+.bhranti-logs-heading p { color: #50575e; margin: 8px 0 0; }
+.bhranti-log-filters { background: #fff; padding: 20px; border: 1px solid #c3c4c7; border-radius: 6px; }
+.bhranti-log-filter-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; }
+.bhranti-log-filter-row label { display: flex; flex-direction: column; gap: 7px; font-weight: 600; min-width: 125px; }
+.bhranti-log-filter-row input, .bhranti-log-filter-row select { margin: 0; font-weight: 400; max-width: 100%; min-height: 34px; }
+.bhranti-log-search { flex: 1; min-width: 230px !important; }
+.bhranti-log-more { border-top: 1px solid #dcdcde; margin-top: 18px; padding-top: 14px; }
+.bhranti-log-more summary, .bhranti-log-activity summary { cursor: pointer; color: #2271b1; width: fit-content; }
+.bhranti-log-more[open] > summary { margin-bottom: 16px; }
+.bhranti-log-more input[type="text"] { width: 280px; }
+.bhranti-log-more input[type="number"] { width: 150px; }
+.bhranti-log-note { margin: 18px 0 8px; max-width: 1000px; }
+.bhranti-log-note p { margin: 6px 0; }
+.bhranti-log-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 14px 0; min-height: 34px; }
+.bhranti-log-pagination p { margin: 0; color: #50575e; font-variant-numeric: tabular-nums; }
+.bhranti-log-pagination nav { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.bhranti-log-pagination .page-numbers { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 34px; padding: 0 8px; border: 1px solid #c3c4c7; border-radius: 3px; background: #fff; text-decoration: none; box-sizing: border-box; }
+.bhranti-log-pagination .current { background: var(--wp-admin-theme-color, #2271b1); border-color: var(--wp-admin-theme-color, #2271b1); color: #fff; }
+.bhranti-log-pagination .dots { border-color: transparent; background: transparent; padding: 0; min-width: 20px; }
+.bhranti-log-table { table-layout: fixed; border-radius: 5px; border-spacing: 0; }
+.bhranti-log-table thead th { font-weight: 600; padding: 13px 16px; }
+.bhranti-log-table tbody td { padding: 18px 16px; border-bottom: 1px solid #dcdcde; vertical-align: top; overflow-wrap: anywhere; }
+.bhranti-log-table tbody tr:last-child td { border-bottom: 0; }
+.bhranti-log-table p { margin: 5px 0 9px; color: #50575e; }
+.bhranti-log-time { width: 150px; font-variant-numeric: tabular-nums; }
+.bhranti-log-time time { font-size: 12px; display: block; }
+.bhranti-log-time time span { display: block; margin-top: 3px; }
+.bhranti-log-time small { display: block; color: #646970; margin-top: 8px; }
+.bhranti-log-outcome { width: 115px; }
+.bhranti-log-people { width: 180px; }
+.bhranti-log-people span { display: block; color: #646970; font-size: 11px; margin: 0 0 3px; }
+.bhranti-log-people strong { font-weight: 500; display: block; margin: 0 0 13px; }
+.bhranti-log-title { display: block; color: #1d2327; font-size: 14px; font-weight: 600; }
+.bhranti-log-badge { display: inline-block; font-weight: 600; font-size: 11px; line-height: 1.5; padding: 3px 8px; border-radius: 3px; background: #f0f0f1; color: #3c434a; }
+.bhranti-log-success { background: #edfaef; color: #005b18; }
+.bhranti-log-error { background: #fcf0f1; color: #8a2424; }
+.bhranti-log-warning { background: #fcf9e8; color: #684800; }
+.bhranti-log-pending { background: #f0f6fc; color: #135e96; }
+.bhranti-log-category { display: block; margin-top: 8px; color: #646970; }
+.bhranti-log-activity details { margin-top: 12px; font-size: 12px; }
+.bhranti-log-activity dl { display: grid; grid-template-columns: minmax(90px, 120px) minmax(0, 1fr); gap: 8px 15px; padding: 12px; background: #f6f7f7; border-radius: 3px; }
+.bhranti-log-activity dt { font-weight: 600; }
+.bhranti-log-activity dd { margin: 0; }
+.bhranti-log-activity code { font-size: 11px; background: transparent; padding: 0; word-break: break-word; }
+.bhranti-log-activity .bhranti-log-next { color: #3c434a; padding-left: 10px; border-left: 2px solid #c3c4c7; }
+.bhranti-log-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; }
+.bhranti-log-empty { text-align: center; padding: 42px 20px !important; }
+.bhranti-logs summary:focus-visible { outline: 2px solid var(--wp-admin-theme-color, #2271b1); outline-offset: 4px; }
+@media (max-width: 1100px) {
+	.bhranti-log-time { width: 120px; }
+	.bhranti-log-outcome { width: 100px; }
+	.bhranti-log-people { width: 150px; }
+}
+@media (max-width: 782px) {
+	.bhranti-logs { padding-right: 0; }
+	.bhranti-log-filters { padding: 16px; }
+	.bhranti-log-filter-row { gap: 14px; }
+	.bhranti-log-filter-row label { flex: 1; min-width: 135px; }
+	.bhranti-log-search { flex-basis: 100% !important; }
+	.bhranti-log-filter-row input, .bhranti-log-filter-row select { min-height: 40px; }
+	.bhranti-log-table, .bhranti-log-table tbody { display: block; }
+	.bhranti-log-table thead { display: none; }
+	.bhranti-log-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 16px; border-bottom: 1px solid #c3c4c7; gap: 16px; }
+	.bhranti-log-table tbody tr:last-child { border-bottom: 0; }
+	.bhranti-log-table tbody td { padding: 0; border-bottom: 0; width: auto; }
+	.bhranti-log-time time span { display: inline; margin-left: 5px; }
+	.bhranti-log-time small { margin-top: 2px; }
+	.bhranti-log-category { font-size: 11px; text-align: right; }
+	.bhranti-log-activity, .bhranti-log-people, .bhranti-log-empty { grid-column: 1 / -1; }
+	.bhranti-log-people { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; padding-top: 12px !important; border-top: 1px solid #dcdcde !important; }
+	.bhranti-log-people strong, .bhranti-log-people span { margin: 0; align-self: center; }
+	.bhranti-log-activity dl { grid-template-columns: 1fr; gap: 4px; }
+	.bhranti-log-activity dd { margin-bottom: 8px; }
+	.bhranti-log-pagination { align-items: flex-start; }
+}
+
+.bhranti-log-scope { margin: 24px 0 18px; overflow-wrap: anywhere; }
+.bhranti-log-scope h2 { margin: 0 0 8px; }
+.bhranti-log-scope p { margin: 6px 0 10px; }
+.bhranti-log-views { display: flex; gap: 20px; border-bottom: 1px solid #c3c4c7; margin-top: 22px; }
+.bhranti-log-views a { padding: 10px 0; text-decoration: none; border-bottom: 2px solid transparent; }
+.bhranti-log-views a[aria-current="page"] { color: #1d2327; font-weight: 600; border-bottom-color: var(--wp-admin-theme-color, #2271b1); }
+.bhranti-log-raw { margin: 0; padding: 20px; background: #1e1e1e; color: #f0f0f1; border-radius: 4px; font: 12px/1.7 Consolas, Monaco, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; max-height: 70vh; overflow: auto; }
+.bhranti-log-raw code { background: transparent; color: inherit; font: inherit; padding: 0; }
+.bhranti-log-raw:focus-visible { outline: 2px solid var(--wp-admin-theme-color, #2271b1); outline-offset: 3px; }
+.bhranti-log-raw-event .bhranti-log-raw { margin-top: 12px; max-height: none; }

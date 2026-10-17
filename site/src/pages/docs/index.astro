@@ -1,0 +1,111 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import DocsNavigation from '../../components/DocsNavigation.astro';
+import DocsProse from '../../components/DocsProse.astro';
+const entries = await getCollection('docs');
+const overview = entries.find(doc => doc.id === 'index')!;
+const docs = entries.filter(doc => doc.id !== 'index').sort((a,b) => a.data.order - b.data.order);
+const { Content } = await render(overview);
+---
+<Base title="Documentation" description={overview.data.description} markdownHref="/docs/index.md" active="docs" pageClass="docs-page">
+  <div class="docs-layout">
+    <DocsNavigation docs={docs} />
+    <div class="docs-main">
+      <div class="intro-meta"><span>A little guidance goes a long way.</span><a href="/docs/index.md" data-llm-hint="Markdown documentation index">Read as Markdown <span aria-hidden="true">↗</span></a></div>
+      <header><h1>Documentation<span aria-hidden="true">.</span></h1><DocsProse><Content /></DocsProse></header>
+      <a class="start-here" href="/docs/get-started/">
+        <span class="start-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m5 12 4 4L19 6M5 20h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span><strong>Your first few minutes with Bhranti</strong><span>Connect a provider. Open the sidebar. Try a small edit.</span></span><span class="start-arrow" aria-hidden="true">→</span>
+      </a>
+      <section class="guides" aria-labelledby="guides-heading">
+        <div class="guides-heading"><h2 id="guides-heading">Explore the guides</h2><span>{String(docs.length).padStart(2, '0')} guides</span></div>
+        <div class="search-box">
+          <label for="docs-search">Find a guide</label>
+          <div class="search-field"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><input id="docs-search" type="search" placeholder="Search by topic, question, or keyword…" autocomplete="off" aria-controls="docs-list" /><button type="button" id="clear-search" hidden>Clear</button></div>
+        </div>
+        <p class="search-status" id="search-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <div id="docs-list" class="docs-list">
+          {docs.map((doc, index) => <a href={`/docs/${doc.id}/`} class="guide" data-search={`${doc.data.title} ${doc.data.description} ${doc.body}`.toLowerCase()}>
+            <span class="guide-number" aria-hidden="true">{String(index + 1).padStart(2,'0')}</span>
+            <span class="guide-copy"><h3>{doc.data.title}</h3><p>{doc.data.description}</p></span>
+            <span class="guide-arrow" aria-hidden="true">↗</span>
+          </a>)}
+        </div>
+        <div id="no-results" class="no-results" hidden><h3>No matching guides</h3><p>Try a broader term, such as “editor”, “privacy”, or “Undo”.</p></div>
+      </section>
+      <aside class="agent-note" aria-label="Agent-readable documentation"><span aria-hidden="true">↳</span><p>Reading with an AI assistant? Every guide has a Markdown version.<br/><a href="/llms.txt" data-llm-hint="Machine-readable documentation discovery index">Browse the agent-readable index →</a></p></aside>
+    </div>
+  </div>
+</Base>
+<script>
+  const input = document.querySelector<HTMLInputElement>('#docs-search');
+  const clear = document.querySelector<HTMLButtonElement>('#clear-search');
+  const status = document.querySelector<HTMLElement>('#search-status');
+  const empty = document.querySelector<HTMLElement>('#no-results');
+  const guides = [...document.querySelectorAll<HTMLElement>('.guide')];
+  function filterDocs() {
+    if (!input || !clear || !status || !empty) return;
+    const query = input.value.trim().toLowerCase();
+    const words = query.split(/\s+/).filter(Boolean);
+    let count = 0;
+    guides.forEach(guide => {
+      const matches = words.every(word => guide.dataset.search?.includes(word));
+      guide.hidden = !matches;
+      if (matches) count++;
+    });
+    clear.hidden = !query;
+    empty.hidden = count > 0;
+    status.textContent = query ? `${count} ${count === 1 ? 'guide matches' : 'guides match'} your search.` : '';
+  }
+  input?.addEventListener('input', filterDocs);
+  clear?.addEventListener('click', () => { if (input) { input.value = ''; filterDocs(); input.focus(); } });
+  input?.addEventListener('keydown', event => { if (event.key === 'Escape' && input) { input.value = ''; filterDocs(); } });
+</script>
+<style>
+  .docs-layout { max-width:1250px; margin:0 auto; padding:60px 40px 100px; display:grid; grid-template-columns:218px minmax(0,1fr); gap:75px; align-items:start; }
+  .docs-main { min-width:0; }
+  .intro-meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; font-size:12px; color:var(--color-muted); margin:8px 0 30px; }
+  .intro-meta a { color:var(--color-accent); text-decoration:none; }
+  .intro-meta a span { margin-left:5px; }
+  h1 { font-size:clamp(38px,4.6vw,60px); letter-spacing:-.06em; font-weight:550; line-height:1.05; margin:0 0 27px; color:var(--color-text); }
+  h1 > span { color:var(--color-accent); }
+  header { max-width:720px; }
+  .start-here { margin:34px 0 54px; padding:24px; display:flex; gap:18px; align-items:center; color:var(--color-text); background:var(--color-surface); border:1px solid var(--color-border); border-radius:7px; text-decoration:none; }
+  .start-here > span:nth-child(2) { display:flex; flex-direction:column; gap:7px; }
+  .start-here strong { font-size:16px; font-weight:550; line-height:1.4; }
+  .start-here > span:nth-child(2) > span { font-size:13px; line-height:1.55; color:var(--color-muted); }
+  .start-icon { color:var(--color-accent); flex-shrink:0; }
+  .start-arrow { color:var(--color-accent); margin-left:auto; font-size:22px; }
+  .start-here:hover { border-color:var(--color-accent); }
+  .guides-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+  .guides-heading h2 { font-size:23px; font-weight:500; letter-spacing:-.025em; margin:0; }
+  .guides-heading > span { font-size:11px; color:var(--color-muted); font-variant-numeric:tabular-nums; }
+  .search-box label { display:block; font-size:12px; color:var(--color-muted); margin-bottom:9px; }
+  .search-field { display:flex; align-items:center; gap:12px; padding:0 16px; height:50px; border:1px solid var(--color-border); border-radius:5px; color:var(--color-muted); }
+  .search-field:focus-within { outline:2px solid var(--color-accent); outline-offset:3px; }
+  .search-field svg { flex-shrink:0; }
+  input { font:inherit; font-size:14px; color:var(--color-text); width:100%; min-width:0; border:0; outline:0; background:transparent; padding:14px 0; }
+  input::placeholder { color:var(--color-muted); opacity:1; }
+  input::-webkit-search-cancel-button { display:none; }
+  .search-field button { font:inherit; font-size:12px; color:var(--color-accent); border:0; background:transparent; cursor:pointer; padding:8px 0; }
+  .search-status { font-size:12px; color:var(--color-muted); min-height:18px; margin:11px 0 4px; }
+  .guide { display:flex; align-items:center; gap:23px; padding:25px 2px; border-bottom:1px solid var(--color-border); text-decoration:none; color:var(--color-text); }
+  .guide[hidden], [hidden] { display:none; }
+  .guide-number { color:var(--color-muted); font-size:12px; font-variant-numeric:tabular-nums; align-self:flex-start; padding-top:5px; }
+  .guide h3 { font-size:18px; font-weight:500; letter-spacing:-.02em; margin:0 0 6px; line-height:1.3; }
+  .guide p { font-size:14px; color:var(--color-muted); line-height:1.55; margin:0; }
+  .guide-arrow { color:var(--color-muted); font-size:21px; margin-left:auto; padding-left:12px; }
+  .guide:hover h3, .guide:hover .guide-arrow { color:var(--color-accent); }
+  .no-results { padding:30px 0; border-bottom:1px solid var(--color-border); }
+  .no-results h3 { font-size:18px; font-weight:500; margin:0 0 8px; }
+  .no-results p { font-size:14px; color:var(--color-muted); margin:0; line-height:1.6; }
+  .agent-note { display:flex; gap:14px; margin:35px 0 0; color:var(--color-muted); }
+  .agent-note > span { color:var(--color-accent); font-size:22px; padding-top:3px; }
+  .agent-note p { font-size:12px; line-height:1.9; margin:0; }
+  .agent-note a { color:var(--color-accent); text-decoration:none; }
+  a:focus-visible, button:focus-visible { outline:2px solid var(--color-accent); outline-offset:5px; }
+  @media(max-width:1100px) { .docs-layout { gap:45px; grid-template-columns:200px minmax(0,1fr); } }
+  @media(max-width:850px) { .docs-layout { grid-template-columns:1fr; padding:24px 26px 64px; gap:34px; } .docs-main { width:100%; max-width:720px; margin:auto; } .intro-meta { margin-top:0; } }
+  @media(max-width:420px) { .docs-layout { padding-inline:20px; } .intro-meta { font-size:11px; } .start-here { padding:20px; gap:12px; margin-bottom:40px; } .start-icon { display:none; } .guide { gap:15px; padding-block:23px; } .guide h3 { font-size:17px; } .guide p { font-size:13px; } .guide-arrow { padding:0; } input { font-size:12px; } .search-field { padding-inline:12px; gap:9px; } }
+</style>

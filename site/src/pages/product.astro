@@ -1,0 +1,265 @@
+---
+import Base from '../layouts/Base.astro';
+import Mark from '../components/Mark.astro';
+import Arrow from '../components/Arrow.astro';
+import ProductDemo from '../components/ProductDemo.astro';
+
+const capabilities = [
+  ['Content & blocks', 'Search, draft, refine, and update posts or pages using the blocks installed on your site.', '/docs/content-workflows/'],
+  ['Design & navigation', 'Work with supported native design settings, shared template parts, and navigation.', '/docs/content-workflows/#build-a-new-page-or-redesign'],
+  ['Media & images', 'Find and use your media. Generate images when your native connector and site support it.', '/docs/content-workflows/#use-existing-media'],
+  ['WooCommerce', 'Prepare simple products and categories, plus supported store, shipping, and offline payment settings.', '/docs/store-and-plugins/'],
+  ['Directory plugins', 'Use reviewed WordPress.org installation and activation operations when enabled in your settings.', '/docs/store-and-plugins/#install-or-activate-a-plugin'],
+  ['Longer tasks', 'Continue persisted work through WordPress scheduling, with visible progress and a Stop control.', '/docs/working-with-bhranti/#continue-after-closing-the-browser'],
+];
+---
+
+<Base title="Product" description="See how Bhranti works alongside your WordPress editor: useful context, reviewed native actions, visible activity, human approval, and conflict-safe Undo for supported changes." markdownHref="/product.md" active="product" pageClass="product-page">
+  <section class="container product-hero" aria-labelledby="product-title">
+    <p class="eyebrow"><Mark class="small-mark" /> A closer look at Bhranti</p>
+    <div class="product-hero-grid">
+      <h1 id="product-title">From “what if”<br />to <span class="serif">what’s next.</span></h1>
+      <div><p>An assistant that understands where you’re working, takes practical steps, and lets you follow along.</p><a class="text-link" href="/docs/get-started/">Find your first useful task <Arrow /></a></div>
+    </div>
+    <nav class="product-jump" aria-label="On this page"><span>Explore the product</span><a href="#context">01 &nbsp; Context</a><a href="#actions">02 &nbsp; Actions</a><a href="#control">03 &nbsp; Control</a><a href="#make-it-yours">04 &nbsp; Make it yours</a></nav>
+  </section>
+
+  <section class="container product-demo" aria-label="An illustrative Bhranti walkthrough"><ProductDemo /></section>
+
+  <section id="context" class="container product-section section-space" aria-labelledby="context-heading">
+    <div class="product-section-heading"><p class="section-label"><span>01</span> Start with context</p><h2 id="context-heading">Already on<br /><span class="serif">the same page.</span></h2></div>
+    <div class="product-section-body">
+      <p class="section-lead">Keep your page in view and your conversation beside it. Bhranti can work from the current page, a selected block, and the context you choose to share.</p>
+      <div class="detail-pairs">
+        <article><h3>A place to begin.</h3><p>Open Bhranti from the WordPress admin bar. Ask about your site or focus on the page you’re editing.</p></article>
+        <article><h3>A clearer reference.</h3><p>Attach a reference image or a browser-chosen screenshot. A public design URL can provide bounded page text and design hints.</p></article>
+        <article><h3>Your site, inspected.</h3><p>Bhranti can search and inspect supported WordPress resources before deciding how to act.</p></article>
+        <article><h3>Unsaved work respected.</h3><p>Open editors and dirty tabs have protections. Bhranti checks the saved state and avoids writing over local work.</p></article>
+      </div>
+      <aside class="quiet-note"><div><p>Your messages and relevant site context are sent through the native WordPress AI Client to your configured provider.</p><a class="text-link" href="/docs/ai-and-privacy/">Read about privacy <Arrow /></a></div></aside>
+    </div>
+  </section>
+
+  <section id="actions" class="actions-section section-rule">
+    <div class="container section-space">
+      <div class="actions-heading"><div><p class="section-label"><span>02</span> Ideas into native actions</p><h2 id="actions-heading">Useful work.<br /><span class="serif">Familiar foundations.</span></h2></div><p>Bhranti works through reviewed WordPress APIs and the permissions you enable. Here’s where it can help.</p></div>
+      <div class="capability-table">
+        {capabilities.map(([title, copy, href], index) => <a class="capability-row" href={href}><span class="row-number" aria-hidden="true">0{index + 1}</span><h3>{title}</h3><p>{copy}</p><span class="row-arrow" aria-hidden="true">↗</span></a>)}
+      </div>
+      <p class="actions-footnote">Background continuation needs site traffic or a configured native WordPress cron runner. Available image tools depend on your native AI connector.</p>
+    </div>
+  </section>
+
+  <section id="control" class="container section-space control-details" aria-labelledby="control-heading">
+    <div class="control-intro"><div><p class="section-label"><span>03</span> You stay in control</p><h2 id="control-heading">Nothing hidden<br /><span class="serif">behind “done.”</span></h2></div><p>A prepared action shows its intent, operation, and affected item. Completed actions have outcomes you can inspect. Failures and requests for approval stay visible.</p></div>
+    <div class="receipt-layout">
+      <figure class="receipt">
+        <div class="receipt-header"><Mark /><span>Action details</span><span class="receipt-sample">Illustration</span></div>
+        <div class="receipt-title"><span class="receipt-check" aria-hidden="true">✓</span><div><h3>Updated page content</h3><span>About us · Page</span></div></div>
+        <dl><div><dt>Intent</dt><dd>Refine the introduction</dd></div><div><dt>Operation</dt><dd>Native page update</dd></div><div><dt>Outcome</dt><dd>Saved state verified</dd></div><div><dt>Restoration</dt><dd>Supported for 7 days*</dd></div></dl>
+        <div class="receipt-bottom"><span>*If the saved result is unchanged.</span><span class="receipt-undo" aria-hidden="true">↶ Undo</span></div>
+        <figcaption>Illustrative action details, using a fictional page.</figcaption>
+      </figure>
+      <div class="control-explanations">
+        <article><h3>A human yes. Or no.</h3><p>Content Trash always pauses for an explicit Approve or Deny button. Approvals are stored on the server, bound to the specific item state, and expire after ten minutes.</p></article>
+        <article><h3>Undo with a memory.</h3><p>Supported changes keep seven-day snapshots. Undo checks that the item still matches Bhranti’s saved result, and refuses to overwrite a later edit.</p></article>
+        <article><h3>A record you can follow.</h3><p>Expandable chat details show each action’s outcome. A separate Logs screen records activity and the human requester and managed actor.</p></article>
+      </div>
+    </div>
+    <div class="boundaries"><h3>Clear limits are part of the product.</h3><div><p>Bhranti does not edit arbitrary core, theme, or plugin source code, accounts, roles, credentials, or security settings. Its reviewed tools define what it can do.</p><p>Undo restores supported WordPress data. It cannot reverse emails, webhooks, or other third-party effects. Opt-in plugin deletion requires approval and may permanently remove plugin data.</p><a class="text-link" href="/docs/permissions-and-undo/">Read the full safety &amp; Undo guide <Arrow /></a></div></div>
+  </section>
+
+  <section id="make-it-yours" class="custom-section section-rule">
+    <div class="container custom-inner section-space">
+      <div class="custom-copy"><p class="section-label"><span>04</span> A way of working that fits</p><h2>Give your assistant<br /><span class="serif">a point of view.</span></h2><p>Create a named agent and paste in its instructions. Add Markdown skills for a writing style, a repeatable process, or the details that matter to your work.</p><p>Your agent and skills guide the task. Built-in permissions and approval checks still apply.</p><a class="text-link" href="/docs/agents-and-skills/">Set up an agent <Arrow /></a></div>
+      <figure class="agent-paper">
+        <div class="agent-file"><span aria-hidden="true">⌘</span> editorial-assistant / agent.md <span class="sample-tag">Example</span></div>
+        <div class="agent-code"><span class="md-heading"># Editorial assistant</span><p>Help us make useful, thoughtful pages.</p><span class="md-heading">## Our voice</span><p>Clear. Warm. Specific.<br />Make every sentence earn its place.</p><span class="md-heading">## Before making a change</span><p>Read the page. Understand its purpose.<br />Keep what is already working.</p></div>
+        <figcaption>Markdown instructions, handled as text.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="container connector-section section-rule" aria-labelledby="connector-heading">
+    <div><p class="section-label">Connected, the WordPress way</p><h2 id="connector-heading">One native<br /><span class="serif">place to connect.</span></h2></div>
+    <div><p>Choose your AI provider in <strong>Settings → Connectors</strong>. Bhranti uses the native WordPress AI Client and keeps provider configuration there.</p><p>Bhranti stores no connector credentials and adds no telemetry. The configured provider’s terms apply to the information you send.</p><a class="text-link" href="/docs/get-started/">Read the setup guide <Arrow /></a></div>
+  </section>
+
+  <section class="container end-note section-rule" aria-labelledby="ready-title"><h2 id="ready-title">A good place<br /><span class="serif">to start.</span></h2><div><p>Open the guide, make the connection, and try one clear request on your WordPress site.</p><div class="end-actions"><a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a><a class="text-link" href="/docs/">All documentation <Arrow /></a></div></div></section>
+</Base>
+
+<style>
+  a, a:hover { text-decoration: none; }
+  .product-hero { padding-top: 76px; }
+  .product-hero > .eyebrow { margin-bottom: 30px; }
+  .product-hero-grid { display: grid; grid-template-columns: 1.45fr 1fr; gap: 80px; align-items: end; }
+  .product-hero-grid h1 { font-size: clamp(3.5rem, 6.45vw, 5.55rem); line-height: 1.04; letter-spacing: -.06em; }
+  .product-hero-grid > div { max-width: 350px; padding-bottom: 5px; }
+  .product-hero-grid > div > p { font-size: 18px; line-height: 1.6; color: #dcdcde; letter-spacing: -.02em; }
+  .product-hero-grid .text-link { margin-top: 22px; }
+  .product-jump { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 25px; border-block: 1px solid var(--color-border); margin-top: 62px; padding-block: 10px; font-size: 11px; }
+  .product-jump > span { color: var(--color-muted); margin-right: auto; }
+  .product-jump a { display: inline-flex; align-items: center; min-height: 36px; text-decoration: none; }
+  .product-jump a:hover { color: var(--color-accent); }
+  .product-demo { margin-top: 45px; }
+  .product-section { display: grid; grid-template-columns: .85fr 1.2fr; gap: 100px; }
+  .product-section-heading .section-label { margin-bottom: 30px; }
+  .section-lead { font-size: 21px; line-height: 1.5; letter-spacing: -.025em; }
+  .detail-pairs { display: grid; grid-template-columns: 1fr 1fr; gap: 33px 38px; margin-top: 42px; }
+  .detail-pairs h3 { font-size: 20px; }
+  .detail-pairs p { margin-top: 13px; color: var(--color-muted); font-size: 14px; }
+  .quiet-note { display: flex; gap: 18px; border-top: 1px solid var(--color-border); margin-top: 40px; padding-top: 22px; font-size: 12px; color: var(--color-muted); }
+  .quiet-note > span { color: var(--color-accent); font-size: 20px; line-height: 1.2; }
+  .quiet-note a { color: var(--color-accent); }
+  .actions-section { background: #232323; }
+  .actions-heading { display: grid; grid-template-columns: 1.5fr 1fr; gap: 80px; align-items: end; }
+  .actions-heading .section-label { margin-bottom: 30px; }
+  .actions-heading > p { font-size: 16px; color: var(--color-muted); max-width: 310px; padding-bottom: 7px; }
+  .capability-table { margin-top: 56px; border-top: 1px solid var(--color-border); }
+  .capability-row { display: grid; grid-template-columns: 50px 1fr 1.45fr 30px; gap: 25px; padding-block: 26px; border-bottom: 1px solid var(--color-border); align-items: start; }
+  .row-number { font-size: 11px; color: var(--color-muted); padding-top: 5px; }
+  .capability-row h3 { font-size: 23px; padding-top: 1px; }
+  .capability-row p { font-size: 14px; color: var(--color-muted); max-width: 435px; }
+  a.capability-row { color: inherit; text-decoration: none; transition: background-color 150ms; }
+  a.capability-row:hover, a.capability-row:focus-visible { background: var(--color-surface); }
+  a.capability-row:hover h3 { color: var(--color-accent); }
+  a.capability-row:focus-visible { outline-offset: -2px; }
+  .row-arrow { justify-self: end; font-size: 20px; color: var(--color-accent); }
+  .actions-footnote { margin-top: 24px; color: var(--color-muted); font-size: 11px; max-width: 730px; }
+  .control-intro { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; align-items: end; }
+  .control-intro .section-label { margin-bottom: 30px; }
+  .control-intro > p { max-width: 405px; font-size: 16px; color: var(--color-muted); padding-bottom: 5px; }
+  .receipt-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; margin-top: 56px; align-items: start; }
+  .receipt { padding: 25px 27px 19px; border: 1px solid #565e64; background: #252525; box-shadow: 8px 8px 0 #1e1e1e, 9px 9px 0 #3c4145; }
+  .receipt-header { display: flex; align-items: center; gap: 10px; font-size: 12px; border-bottom: 1px solid var(--color-border); padding-bottom: 20px; }
+  .receipt-header :global(svg) { width: 15px; height: 15px; color: var(--color-accent); }
+  .receipt-sample { margin-left: auto; font-size: 10px; color: var(--color-muted); }
+  .receipt-title { display: flex; gap: 14px; align-items: center; margin-top: 26px; }
+  .receipt-check { display: grid; place-content: center; border: 1px solid #74997b; color: var(--color-green); width: 28px; height: 28px; border-radius: 50%; font-size: 13px; flex-shrink: 0; }
+  .receipt-title h3 { font-size: 20px; }
+  .receipt-title div > span { display: block; margin-top: 5px; color: var(--color-muted); font-size: 11px; }
+  .receipt dl { margin-block: 24px 0; }
+  .receipt dl > div { display: flex; justify-content: space-between; gap: 15px; padding-block: 11px; border-bottom: 1px solid var(--color-soft-border); font-size: 12px; }
+  .receipt dt { color: var(--color-muted); }
+  .receipt dd { margin: 0; text-align: right; }
+  .receipt-bottom { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: 22px; }
+  .receipt-bottom > span:first-child { max-width: 200px; font-size: 10px; color: var(--color-muted); }
+  .receipt-undo { color: var(--color-accent); font-size: 12px; white-space: nowrap; }
+  .receipt figcaption { padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--color-soft-border); color: var(--color-muted); font-size: 10px; }
+  .control-explanations article + article { margin-top: 29px; }
+  .control-explanations h3 { font-size: 23px; }
+  .control-explanations p { margin-top: 12px; color: var(--color-muted); font-size: 14px; }
+  .boundaries { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; border-top: 1px solid var(--color-border); margin-top: 68px; padding-top: 32px; }
+  .boundaries > h3 { max-width: 290px; font-size: 26px; }
+  .boundaries p { color: var(--color-muted); font-size: 13px; }
+  .boundaries p + p { margin-top: 14px; }
+  .boundaries .text-link { margin-top: 13px; font-size: 13px; }
+  .custom-section { background: #232323; }
+  .custom-inner { display: grid; grid-template-columns: 1.1fr 1fr; gap: 100px; align-items: center; }
+  .custom-copy .section-label { margin-bottom: 30px; }
+  .custom-copy h2 { font-size: clamp(2.25rem, 3.8vw, 3.4rem); }
+  .custom-copy > p:not(.section-label) { max-width: 360px; margin-top: 24px; color: var(--color-muted); font-size: 14px; }
+  .custom-copy > p:not(.section-label) + p { font-size: 12px; margin-top: 16px; }
+  .custom-copy .text-link { margin-top: 22px; }
+  .agent-paper { background: #c7dcec; color: #233b4e; transform: rotate(1deg); box-shadow: 0 12px 28px rgb(0 0 0 / 12%); }
+  .agent-file { display: flex; align-items: center; gap: 9px; padding: 18px 23px; border-bottom: 1px solid #9cb6ca; font-size: 10px; }
+  .agent-file > span:first-child { font-size: 16px; }
+  .sample-tag { margin-left: auto; font-size: 9px; color: #3e5b71; }
+  .agent-code { padding: 29px 28px 32px; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; }
+  .md-heading { color: #1f5277; font-weight: 600; }
+  .agent-code p { margin-block: 10px 25px; }
+  .agent-code p:last-child { margin-bottom: 0; }
+  .agent-paper figcaption { padding: 15px 24px; font-size: 10px; color: #3e5c73; border-top: 1px solid #9cb6ca; }
+  .connector-section { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; padding-block: 95px; }
+  .connector-section .section-label { margin-bottom: 28px; }
+  .connector-section > div:last-child { max-width: 400px; padding-top: 15px; }
+  .connector-section p:not(.section-label) { color: var(--color-muted); font-size: 15px; }
+  .connector-section p + p { margin-top: 18px; }
+  .connector-section strong { color: var(--color-text); font-weight: 500; }
+  .connector-section .text-link { margin-top: 19px; }
+  @media (max-width: 1000px) {
+    .product-hero-grid { gap: 45px; }
+    .product-section, .control-intro, .receipt-layout, .boundaries, .custom-inner, .connector-section { gap: 55px; }
+    .capability-row { grid-template-columns: 30px 1fr 1.45fr 20px; }
+    .agent-code { font-size: 11px; padding-inline: 22px; }
+    .agent-file { font-size: 9px; padding-inline: 18px; }
+  }
+  @media (max-width: 800px) {
+    .product-hero { padding-top: 60px; }
+    .product-hero-grid { grid-template-columns: 1fr; gap: 28px; }
+    .product-hero-grid h1 { font-size: clamp(3.5rem, 9vw, 5rem); }
+    .product-hero-grid > div { max-width: 450px; }
+    .product-hero-grid > div > p { font-size: 17px; }
+    .product-jump { margin-top: 38px; justify-content: flex-start; gap: 6px 24px; }
+    .product-jump > span { width: 100%; padding-top: 10px; }
+    .product-section { grid-template-columns: 1fr 1.3fr; gap: 36px; }
+    .product-section h2 { font-size: 40px; }
+    .section-lead { font-size: 18px; }
+    .detail-pairs { gap: 28px 24px; }
+    .detail-pairs h3 { font-size: 19px; }
+    .actions-heading { gap: 40px; }
+    .actions-heading h2 { font-size: 39px; }
+    .capability-row { gap: 20px; }
+    .capability-row h3 { font-size: 20px; }
+    .control-intro, .receipt-layout, .boundaries, .custom-inner, .connector-section { gap: 35px; }
+    .receipt { padding-inline: 20px; }
+    .receipt-title h3 { font-size: 18px; }
+    .receipt dl > div { flex-direction: column; gap: 2px; padding-block: 9px; }
+    .receipt dd { text-align: left; }
+    .receipt-bottom { flex-wrap: wrap; gap: 10px; }
+    .custom-inner { grid-template-columns: 1fr 1fr; }
+    .agent-code { padding-inline: 20px; font-size: 10px; }
+    .agent-file { flex-wrap: wrap; }
+    .sample-tag { display: none; }
+  }
+  @media (max-width: 640px) {
+    .product-hero { padding-top: 50px; }
+    .product-hero > .eyebrow { font-size: 10px; margin-bottom: 25px; }
+    .product-hero-grid h1 { font-size: clamp(2.8rem, 10.6vw, 4.25rem); }
+    .product-hero-grid .text-link { margin-top: 16px; }
+    .product-jump { gap: 2px 20px; font-size: 10px; }
+    .product-demo { margin-top: 28px; }
+    .product-section { grid-template-columns: 1fr; gap: 27px; }
+    .product-section-heading .section-label { margin-bottom: 26px; }
+    .product-section h2 { font-size: clamp(2.25rem, 8vw, 3rem); }
+    .section-lead { font-size: 19px; }
+    .detail-pairs { gap: 28px 22px; margin-top: 32px; }
+    .detail-pairs h3 { font-size: 20px; }
+    .detail-pairs p { font-size: 13px; }
+    .quiet-note { margin-top: 30px; }
+    .actions-heading { grid-template-columns: 1fr; gap: 27px; }
+    .actions-heading h2 { font-size: clamp(2.25rem, 8vw, 3rem); }
+    .actions-heading > p { font-size: 15px; max-width: 360px; }
+    .capability-table { margin-top: 32px; }
+    .capability-row { grid-template-columns: 22px minmax(0, 1fr) 20px; gap: 8px 13px; padding-block: 23px; }
+    .row-number { grid-row: 1 / 3; padding-top: 4px; font-size: 10px; }
+    .capability-row h3 { font-size: 23px; }
+    .capability-row p { font-size: 13px; grid-column: 2 / -1; }
+    .row-arrow { display: block; grid-column: 3; grid-row: 1; }
+    .control-intro { grid-template-columns: 1fr; gap: 26px; }
+    .control-intro > p { font-size: 15px; }
+    .receipt-layout { grid-template-columns: 1fr; gap: 48px; margin-top: 32px; }
+    .receipt { max-width: 450px; }
+    .receipt dl > div { flex-direction: row; gap: 15px; padding-block: 11px; }
+    .receipt dd { text-align: right; }
+    .receipt-title h3 { font-size: 20px; }
+    .receipt-bottom { flex-wrap: nowrap; gap: 15px; }
+    .control-explanations h3 { font-size: 24px; }
+    .boundaries { grid-template-columns: 1fr; gap: 20px; margin-top: 42px; }
+    .boundaries > h3 { max-width: 300px; }
+    .custom-inner { grid-template-columns: 1fr; gap: 40px; }
+    .custom-copy h2 { font-size: clamp(2.25rem, 8vw, 3rem); }
+    .agent-paper { max-width: 450px; margin-inline: 4px; transform: rotate(.5deg); }
+    .agent-code { padding: 27px 22px; font-size: 11px; }
+    .agent-file { font-size: 10px; }
+    .sample-tag { display: inline; }
+    .connector-section { grid-template-columns: 1fr; gap: 26px; padding-block: 64px; }
+    .connector-section > div:last-child { padding-top: 0; }
+  }
+  @media (max-width: 360px) {
+    .detail-pairs { grid-template-columns: 1fr; }
+    .agent-code { font-size: 10px; }
+    .sample-tag { display: none; }
+    .receipt dl > div { font-size: 11px; }
+  }
+</style>

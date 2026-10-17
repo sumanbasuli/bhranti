@@ -70,7 +70,8 @@ final class Bhranti_Settings {
 		}
 		wp_enqueue_style( 'wp-components' );
 		wp_enqueue_style( 'bhranti-settings', plugins_url( 'assets/settings.css', BHRANTI_FILE ), array( 'wp-components' ), BHRANTI_VERSION );
-		wp_enqueue_script( 'bhranti-settings', plugins_url( 'assets/settings.js', BHRANTI_FILE ), array( 'wp-element', 'wp-components', 'wp-api-fetch', 'wp-i18n' ), BHRANTI_VERSION, true );
+		Bhranti_Credentials::enqueue();
+		wp_enqueue_script( 'bhranti-settings', plugins_url( 'assets/settings.js', BHRANTI_FILE ), array( 'bhranti-credentials', 'wp-element', 'wp-components', 'wp-api-fetch', 'wp-i18n' ), BHRANTI_VERSION, true );
 		wp_set_script_translations( 'bhranti-settings', 'bhranti' );
 		wp_add_inline_script(
 			'bhranti-settings',
@@ -226,6 +227,9 @@ final class Bhranti_Settings {
 		$config = self::validate( $body['config'] );
 		if ( is_wp_error( $config ) ) {
 			return $config;
+		}
+		if ( Bhranti_Credentials::contains( $config ) ) {
+			return Bhranti_Credentials::error( 'settings' );
 		}
 		return self::persist( $config, $body['revision'] );
 	}

@@ -64,6 +64,7 @@ final class Bhranti_Settings { public static function task_catalog() { return ar
 final class Bhranti_Commerce { public static function catalog() { return array(); } }
 final class Bhranti_Site { public static function is_theme_request( $request ) { return false; } }
 final class Bhranti_Audit { public static function record( ...$args ) { $GLOBALS['rf_audits'][] = $args; return count( $GLOBALS['rf_audits'] ); } }
+require dirname( __DIR__ ) . '/includes/class-bhranti-credentials.php';
 require dirname( __DIR__ ) . '/includes/class-bhranti-references.php';
 /** Controller seam: production names allow the actual Actions reviewer to inspect it. */
 class WP_REST_Posts_Controller {
