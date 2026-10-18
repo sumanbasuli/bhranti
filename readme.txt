@@ -4,7 +4,7 @@ Tags: ai, assistant, content, productivity, automation
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -118,6 +118,9 @@ Bhranti is free software under the GNU General Public License, version 2 or any 
 Bundled third-party code keeps its own notices: Bootstrap Icons uses MIT (assets/bootstrap-icons-LICENSE.txt); axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). The bundled axe-core script is built from the publicly available source at https://github.com/dequelabs/axe-core/tree/v4.14.0. The axe-core folder includes source information and additional third-party notices.
 
 == Changelog ==
+
+= 1.0.1 =
+* Add links to the Bhranti website and the plugin author's website.
 
 = 1.0.0 =
 * Work on content and supported site tasks from a sidebar alongside WordPress.

@@ -1,5 +1,8 @@
 === Bhranti release history ===
 
+= 1.0.1 =
+* Add links to the Bhranti website and the plugin author's website.
+
 = 1.0.0 =
 * Work on content and supported site tasks from a sidebar alongside WordPress.
 * Review changes, approve sensitive actions, and find activity in Bhranti Logs.
