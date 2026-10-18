@@ -348,19 +348,15 @@ final class Bhranti_Workspace {
 	 * @return mixed
 	 */
 	public static function mutate( $callback ) {
-		$key = 'bhranti_lock_' . get_current_user_id();
-		// A stale lock can only outlive a request after an interrupted PHP process.
-		$lock = (int) get_option( $key, 0 );
-		if ( $lock && $lock < time() - 600 ) {
-			delete_option( $key );
-		}
-		if ( ! add_option( $key, time(), '', false ) ) {
+		$key  = 'bhranti_lock_' . get_current_user_id();
+		$lock = Bhranti_Lock::acquire( $key, 600 );
+		if ( ! $lock ) {
 			return new WP_Error( 'bhranti_busy', __( 'Another Bhranti request is running. Wait a moment and try again.', 'bhranti' ), array( 'status' => 409 ) );
 		}
 		try {
 			return $callback();
 		} finally {
-			delete_option( $key );
+			Bhranti_Lock::release( $key, $lock );
 		}
 	}
 

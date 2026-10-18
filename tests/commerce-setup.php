@@ -232,6 +232,16 @@ function wp_cache_delete( $key, $group = '' ) {}
 function wp_load_alloptions( $force = false ) { return $GLOBALS['setup_options']; }
 function add_option( $key, $value, $deprecated = '', $autoload = null ) { if ( isset( $GLOBALS['setup_options'][ $key ] ) ) { return false; } $GLOBALS['setup_options'][ $key ] = $value; return true; }
 function delete_option( $key ) { unset( $GLOBALS['setup_options'][ $key ] ); return true; }
+/** In-memory lock boundary; this fixture never opens a WordPress database. */
+final class Bhranti_Lock {
+    public static function acquire( $name, $ttl ) {
+        if ( array_key_exists( $name, $GLOBALS['setup_options'] ) ) { return false; }
+        $token = array( 'token' => wp_generate_uuid4(), 'expires' => time() + $ttl );
+        return add_option( $name, $token, '', false ) ? $token : false;
+    }
+    public static function owns( $name, $token ) { return is_array( $token ) && $token === get_option( $name ) && ( $token['expires'] ?? 0 ) > time(); }
+    public static function release( $name, $token ) { if ( ! self::owns( $name, $token ) ) { return false; } return delete_option( $name ); }
+}
 function add_filter( ...$args ) {}
 function remove_filter( ...$args ) {}
 function apply_filters_deprecated( $hook, $args, $version ) { return $args[0]; }

@@ -35,6 +35,7 @@ define( 'BHRANTI_FILE', __FILE__ );
 define( 'BHRANTI_ALLOW_IRREVERSIBLE_PLUGIN_DELETION', true );
 
 require_once __DIR__ . '/includes/class-bhranti-credentials.php';
+require_once __DIR__ . '/includes/class-bhranti-lock.php';
 require_once __DIR__ . '/includes/class-bhranti-workspace.php';
 require_once __DIR__ . '/includes/class-bhranti-audit.php';
 require_once __DIR__ . '/includes/class-bhranti-log-screen.php';

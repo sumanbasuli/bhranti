@@ -460,8 +460,7 @@ final class Bhranti_Agent {
 				$data['run']['background_error'] = 'bhranti_runner_storage';
 			}
 			if ( 'running' === ( $run['status'] ?? '' ) && in_array( $run['phase'] ?? '', array( 'model', 'action' ), true ) ) {
-				$lock                       = (int) get_option( 'bhranti_lock_' . $run['requester_id'], 0 );
-				$data['run']['interrupted'] = ! $lock || $lock < time() - 600;
+				$data['run']['interrupted'] = ! Bhranti_Lock::active( 'bhranti_lock_' . $run['requester_id'], 600 );
 			}
 			if ( isset( $run['next_action'] ) && in_array( $run['phase'] ?? '', array( 'prepared', 'action', 'browser' ), true ) ) {
 				$data['run']['next_action'] = $run['next_action'];

@@ -157,10 +157,7 @@ final class Bhranti_Runner {
 				return self::queue( $session_id, $run_id, $requester_id, 1 );
 			}
 			if ( in_array( $phase, array( 'model', 'action' ), true ) ) {
-				wp_cache_delete( 'bhranti_lock_' . $requester_id, 'options' );
-				wp_cache_delete( 'alloptions', 'options' );
-				$lock = (int) get_option( 'bhranti_lock_' . $requester_id, 0 );
-				if ( $lock && $lock >= time() - 600 ) {
+				if ( Bhranti_Lock::active( 'bhranti_lock_' . $requester_id, 600 ) ) {
 					return self::queue( $session_id, $run_id, $requester_id, 10 );
 				}
 			}

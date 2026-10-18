@@ -936,18 +936,9 @@ final class Bhranti_Plugins {
 	 * @return array|WP_Error
 	 */
 	private static function acquire_lock() {
-		$lock = array(
-			'token'   => wp_generate_uuid4(),
-			'expires' => time() + 600,
-		);
-		if ( ! add_option( 'bhranti_plugins_lock', $lock, '', false ) ) {
-			$previous = get_option( 'bhranti_plugins_lock' );
-			if ( is_array( $previous ) && (int) ( $previous['expires'] ?? 0 ) < time() && get_option( 'bhranti_plugins_lock' ) === $previous ) {
-				delete_option( 'bhranti_plugins_lock' );
-			}
-			if ( ! add_option( 'bhranti_plugins_lock', $lock, '', false ) ) {
-				return self::error( 'bhranti_plugin_busy', __( 'Another Bhranti plugin request is running. Review its result before trying again.', 'bhranti' ), 409 );
-			}
+		$lock = Bhranti_Lock::acquire( 'bhranti_plugins_lock', 600 );
+		if ( ! $lock ) {
+			return self::error( 'bhranti_plugin_busy', __( 'Another Bhranti plugin request is running. Review its result before trying again.', 'bhranti' ), 409 );
 		}
 		return $lock;
 	}
@@ -959,8 +950,7 @@ final class Bhranti_Plugins {
 	 * @return bool
 	 */
 	private static function owns_lock( $lock ) {
-		wp_cache_delete( 'bhranti_plugins_lock', 'options' );
-		return get_option( 'bhranti_plugins_lock' ) === $lock && time() < $lock['expires'];
+		return Bhranti_Lock::owns( 'bhranti_plugins_lock', $lock );
 	}
 
 	/**
@@ -969,10 +959,7 @@ final class Bhranti_Plugins {
 	 * @param array $lock Owned lock.
 	 */
 	private static function release_lock( $lock ) {
-		wp_cache_delete( 'bhranti_plugins_lock', 'options' );
-		if ( get_option( 'bhranti_plugins_lock' ) === $lock ) {
-			delete_option( 'bhranti_plugins_lock' );
-		}
+		Bhranti_Lock::release( 'bhranti_plugins_lock', $lock );
 	}
 
 	/**

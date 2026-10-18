@@ -245,18 +245,9 @@ final class Bhranti_Settings {
 	 * @return array|WP_Error
 	 */
 	private static function persist( $config, $revision, $context = array(), $before_write = null, $after_write = null ) {
-		$lock = array(
-			'token'   => wp_generate_uuid4(),
-			'expires' => time() + 60,
-		);
-		if ( ! add_option( 'bhranti_settings_lock', $lock, '', false ) ) {
-			$previous = self::fresh_option( 'bhranti_settings_lock' );
-			if ( is_array( $previous ) && (int) ( $previous['expires'] ?? 0 ) < time() && self::fresh_option( 'bhranti_settings_lock' ) === $previous ) {
-				delete_option( 'bhranti_settings_lock' );
-			}
-			if ( ! add_option( 'bhranti_settings_lock', $lock, '', false ) ) {
-				return self::error( 'bhranti_settings_busy', __( 'Another administrator is saving settings. Try again shortly.', 'bhranti' ), 409 );
-			}
+		$lock = Bhranti_Lock::acquire( 'bhranti_settings_lock', 600 );
+		if ( ! $lock ) {
+			return self::error( 'bhranti_settings_busy', __( 'Another administrator is saving settings. Try again shortly.', 'bhranti' ), 409 );
 		}
 		try {
 			$prior          = self::fresh_option( 'bhranti_settings' );
@@ -275,7 +266,7 @@ final class Bhranti_Settings {
 			if ( self::fresh_option( 'bhranti_settings' ) !== $prior ) {
 				return self::error( 'bhranti_settings_conflict', __( 'These settings changed before they could be saved. Reload and try again.', 'bhranti' ), 409 );
 			}
-			if ( self::fresh_option( 'bhranti_settings_lock' ) !== $lock ) {
+			if ( ! Bhranti_Lock::owns( 'bhranti_settings_lock', $lock ) ) {
 				return self::error( 'bhranti_settings_busy', __( 'The settings save lock expired. Reload and try again.', 'bhranti' ), 409 );
 			}
 			$next = array(
@@ -293,7 +284,7 @@ final class Bhranti_Settings {
 				return $allowed;
 			}
 			// Snapshot/audit hooks can run other code: recheck immediately before the write.
-			if ( self::fresh_option( 'bhranti_settings' ) !== $prior || self::fresh_option( 'bhranti_settings_lock' ) !== $lock ) {
+			if ( self::fresh_option( 'bhranti_settings' ) !== $prior || ! Bhranti_Lock::owns( 'bhranti_settings_lock', $lock ) ) {
 				return self::error( 'bhranti_settings_conflict', __( 'These settings changed before they could be saved. Read the task limit again.', 'bhranti' ), 409 );
 			}
 			update_option( 'bhranti_settings', $next, false );
@@ -319,9 +310,7 @@ final class Bhranti_Settings {
 			}
 			return $next;
 		} finally {
-			if ( self::fresh_option( 'bhranti_settings_lock' ) === $lock ) {
-				delete_option( 'bhranti_settings_lock' );
-			}
+			Bhranti_Lock::release( 'bhranti_settings_lock', $lock );
 		}
 	}
 

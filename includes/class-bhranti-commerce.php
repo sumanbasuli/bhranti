@@ -260,7 +260,7 @@ final class Bhranti_Commerce {
 			$fresh_review = self::review( $review['command'], $requester_id, $actor_id );
 			$fresh        = self::state( $review );
 			$allowed      = is_wp_error( $fresh_review ) || is_wp_error( $fresh ) ? false : self::policy( $fresh_review, $fresh );
-			if ( is_wp_error( $fresh_review ) || is_wp_error( $fresh ) || true !== $allowed || ! hash_equals( $fingerprint, self::fingerprint( $fresh ) ) || get_option( 'bhranti_commerce_lock' ) !== $lock || is_wp_error( self::owner( $requester_id, $session_id ) ) ) {
+			if ( is_wp_error( $fresh_review ) || is_wp_error( $fresh ) || true !== $allowed || ! hash_equals( $fingerprint, self::fingerprint( $fresh ) ) || ! Bhranti_Lock::owns( 'bhranti_commerce_lock', $lock ) || is_wp_error( self::owner( $requester_id, $session_id ) ) ) {
 				return self::refused( self::error( 'bhranti_rollback_conflict', __( 'The product, setting or permissions changed before execution. Read the target again.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
 			}
 			$dispatched = true;
@@ -433,7 +433,7 @@ final class Bhranti_Commerce {
 			$fresh        = self::state( $review );
 			$fresh_review = self::review( $restore_command, $requester_id, $actor_id, true );
 			$allowed      = is_wp_error( $fresh_review ) || is_wp_error( $fresh ) ? false : self::policy( $fresh_review, $fresh );
-			if ( is_wp_error( $fresh ) || is_wp_error( $fresh_review ) || true !== $allowed || ! hash_equals( $record['after_fingerprint'], self::fingerprint( $fresh ) ) || get_option( 'bhranti_commerce_lock' ) !== $lock || is_wp_error( self::owner( $requester_id, $session_id ) ) ) {
+			if ( is_wp_error( $fresh ) || is_wp_error( $fresh_review ) || true !== $allowed || ! hash_equals( $record['after_fingerprint'], self::fingerprint( $fresh ) ) || ! Bhranti_Lock::owns( 'bhranti_commerce_lock', $lock ) || is_wp_error( self::owner( $requester_id, $session_id ) ) ) {
 				$record['state'] = 'completed';
 				self::snapshot( $session_id, $record );
 				return self::refused( self::error( 'bhranti_rollback_conflict', __( 'The store item changed during Undo preparation.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
@@ -1340,15 +1340,8 @@ final class Bhranti_Commerce {
 
 	/** Acquire a short site-wide native option lock for store writes. */
 	private static function lock() {
-		$value    = array(
-			'id'      => wp_generate_uuid4(),
-			'expires' => time() + 60,
-		);
-		$existing = get_option( 'bhranti_commerce_lock' );
-		if ( is_array( $existing ) && (int) ( $existing['expires'] ?? PHP_INT_MAX ) < time() && get_option( 'bhranti_commerce_lock' ) === $existing ) {
-			delete_option( 'bhranti_commerce_lock' );
-		}
-		return add_option( 'bhranti_commerce_lock', $value, '', false ) ? $value : self::error( 'bhranti_commerce_busy', __( 'Another store change is running. Wait for it to finish.', 'bhranti' ), 409 );
+		$value = Bhranti_Lock::acquire( 'bhranti_commerce_lock', 600 );
+		return $value ? $value : self::error( 'bhranti_commerce_busy', __( 'Another store change is running. Wait for it to finish.', 'bhranti' ), 409 );
 	}
 
 	/**
@@ -1357,9 +1350,7 @@ final class Bhranti_Commerce {
 	 * @param array $lock Owned token.
 	 */
 	private static function unlock( $lock ) {
-		if ( get_option( 'bhranti_commerce_lock' ) === $lock ) {
-			delete_option( 'bhranti_commerce_lock' );
-		}
+		Bhranti_Lock::release( 'bhranti_commerce_lock', $lock );
 	}
 
 	/**

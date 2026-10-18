@@ -74,25 +74,14 @@ final class Bhranti_Actions {
 	 * @return int|WP_Error Managed actor ID.
 	 */
 	public static function ensure_actor() {
-		$lock = array(
-			'token'   => wp_generate_uuid4(),
-			'expires' => time() + 60,
-		);
-		if ( ! add_option( 'bhranti_actor_setup_lock', $lock, '', false ) ) {
-			$previous = get_option( 'bhranti_actor_setup_lock' );
-			if ( is_array( $previous ) && (int) ( $previous['expires'] ?? 0 ) < time() && get_option( 'bhranti_actor_setup_lock' ) === $previous ) {
-				delete_option( 'bhranti_actor_setup_lock' );
-			}
-			if ( ! add_option( 'bhranti_actor_setup_lock', $lock, '', false ) ) {
-				return self::error( 'bhranti_actor_busy', __( 'Another request is preparing Bhranti. Try again shortly.', 'bhranti' ), 409 );
-			}
+		$lock = Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 );
+		if ( ! $lock ) {
+			return self::error( 'bhranti_actor_busy', __( 'Another request is preparing Bhranti. Try again shortly.', 'bhranti' ), 409 );
 		}
 		try {
 			return self::prepare_actor();
 		} finally {
-			if ( get_option( 'bhranti_actor_setup_lock' ) === $lock ) {
-				delete_option( 'bhranti_actor_setup_lock' );
-			}
+			Bhranti_Lock::release( 'bhranti_actor_setup_lock', $lock );
 		}
 	}
 

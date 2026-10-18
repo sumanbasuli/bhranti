@@ -217,7 +217,7 @@ final class Bhranti_Forms {
 			}
 			$fresh = self::review( $command, $requester_id, $actor_id );
 			$state = self::state( $review['id'], $actor_id );
-			if ( is_wp_error( $fresh ) || is_wp_error( self::owner( $requester_id, $session_id ) ) || get_option( 'bhranti_forms_lock' ) !== $lock || self::fingerprint( $before ) !== self::fingerprint( $state ) ) {
+			if ( is_wp_error( $fresh ) || is_wp_error( self::owner( $requester_id, $session_id ) ) || ! Bhranti_Lock::owns( 'bhranti_forms_lock', $lock ) || self::fingerprint( $before ) !== self::fingerprint( $state ) ) {
 				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
 			}
 			$valid = self::writable( $state, $fresh['params'], $requester_id );
@@ -340,7 +340,7 @@ final class Bhranti_Forms {
 				return $saved;
 			}
 			$fresh = self::review( $command, $requester_id, $actor_id );
-			if ( is_wp_error( $fresh ) || is_wp_error( self::owner( $requester_id, $session_id ) ) || ( 'dashboard' === $definition['notifications'] && ! self::availability()['dashboard_storage'] ) || get_option( 'bhranti_forms_lock' ) !== $lock || ! hash_equals( $record['after_fingerprint'], self::fingerprint( self::state( $record['object_id'], $actor_id ) ) ) ) {
+			if ( is_wp_error( $fresh ) || is_wp_error( self::owner( $requester_id, $session_id ) ) || ( 'dashboard' === $definition['notifications'] && ! self::availability()['dashboard_storage'] ) || ! Bhranti_Lock::owns( 'bhranti_forms_lock', $lock ) || ! hash_equals( $record['after_fingerprint'], self::fingerprint( self::state( $record['object_id'], $actor_id ) ) ) ) {
 				$record['state'] = 'completed';
 				self::snapshot( $session_id, $record );
 				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
@@ -875,15 +875,8 @@ final class Bhranti_Forms {
 
 	/** Acquire a short site-local lock to serialize form configuration writes. */
 	private static function lock() {
-		$token = array(
-			'id'      => wp_generate_uuid4(),
-			'expires' => time() + 120,
-		);
-		$old   = get_option( 'bhranti_forms_lock' );
-		if ( is_array( $old ) && (int) ( $old['expires'] ?? PHP_INT_MAX ) < time() && get_option( 'bhranti_forms_lock' ) === $old ) {
-			delete_option( 'bhranti_forms_lock' );
-		}
-		return add_option( 'bhranti_forms_lock', $token, '', false ) ? $token : self::error( 'bhranti_forms_busy', __( 'Another form change is running. Wait for it to finish.', 'bhranti' ), 409 );
+		$token = Bhranti_Lock::acquire( 'bhranti_forms_lock', 600 );
+		return $token ? $token : self::error( 'bhranti_forms_busy', __( 'Another form change is running. Wait for it to finish.', 'bhranti' ), 409 );
 	}
 
 	/**
@@ -892,9 +885,7 @@ final class Bhranti_Forms {
 	 * @param array $token Owned lock.
 	 */
 	private static function unlock( $token ) {
-		if ( get_option( 'bhranti_forms_lock' ) === $token ) {
-			delete_option( 'bhranti_forms_lock' );
-		}
+		Bhranti_Lock::release( 'bhranti_forms_lock', $token );
 	}
 
 	/**

@@ -34,6 +34,23 @@ function update_post_meta( $id, $key, $value ) { if ( ( $GLOBALS['ac']['fail_met
 function get_option( $key, $default = false ) { return $GLOBALS['ac']['options'][ $key ] ?? $default; }
 function add_option( $key, $value, ...$args ) { if ( isset( $GLOBALS['ac']['options'][ $key ] ) ) { return false; } $GLOBALS['ac']['options'][ $key ] = $value; return true; }
 function delete_option( $key ) { unset( $GLOBALS['ac']['options'][ $key ] ); return true; }
+/** In-memory lock boundary for this no-database orchestration fixture. */
+final class Bhranti_Lock {
+    public static function acquire( $name, $ttl ) {
+        if ( self::active( $name, $ttl ) ) { return false; }
+        delete_option( $name );
+        $token = array( 'token' => wp_generate_uuid4(), 'expires' => time() + $ttl );
+        return add_option( $name, $token, '', false ) ? $token : false;
+    }
+    public static function owns( $name, $token ) { return is_array( $token ) && $token === get_option( $name ) && ( $token['expires'] ?? 0 ) > time(); }
+    public static function release( $name, $token ) { if ( ! self::owns( $name, $token ) ) { return false; } return delete_option( $name ); }
+    public static function active( $name, $ttl ) {
+        $value = get_option( $name );
+        if ( is_array( $value ) && isset( $value['expires'] ) ) { return (int) $value['expires'] > time(); }
+        if ( is_int( $value ) ) { return $value >= time() - $ttl; }
+        return false !== $value;
+    }
+}
 function wp_update_post( $value, $wp_error = false ) { $value = wp_unslash( $value ); $GLOBALS['ac']['posts'][ $value['ID'] ]->post_title = $value['post_title']; return $value['ID']; }
 function get_post_datetime( ...$args ) { return new DateTimeImmutable( '2026-10-12T00:00:00Z' ); }
 function wp_generate_uuid4() { return sprintf( '00000000-0000-4000-8000-%012d', ++$GLOBALS['ac']['uuid'] ); }

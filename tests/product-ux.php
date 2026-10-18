@@ -43,6 +43,23 @@ function add_option( $key, $value, $deprecated = '', $autoload = true ) {
     return true;
 }
 function delete_option( $key ) { unset( $GLOBALS['ux_options'][ $key ] ); return true; }
+/** In-memory lock boundary for this fixture's real Agent orchestration. */
+final class Bhranti_Lock {
+    public static function acquire( $name, $ttl ) {
+        if ( self::active( $name, $ttl ) ) { return false; }
+        delete_option( $name );
+        $token = array( 'token' => wp_generate_uuid4(), 'expires' => time() + $ttl );
+        return add_option( $name, $token, '', false ) ? $token : false;
+    }
+    public static function owns( $name, $token ) { return is_array( $token ) && $token === get_option( $name ) && ( $token['expires'] ?? 0 ) > time(); }
+    public static function release( $name, $token ) { if ( ! self::owns( $name, $token ) ) { return false; } return delete_option( $name ); }
+    public static function active( $name, $ttl ) {
+        $value = get_option( $name );
+        if ( is_array( $value ) && isset( $value['expires'] ) ) { return (int) $value['expires'] > time(); }
+        if ( is_int( $value ) ) { return $value >= time() - $ttl; }
+        return false !== $value;
+    }
+}
 function wp_update_post( $data, $wp_error = false ) {
     if ( ! isset( $GLOBALS['ux_posts'][ $data['ID'] ] ) ) { return new WP_Error( 'fixture_missing' ); }
     $GLOBALS['ux_posts'][ $data['ID'] ]->post_title = $data['post_title'];
