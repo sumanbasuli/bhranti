@@ -94,7 +94,7 @@ export const siteFooter = `---
 
 **Bhranti.** A helping hand for your WordPress.
 
-Bhranti is currently in beta.
+Bhranti for WordPress ${release.wordpress}.
 
 - [Explore the product](/product/)
 - [Read the documentation](/docs/)

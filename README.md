@@ -4,7 +4,7 @@ An AI assistant that works alongside you in WordPress.
 
 Ask Bhranti to update a page, improve your writing, find an image or help set up a product catalog. It reads the relevant content, makes supported changes and shows its actions in a chat beside your editor.
 
-**Currently in beta.** Requires WordPress 7.0+, PHP 7.4+ and a compatible AI text connection in **Settings → Connectors**. Image features depend on the connector and model. AI usage may count toward your provider allowance or incur charges.
+Requires WordPress 7.0+, PHP 7.4+ and a compatible AI text connection in **Settings → Connectors**. Image features depend on the connector and model. AI usage may count toward your provider allowance or incur charges.
 
 ## What you can do
 

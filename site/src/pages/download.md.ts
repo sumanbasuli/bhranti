@@ -4,11 +4,11 @@ import { siteFooter } from '../data/marketing';
 export function GET() {
   return new Response(`# Download Bhranti.
 
-Bhranti for WordPress. Version ${release.version} — Beta.
+Bhranti for WordPress. Version ${release.version}. Licensed under GPL v2 or later.
 
 Work on content, design, and supported site tasks, right inside WordPress.
 
-## Get the beta.
+## Get Bhranti.
 
 Download the plugin ZIP, then follow the guide to install Bhranti and connect your AI provider.
 

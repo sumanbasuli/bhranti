@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bhranti
  * Description: Write content, update pages and manage everyday WordPress tasks with an AI assistant that works alongside your editor.
- * Version: 0.6.9
+ * Version: 1.0.0
  * Requires at least: 7.0
  * Requires PHP: 7.4
  * Author: Suman Basuli
@@ -29,7 +29,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'BHRANTI_VERSION', '0.6.9' );
+define( 'BHRANTI_VERSION', '1.0.0' );
 define( 'BHRANTI_FILE', __FILE__ );
 // Plugin deletion is opt-in in Settings and always needs an explicit human approval.
 define( 'BHRANTI_ALLOW_IRREVERSIBLE_PLUGIN_DELETION', true );

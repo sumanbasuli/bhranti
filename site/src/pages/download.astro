@@ -5,17 +5,17 @@ import WordPressMark from '../components/WordPressMark.astro';
 import { release } from '../data/release';
 ---
 
-<Base title="Download Bhranti" description="Get Bhranti for WordPress. Check the beta release status, system requirements, and native WordPress setup guide." markdownHref="/download.md" active="download" pageClass="download-page">
+<Base title="Download Bhranti" description="Get Bhranti for WordPress. Check the system requirements and follow the WordPress setup guide." markdownHref="/download.md" active="download" pageClass="download-page">
   <section class="download-hero" aria-labelledby="download-title">
     <div class="container">
-      <div class="release-line"><span>Bhranti for WordPress</span><span>Version {release.version} <span aria-hidden="true">/</span> Beta</span></div>
+      <div class="release-line"><span>Bhranti for WordPress</span><span>Version {release.version} <span aria-hidden="true">/</span> GPL v2 or later</span></div>
       <div class="download-main">
         <div class="download-intro">
           <h1 id="download-title">Download<br /><span class="serif">Bhranti.</span></h1>
           <p>Work on content, design, and supported site tasks, right inside WordPress.</p>
         </div>
         <div class="download-action">
-          <h2>Get the beta.</h2>
+          <h2>Get Bhranti.</h2>
           <p>Download the plugin ZIP, then follow the guide to install Bhranti and connect your AI provider.</p>
           <a class="download-button" href={release.downloadUrl}>Download Bhranti ZIP <span aria-hidden="true">↓</span></a>
           <a class="hero-link" href="/docs/get-started/">Read the setup guide <Arrow /></a>

@@ -55,9 +55,9 @@ The Bhranti mark is based on the sparkle icon already used by the plugin. Bootst
 
 Read `PRODUCT.md` and `DESIGN.md` before larger content or visual changes.
 
-## Download placeholder
+## Release download
 
-The header and primary actions lead to `/download/`. The requested temporary download link is `#`. Replace `downloadUrl` in `src/data/release.ts` with the public `sumanbasuli/bhranti` release ZIP URL when published, then rebuild. The version and compatibility information belong to the same release configuration.
+The header and primary actions lead to `/download/`. `downloadUrl` in `src/data/release.ts` remains `#` until the release ZIP is published. Replace it with the public `sumanbasuli/bhranti` release ZIP URL, then rebuild before deploying the download page. The version and compatibility information share that release configuration.
 
 ## WordPress icon
 

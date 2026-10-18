@@ -52,11 +52,11 @@
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .skip-link { position: fixed; top: 12px; left: 20px; z-index: 100; padding: 12px 18px; color: var(--color-accent-ink); background: var(--color-accent); transform: translateY(-180%); }
   .skip-link:focus { transform: translateY(0); }
-  .beta-announcement { background: #252e37; color: #d2e6f8; border-bottom: 1px solid #3c4b59; font-size: 12px; }
-  .beta-announcement .container { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 38px; padding-block: 7px; }
-  .beta-announcement a { display: inline-flex; gap: 10px; align-items: center; text-decoration: none; flex-shrink: 0; }
-  .beta-announcement a:hover { text-decoration: underline; }
-  .beta-announcement svg { width: 14px; height: 14px; }
+  .site-announcement { background: #252e37; color: #d2e6f8; border-bottom: 1px solid #3c4b59; font-size: 12px; }
+  .site-announcement .container { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 38px; padding-block: 7px; }
+  .site-announcement a { display: inline-flex; gap: 10px; align-items: center; text-decoration: none; flex-shrink: 0; }
+  .site-announcement a:hover { text-decoration: underline; }
+  .site-announcement svg { width: 14px; height: 14px; }
   .site-header { position: sticky; top: 0; z-index: 30; background: rgb(30 30 30 / 96%); border-bottom: 1px solid var(--color-soft-border); backdrop-filter: blur(14px); }
   .header-inner { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 88px; gap: 30px; }
   .brand { display: inline-flex; align-items: center; gap: 11px; color: var(--color-text); font-size: 29px; font-weight: 600; letter-spacing: -1.5px; text-decoration: none; line-height: 1; flex-shrink: 0; }

@@ -4,7 +4,7 @@ Tags: ai, assistant, content, productivity, automation
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.9
+Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,7 +16,7 @@ Bhranti helps you work on your WordPress site through conversation. Update an op
 
 Open Bhranti from the admin bar or the block editor toolbar. Share page or block context and review the results in a sidebar beside your work.
 
-Bhranti is currently in beta. It uses WordPress's built-in AI Client and a compatible connector configured in Settings > Connectors. Text chat needs a compatible connection; image features depend on your connector and model.
+Bhranti uses WordPress's built-in AI Client and a compatible connector configured in Settings > Connectors. Text chat needs a compatible connection; image features depend on your connector and model.
 
 = What you can do =
 
@@ -115,12 +115,11 @@ Uninstall removes Bhranti's workspace data and revokes its managed account's ele
 
 Bhranti is free software under the GNU General Public License, version 2 or any later version, matching WordPress. See LICENSE for the full text. It is distributed without warranty.
 
-Bundled third-party code keeps its own notices: Bootstrap Icons uses MIT (assets/bootstrap-icons-LICENSE.txt); axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). The axe-core folder includes source information and additional third-party notices.
+Bundled third-party code keeps its own notices: Bootstrap Icons uses MIT (assets/bootstrap-icons-LICENSE.txt); axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). The bundled axe-core script is built from the publicly available source at https://github.com/dequelabs/axe-core/tree/v4.14.0. The axe-core folder includes source information and additional third-party notices.
 
 == Changelog ==
 
-= 0.6.9 =
-* Ask for Approve or Cancel before plugin changes; one installation approval can include activation.
-* Perform approved native plugin actions as the signed-in user and keep decisions in compact task history.
-
-Earlier release notes are included in changelog.txt.
+= 1.0.0 =
+* Work on content and supported site tasks from a sidebar alongside WordPress.
+* Review changes, approve sensitive actions, and find activity in Bhranti Logs.
+* Connect through WordPress's native AI Client and choose allowed actions in Settings.
