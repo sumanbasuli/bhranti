@@ -319,7 +319,7 @@ final class Bhranti_Actions {
 			return Bhranti_Commerce::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
 		}
 		if ( is_array( $command ) && 'form_request' === ( $command['tool'] ?? '' ) ) {
-			return Bhranti_Forms::execute( $command, $requester_id, $session_id );
+			return Bhranti_Forms::execute( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
 		}
 		if ( is_array( $command ) && 'generate_image' === ( $command['tool'] ?? '' ) ) {
 			return Bhranti_Media::execute( $command, $requester_id, $session_id );

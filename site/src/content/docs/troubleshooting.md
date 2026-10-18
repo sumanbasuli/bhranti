@@ -29,9 +29,9 @@ If Bhranti asks a question, answer in the same chat. If it is still running and 
 
 Reply in the same conversation with the missing decision, such as the audience, price, image source or whether to publish. Bhranti will wait for your answer before continuing.
 
-## A plugin change or deletion has not happened
+## An approval-required change has not happened
 
-Look for **Approval required**. Use the button to approve; a typed “yes” does not replace it. A plugin installation card can include activation with no second prompt. If it lists installation only, the plugin stays inactive; later status changes need a new card. Select **Cancel** to stop the current task. If no card appears, ask Bhranti to show one for the named item.
+Look for **Approval required**. Use the button to approve; a typed “yes” does not replace it. A plugin installation card can include activation with no second prompt. If it lists installation only, the plugin stays inactive; later status changes need a new card. For plugin changes, select **Cancel** to stop the current task. Form creation, notification destination changes, supported Trash actions and visibility changes that expose pages use **Approve/Deny**. If no card appears, ask Bhranti to show one for the named item.
 
 Approvals expire after ten minutes. If an approval expires or the item changes, ask for a new one. Bhranti moves supported content to Trash rather than permanently deleting it. Plugin uninstall is a separate opt-in feature and can permanently remove plugin data.
 
@@ -57,7 +57,7 @@ Check the affected item and **Bhranti → Logs** before asking for the same chan
 
 The button is labelled **Roll back**. Open the conversation, expand the completed-actions group and then the specific action. The button appears only for changes that can be restored. Wait for the current task to finish or stop before using it.
 
-Supported changes can be rolled back for seven days, provided later edits do not conflict. Restoring a page leaves generated images in Media Library. Plugin uninstall and sent emails cannot be undone this way. See [Approvals and Undo](/docs/permissions-and-undo/) for the full limits.
+Supported changes can be rolled back for seven days, provided later edits do not conflict. Restoring a page leaves generated images in Media Library. Plugin uninstall and sent emails cannot be undone this way. Form notification destination changes and visibility changes that would expose pages need a new request and approval instead of Roll back. See [Approvals and Undo](/docs/permissions-and-undo/) for the full limits.
 
 ## My attachment was rejected
 

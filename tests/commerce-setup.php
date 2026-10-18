@@ -173,7 +173,7 @@ setup_check( is_wp_error( setup_prepare( 'POST', '/wc/v3/payment_gateways/cod', 
 setup_check( is_array( setup_prepare( 'GET', '/wc/v3/payment_gateways/cod' ) ), 'Exact native COD read callback accepted' );
 function get_post( $id ) { return $GLOBALS['setup_cart'] ?? null; }
 function user_can( $id, $cap, ...$args ) { return array( $id, $cap ) !== ( $GLOBALS['setup_denied_cap'] ?? null ); }
-final class Bhranti_Settings { public static function allows( $permission ) { return $permission === ( $GLOBALS['setup_denied_policy'] ?? '' ) ? new WP_Error( 'bhranti_action_disabled', 'Disabled.' ) : true; } }
+final class Bhranti_Settings { public static function allows( $permission ) { return $permission === ( $GLOBALS['setup_denied_policy'] ?? '' ) ? new WP_Error( 'bhranti_action_disabled', 'Disabled.' ) : true; } public static function can_manage() { return true; } }
 $visibility_review = array( 'kind' => 'visibility', 'method' => 'POST', 'requester_id' => 1, 'actor_id' => 11 );
 foreach ( array( '00', '-1', 'bad-id', true ) as $bad_cart ) {
     $GLOBALS['setup_options']['woocommerce_cart_page_id'] = $bad_cart;
@@ -221,5 +221,100 @@ $GLOBALS['wpdb']->field_types['is_enabled'] = '%s';
 $GLOBALS['wp_rest_server']->throw = true;
 try { Bhranti_Commerce_Setup::request( $format_review ); } catch ( RuntimeException $expected ) {}
 setup_check( array( 'existing_field' => '%s', 'is_enabled' => '%s' ) === $GLOBALS['wpdb']->field_types, 'Original format restored even after native callback throws' );
+$GLOBALS['wp_rest_server'] = $original_server;
+
+// Exercise the complete consent proposal path without bootstrapping a site or
+// invoking the native visibility mutation callback.
+function get_current_user_id() { return $GLOBALS['setup_user_id'] ?? 1; }
+function wp_set_current_user( $id ) { $GLOBALS['setup_user_id'] = $id; }
+function clean_post_cache( $id ) {}
+function wp_cache_delete( $key, $group = '' ) {}
+function wp_load_alloptions( $force = false ) { return $GLOBALS['setup_options']; }
+function add_option( $key, $value, $deprecated = '', $autoload = null ) { if ( isset( $GLOBALS['setup_options'][ $key ] ) ) { return false; } $GLOBALS['setup_options'][ $key ] = $value; return true; }
+function delete_option( $key ) { unset( $GLOBALS['setup_options'][ $key ] ); return true; }
+function add_filter( ...$args ) {}
+function remove_filter( ...$args ) {}
+function apply_filters_deprecated( $hook, $args, $version ) { return $args[0]; }
+function wp_generate_uuid4() { return '00000000-0000-4000-8000-000000000001'; }
+function get_post_meta( $id, $key, $single = false ) { return $GLOBALS['setup_post_meta'][ $id ][ $key ] ?? ''; }
+function update_post_meta( $id, $key, $value ) { $GLOBALS['setup_post_meta'][ $id ][ $key ] = wp_unslash( $value ); return true; }
+function get_plugins() { return array( 'woocommerce/woocommerce.php' => array( 'Version' => '11.2.1' ) ); }
+function is_plugin_active( $plugin ) { return 'woocommerce/woocommerce.php' === $plugin; }
+function post_type_exists( $type ) { return 'product' === $type; }
+function taxonomy_exists( $type ) { return 'product_cat' === $type; }
+if ( ! class_exists( 'WC_REST_Products_Controller' ) ) { class WC_REST_Products_Controller {} }
+if ( ! class_exists( 'WC_REST_Product_Categories_Controller' ) ) { class WC_REST_Product_Categories_Controller {} }
+if ( ! class_exists( 'WC_REST_Setting_Options_Controller' ) ) { class WC_REST_Setting_Options_Controller {} }
+if ( ! class_exists( 'WC_Product_Simple' ) ) { class WC_Product_Simple {} }
+class Setup_Homescreen { public static function is_admin_user() { return true; } }
+class_alias( 'Setup_Homescreen', 'Automattic\\WooCommerce\\Internal\\Admin\\Homescreen' );
+final class Bhranti_Actions { public static function ensure_actor() { return 11; } }
+final class Bhranti_Audit { public static function record( ...$args ) { return 1; } }
+final class Bhranti_Agent { public static function consume_commerce_approval( ...$args ) { ++$GLOBALS['setup_grant_checks']; return false; } }
+$GLOBALS['setup_grant_checks'] = 0;
+$GLOBALS['setup_dispatches'] = 0;
+define( 'DAY_IN_SECONDS', 86400 );
+define( 'MB_IN_BYTES', 1048576 );
+$GLOBALS['setup_cart'] = (object) array( 'post_type' => 'bhranti_session', 'post_status' => 'private', 'post_author' => 1 );
+$GLOBALS['setup_options']['woocommerce_cart_page_id'] = 0;
+$GLOBALS['setup_options']['woocommerce_coming_soon'] = 'yes';
+$GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'yes';
+$launch_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_coming_soon' => 'no' ) ) );
+$launch = Bhranti_Commerce::execute( $launch_command, 1, 77 );
+setup_check( is_array( $launch ) && ! empty( $launch['confirmation_required'] ) && 'launch_store' === $launch['action'] && $launch_command === $launch['command'], 'A coming-soon to live proposal binds the exact command without writing' );
+setup_check( 'yes' === get_option( 'woocommerce_coming_soon' ) && ! isset( $GLOBALS['setup_options']['bhranti_commerce_lock'] ) && 0 === $GLOBALS['setup_grant_checks'] && 0 === $GLOBALS['setup_dispatches'] && ! isset( $GLOBALS['setup_post_meta'][77] ), 'Unapproved store launch leaves native state untouched, stores no Undo, and releases the lock' );
+$repeat = Bhranti_Commerce::execute( $launch_command, 1, 77, false, $launch['fingerprint'] );
+setup_check( is_array( $repeat ) && $repeat['fingerprint'] === $launch['fingerprint'], 'Exact re-proposal remains a proposal with the same complete state fingerprint' );
+$forged = Bhranti_Commerce::execute( $launch_command, 1, 77, true, $launch['fingerprint'] );
+setup_check( is_wp_error( $forged ) && 'bhranti_commerce_confirmation' === $forged->get_error_code() && 1 === $GLOBALS['setup_grant_checks'] && 'yes' === get_option( 'woocommerce_coming_soon' ), 'A confirmed flag without the one-use human grant cannot launch' );
+$GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'no';
+$stale = Bhranti_Commerce::execute( $launch_command, 1, 77, false, $launch['fingerprint'] );
+setup_check( is_wp_error( $stale ) && 'bhranti_rollback_conflict' === $stale->get_error_code(), 'A changed visibility option invalidates the exact approval proposal' );
+$scope_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_store_pages_only' => 'yes' ) ) );
+$scope = Bhranti_Commerce::execute( $scope_command, 1, 77 );
+setup_check( is_array( $scope ) && ! empty( $scope['confirmation_required'] ) && 'reveal_site_pages' === $scope['action'] && 'no' === get_option( 'woocommerce_store_pages_only' ), 'Changing whole-site coming soon to store-only also waits for human approval' );
+$GLOBALS['setup_options']['woocommerce_coming_soon'] = 'no';
+$visibility_state = Bhranti_Commerce_Setup::state( array( 'kind' => 'visibility' ) );
+$already_live = Bhranti_Commerce::execute( $launch_command, 1, 77, false, hash( 'sha256', wp_json_encode( $visibility_state ) ) );
+setup_check( is_array( $already_live ) && ! empty( $already_live['confirmation_required'] ) && 'launch_store' === $already_live['action'] && 0 === $GLOBALS['setup_dispatches'], 'Writing public store visibility still requires approval when the store is already live' );
+$already_scope = Bhranti_Commerce::execute( $scope_command, 1, 77 );
+setup_check( is_array( $already_scope ) && ! empty( $already_scope['confirmation_required'] ) && 'reveal_site_pages' === $already_scope['action'] && 0 === $GLOBALS['setup_dispatches'], 'Writing store-only coming soon requires approval even while the whole site is live' );
+$GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'yes';
+$scope_noop = Bhranti_Commerce::execute( $scope_command, 1, 77 );
+setup_check( is_array( $scope_noop ) && ! empty( $scope_noop['confirmation_required'] ) && 0 === $GLOBALS['setup_dispatches'], 'A public site-page visibility no-op still requires approval' );
+$classification = new ReflectionMethod( 'Bhranti_Commerce', 'visibility_approval' );
+foreach ( array(
+    array( array( 'woocommerce_coming_soon' => 'yes' ), '' ),
+    array( array( 'woocommerce_store_pages_only' => 'no' ), '' ),
+    array( array( 'woocommerce_store_pages_only' => 'yes' ), 'reveal_site_pages' ),
+    array( array( 'woocommerce_coming_soon' => 'no' ), 'launch_store' ),
+    array( array( 'woocommerce_coming_soon' => 'no', 'woocommerce_store_pages_only' => 'yes' ), 'launch_store' ),
+) as $case ) {
+    setup_check( $case[1] === $classification->invoke( null, array( 'kind' => 'visibility', 'method' => 'POST', 'params' => $case[0] ) ), 'Approval follows the public visibility value being written, independent of prior state' );
+}
+$GLOBALS['wp_rest_server'] = new class( $original_server ) {
+    private $server;
+    public function __construct( $server ) { $this->server = $server; }
+    public function get_routes() { return $this->server->get_routes(); }
+    public function dispatch( $request ) {
+        ++$GLOBALS['setup_dispatches'];
+        if ( 'POST' !== $request->get_method() || '/wc-admin/options' !== $request->get_route() ) { throw new RuntimeException( 'Unexpected native dispatch.' ); }
+        foreach ( $request->get_json_params() as $name => $value ) { $GLOBALS['setup_options'][ $name ] = $value; }
+        return new WP_REST_Response( array() );
+    }
+};
+$GLOBALS['setup_options']['woocommerce_coming_soon'] = 'no';
+$GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'no';
+$restrictive_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_coming_soon' => 'yes' ) ) );
+$restrictive = Bhranti_Commerce::execute( $restrictive_command, 1, 77 );
+setup_check( is_array( $restrictive ) && false === $restrictive['rollback_available'] && 'yes' === get_option( 'woocommerce_coming_soon' ) && 1 === $GLOBALS['setup_dispatches'], 'A restrictive visibility change saves, but cannot offer an Undo that would relaunch the site' );
+$unsafe_undo = Bhranti_Commerce::rollback( $restrictive['action_id'], 1, 77 );
+setup_check( is_wp_error( $unsafe_undo ) && 'bhranti_commerce_confirmation' === $unsafe_undo->get_error_code() && 'yes' === get_option( 'woocommerce_coming_soon' ) && 1 === $GLOBALS['setup_dispatches'], 'Direct rollback cannot broaden visibility without a fresh approved launch' );
+$GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'yes';
+$restrict_scope_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_store_pages_only' => 'no' ) ) );
+$restrict_scope = Bhranti_Commerce::execute( $restrict_scope_command, 1, 77 );
+setup_check( is_array( $restrict_scope ) && false === $restrict_scope['rollback_available'] && 'no' === get_option( 'woocommerce_store_pages_only' ) && 2 === $GLOBALS['setup_dispatches'], 'Restricting non-store pages cannot offer an Undo that writes the public site-page value' );
+$unsafe_scope_undo = Bhranti_Commerce::rollback( $restrict_scope['action_id'], 1, 77 );
+setup_check( is_wp_error( $unsafe_scope_undo ) && 'bhranti_commerce_confirmation' === $unsafe_scope_undo->get_error_code() && 2 === $GLOBALS['setup_dispatches'], 'Direct rollback cannot restore the public site-page value without approval' );
 $GLOBALS['wp_rest_server'] = $original_server;
 echo 'PASS: ' . $checks . " offline native setup boundary checks. No bootstrap, database, network or AI.\n";

@@ -19,8 +19,30 @@ final class Bhranti_Audit {
 				'show_in_rest'     => false,
 				'can_export'       => false,
 				'supports'         => array( 'author' ),
-				'capability_type'  => 'post',
-				'map_meta_cap'     => true,
+				'capability_type'  => 'bhranti_event',
+				// These records are reached only through Bhranti's owner-checked routes.
+				// Deny generic WordPress post APIs, including XML-RPC and super admins.
+				'capabilities'     => array_fill_keys(
+					array(
+						'edit_post',
+						'read_post',
+						'delete_post',
+						'edit_posts',
+						'edit_others_posts',
+						'edit_private_posts',
+						'edit_published_posts',
+						'delete_posts',
+						'delete_others_posts',
+						'delete_private_posts',
+						'delete_published_posts',
+						'publish_posts',
+						'read_private_posts',
+						'create_posts',
+						'read',
+					),
+					'do_not_allow'
+				),
+				'map_meta_cap'     => false,
 				'delete_with_user' => true,
 			)
 		);

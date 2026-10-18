@@ -34,7 +34,7 @@ Before making a change, Bhranti shows a summary and the item it will affect. Exp
 
 After completion, actions remain in the conversation. Several successes can be grouped under a **completed actions** disclosure. Expand the group and individual entry to see its summary, time, target and any **Roll back** button.
 
-Plugin changes and supported deletions pause for approval. A plugin installation card can include activation in the same approval; check the listed changes before choosing **Approve** or **Cancel**. Cancelling stops the current task. Resolved decisions fold into the action history in chronological order and remain expandable.
+Plugin changes and supported deletions pause for approval. Creating a form, changing its notification destination, or making a WooCommerce store or other site pages visible also pauses for an exact **Approve/Deny** card. Check the listed address or visibility change before approving. A plugin installation card can include activation in the same approval; check its listed changes before choosing **Approve** or **Cancel**. Declining approval stops the current task. Resolved decisions fold into the action history in chronological order and remain expandable.
 
 An earlier successful action remains saved even if a later step fails. Review the action results and the changed page to see what was completed.
 

@@ -336,8 +336,11 @@ try {
 		try { sl_error( sl_action( 'POST', '/wc-admin/options', array( 'woocommerce_coming_soon' => 'yes' === get_option( 'woocommerce_coming_soon' ) ? 'no' : 'yes' ) ), 'bhranti_commerce_permission', 'Cart publishing capability required independently for human and actor' ); }
 		finally { remove_filter( 'map_meta_cap', $deny, PHP_INT_MAX ); }
 	}
-	foreach ( array( 'woocommerce_coming_soon', 'woocommerce_store_pages_only' ) as $name ) {
-		sl_roundtrip( '/wc-admin/options', array( $name => 'yes' === get_option( $name ) ? 'no' : 'yes' ), $name );
+	foreach ( array( 'woocommerce_coming_soon' => 'no', 'woocommerce_store_pages_only' => 'yes' ) as $name => $public_value ) {
+		$before = sl_raw( $name );
+		sl_success( sl_action( 'GET', '/wc-admin/options' ), 'Native visibility read: ' . $name );
+		$proposal = sl_action( 'POST', '/wc-admin/options', array( $name => $public_value ) );
+		sl_check( is_array( $proposal ) && ! empty( $proposal['confirmation_required'] ) && $before === sl_raw( $name ), 'Public visibility proposal for ' . $name . ' needs the exact human button and makes no change' );
 	}
 	if ( $cart ) { sl_undo( $cart['action_id'] ); }
 	else { sl_restore_fixture_cart(); }

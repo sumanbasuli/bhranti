@@ -64,13 +64,13 @@ If generation is unavailable, choose an existing Media Library image or upload o
 
 Ask Bhranti to look for an existing working form first. It can create and update supported forms with **Contact Form 7**. If the plugin is missing, ask Bhranti to install and activate it; the relevant permission switches must be enabled. Review the installation card: if it lists activation too, one approval covers both. Otherwise later activation needs its own card. To save submissions in the WordPress dashboard without sending email, request dashboard-only storage with **Flamingo**.
 
-Provide the fields, labels, purpose and confirmation message. For email notifications, include the recipient’s business email address in your request. For dashboard-only storage, Flamingo must be active.
+Provide the fields, labels, purpose and confirmation message. For email notifications, include the recipient’s business email address in your request. For dashboard-only storage, Flamingo must be active. Creating the form or changing its notification mode or recipient pauses for an exact **Approve/Deny** card showing where new submissions will go.
 
 > Add a contact request form to this draft. Ask for name, email and a message. Send notifications to the address I provide, and show a clear success message after submission.
 
 Forms can have 1–12 fields using name, email, text and select types, with 1–20 choices per select field. Bhranti adds the form to a page using its shortcode. Reading submissions, editing custom HTML or email templates, file-upload fields, autoresponders and form deletion are outside this integration.
 
-Bhranti can update a form configuration it previously saved for you, provided nobody has changed it since. It can reuse other existing forms without rewriting them. Supported form updates and the page’s embedded form have separate **Roll back** actions; creating a new form has no automatic deletion rollback.
+Bhranti can update a form configuration it previously saved for you, provided nobody has changed it since. It can reuse other existing forms without rewriting them. Form updates that keep the same notification destination and changes to the page embedding have separate **Roll back** actions. A new form has no automatic deletion rollback. To restore an earlier email recipient or switch between email and dashboard-only storage, request the change again and approve its card.
 
 Before using the form, send a test submission and confirm that the email arrives or the entry appears in the dashboard.
 

@@ -51,7 +51,7 @@ final class Bhranti_Forms {
 	public static function catalog() {
 		return array(
 			'form_request' => array(
-				'description' => 'Reuse an existing working form before creating one. GET /contact-form-7/v1 discovers Contact Form 7 and Flamingo availability. If needed, use plugin_request for official directory slug contact-form-7; dashboard storage also needs slug flamingo. Each plugin needs its own installation card. That card may include activation with status active when both current switches and native capabilities allow it; one approval covers the listed installation and activation. Otherwise install inactive, and request new approval for later activation or deactivation. GET /contact-form-7/v1/contact-forms lists saved forms (optional search,page,per_page up to 20). GET /contact-form-7/v1/contact-forms/{integer ID} reads a bounded definition and native shortcode without submissions or raw mail templates. POST collection creates; POST item replaces a definition previously managed by this human through Bhranti, only while its native configuration is unchanged. Send the complete params {title,fields:[{type:"name"|"email"|"text"|"select",name:"your-name",label:"Your name",required:true,options:["Choice"]}],confirmation,notifications:"dashboard"|"email",notification_evidence:"exact quote from a recent human message",recipient:"human-provided business email"}. Omit options except for select; omit recipient for dashboard. Use 1–12 fields, 1–20 select choices. Recipient must be explicitly provided by the human in this chat. Dashboard-only mode requires the human request and active official Flamingo; it uses fixed native skip_mail:on, never a fabricated storage claim. No arbitrary HTML, mail templates, additional settings, uploads, submissions, autoresponders, credentials or deletion. Embed the returned shortcode in a core/shortcode block with wp_request. Verify the public form after embedding; saving a definition is not proof of delivery. Existing forms with other integrations are reusable but not rewritten. Undo restores an unchanged managed update; creating a form has no automatic deletion Undo. Page embedding has its separate content Undo. Native hooks, emails and submissions are not reversed.',
+				'description' => 'Reuse an existing working form before creating one. GET /contact-form-7/v1 discovers Contact Form 7 and Flamingo availability. If needed, use plugin_request for official directory slug contact-form-7; dashboard storage also needs slug flamingo. Each plugin needs its own installation card. That card may include activation with status active when both current switches and native capabilities allow it; one approval covers the listed installation and activation. Otherwise install inactive, and request new approval for later activation or deactivation. GET /contact-form-7/v1/contact-forms lists saved forms (optional search,page,per_page up to 20). GET /contact-form-7/v1/contact-forms/{integer ID} reads a bounded definition and native shortcode without submissions or raw mail templates. POST collection creates; POST item replaces a definition previously managed by this human through Bhranti, only while its native configuration is unchanged. Send the complete params {title,fields:[{type:"name"|"email"|"text"|"select",name:"your-name",label:"Your name",required:true,options:["Choice"]}],confirmation,notifications:"dashboard"|"email",recipient:"business email for email mode"}. Omit options except for select; omit recipient for dashboard. Use 1–12 fields, 1–20 select choices. Creating a form or changing its notification mode/recipient pauses for an exact human approval card showing the destination. Unchanged notification destinations on managed updates do not need another card. Dashboard-only mode requires active official Flamingo; it uses fixed native skip_mail:on, never a fabricated storage claim. No arbitrary HTML, mail templates, additional settings, uploads, submissions, autoresponders, credentials or deletion. Embed the returned shortcode in a core/shortcode block with wp_request. Verify the public form after embedding; saving a definition is not proof of delivery. Existing forms with other integrations are reusable but not rewritten. Undo restores a managed update only when its notification destination stayed the same; creating a form has no automatic deletion Undo. Page embedding has its separate content Undo. Native hooks, emails and submissions are not reversed.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -95,12 +95,14 @@ final class Bhranti_Forms {
 	/**
 	 * Execute one owned, audited operation. No endpoint submits or deletes a form.
 	 *
-	 * @param array $command Parsed command.
-	 * @param int   $requester_id Human account.
-	 * @param int   $session_id Private conversation.
+	 * @param array  $command Parsed command.
+	 * @param int    $requester_id Human account.
+	 * @param int    $session_id Private conversation.
+	 * @param bool   $confirmed Exact human approval from the confirmation endpoint.
+	 * @param string $expected_fingerprint Approved native state and command.
 	 * @return array|WP_Error
 	 */
-	public static function execute( $command, $requester_id, $session_id ) {
+	public static function execute( $command, $requester_id, $session_id, $confirmed = false, $expected_fingerprint = '' ) {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
@@ -142,9 +144,56 @@ final class Bhranti_Forms {
 		$dispatched = false;
 		try {
 			$before = self::state( $review['id'], $actor_id );
-			$valid  = self::writable( $before, $review['params'], $requester_id, $session_id );
+			$valid  = self::writable( $before, $review['params'], $requester_id );
 			if ( is_wp_error( $valid ) ) {
 				return self::refused( $valid, $session_id, $requester_id, $actor_id, $details );
+			}
+			$canonical           = array(
+				'tool' => 'form_request',
+				'args' => array(
+					'method' => $review['method'],
+					'path'   => $review['path'],
+					'params' => $review['params'],
+				),
+			);
+			$destination_changed = self::notification_changed( $before, $review['params'] );
+			if ( $destination_changed ) {
+				$approval_fingerprint = self::approval_fingerprint( $before, $canonical );
+				if ( $expected_fingerprint && ! hash_equals( $expected_fingerprint, $approval_fingerprint ) ) {
+					return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
+				}
+				if ( ! $confirmed ) {
+					$logged = self::audit(
+						'action_confirmation_required',
+						$session_id,
+						$requester_id,
+						$actor_id,
+						$details + array(
+							'target_id'   => $review['id'],
+							'target_type' => 'wpcf7_contact_form',
+						)
+					);
+					if ( is_wp_error( $logged ) ) {
+						return $logged;
+					}
+					$target          = self::target( $review['id'] );
+					$target['title'] = $review['params']['title'];
+					return array(
+						'confirmation_required' => true,
+						'action'                => $review['id'] ? 'update' : 'create',
+						'command'               => $canonical,
+						'summary'               => self::approval_summary( $review['id'], $review['params'] ),
+						'audit_summary'         => __( 'Contact form notification choice awaits approval.', 'bhranti' ),
+						'target'                => $target,
+						'fingerprint'           => $approval_fingerprint,
+					);
+				}
+				if ( ! $expected_fingerprint || ! Bhranti_Agent::consume_form_approval( $canonical, $requester_id, $session_id, $approval_fingerprint ) ) {
+					return self::refused( self::error( 'bhranti_forms_confirmation', __( 'This form notification change requires its current approval button.', 'bhranti' ), 403 ), $session_id, $requester_id, $actor_id, $details );
+				}
+			} elseif ( $confirmed || $expected_fingerprint ) {
+				// Revalidation of a pending card must never become an ordinary write.
+				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
 			}
 			$record = array(
 				'id'           => 'form_' . wp_generate_uuid4(),
@@ -171,9 +220,12 @@ final class Bhranti_Forms {
 			if ( is_wp_error( $fresh ) || is_wp_error( self::owner( $requester_id, $session_id ) ) || get_option( 'bhranti_forms_lock' ) !== $lock || self::fingerprint( $before ) !== self::fingerprint( $state ) ) {
 				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
 			}
-			$valid = self::writable( $state, $fresh['params'], $requester_id, $session_id );
+			$valid = self::writable( $state, $fresh['params'], $requester_id );
 			if ( is_wp_error( $valid ) ) {
 				return self::refused( $valid, $session_id, $requester_id, $actor_id, $details );
+			}
+			if ( $destination_changed && ! hash_equals( $approval_fingerprint, self::approval_fingerprint( $state, $canonical ) ) ) {
+				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
 			}
 			$dispatched = true;
 			$id         = self::save( $review['id'], $fresh['params'], $requester_id, $actor_id );
@@ -208,7 +260,7 @@ final class Bhranti_Forms {
 			if ( is_wp_error( $data ) ) {
 				return self::uncertain( $data );
 			}
-			return is_wp_error( $logged ) ? self::uncertain( $logged ) : self::result( $data, $id, $record['id'], ! empty( $before ) );
+			return is_wp_error( $logged ) ? self::uncertain( $logged ) : self::result( $data, $id, $record['id'], ! empty( $before ) && ! $destination_changed );
 		} catch ( Throwable $error ) {
 			$error = self::error( 'bhranti_forms_interrupted', __( 'The form operation was interrupted. Inspect the saved form before trying again.', 'bhranti' ), 500 );
 			self::audit( 'action_failed', $session_id, $requester_id, $actor_id, $details );
@@ -271,6 +323,9 @@ final class Bhranti_Forms {
 			$current = self::state( $record['object_id'], $actor_id );
 			if ( is_wp_error( $current ) || ! hash_equals( $record['after_fingerprint'], self::fingerprint( $current ) ) || ! self::managed( $current, $requester_id ) ) {
 				return self::refused( self::conflict(), $session_id, $requester_id, $actor_id, $details );
+			}
+			if ( self::notification_changed( $current, $definition ) ) {
+				return self::refused( self::error( 'bhranti_forms_rollback_destination', __( 'Undo cannot change this form’s notification destination. Review the destination in the native form editor.', 'bhranti' ), 403 ), $session_id, $requester_id, $actor_id, $details );
 			}
 			if ( 'dashboard' === $definition['notifications'] && ! self::availability()['dashboard_storage'] ) {
 				return self::refused( self::storage_missing(), $session_id, $requester_id, $actor_id, $details );
@@ -385,7 +440,7 @@ final class Bhranti_Forms {
 	 * @return array|WP_Error
 	 */
 	private static function definition( $params ) {
-		if ( ! is_array( $params ) || array_diff( array_keys( $params ), array( 'title', 'fields', 'confirmation', 'notifications', 'recipient', 'notification_evidence' ) ) || ! self::text( $params['title'] ?? null, 160 ) || ! self::text( $params['confirmation'] ?? null, 400 ) || ! in_array( $params['notifications'] ?? '', array( 'dashboard', 'email' ), true ) || ! is_array( $params['fields'] ?? null ) || count( $params['fields'] ) < 1 || count( $params['fields'] ) > 12 || array_keys( $params['fields'] ) !== range( 0, count( $params['fields'] ) - 1 ) ) {
+		if ( ! is_array( $params ) || array_diff( array_keys( $params ), array( 'title', 'fields', 'confirmation', 'notifications', 'recipient' ) ) || ! self::text( $params['title'] ?? null, 160 ) || ! self::text( $params['confirmation'] ?? null, 400 ) || ! in_array( $params['notifications'] ?? '', array( 'dashboard', 'email' ), true ) || ! is_array( $params['fields'] ?? null ) || count( $params['fields'] ) < 1 || count( $params['fields'] ) > 12 || array_keys( $params['fields'] ) !== range( 0, count( $params['fields'] ) - 1 ) ) {
 			return self::invalid();
 		}
 		$names = array();
@@ -408,9 +463,6 @@ final class Bhranti_Forms {
 				return self::invalid();
 			}
 		}
-		if ( isset( $params['notification_evidence'] ) && ( ! is_string( $params['notification_evidence'] ) || '' === trim( $params['notification_evidence'] ) || strlen( $params['notification_evidence'] ) > 1000 ) ) {
-			return self::invalid();
-		}
 		if ( 'email' === $params['notifications'] ) {
 			if ( ! is_string( $params['recipient'] ?? null ) || strlen( $params['recipient'] ) > 254 || ! is_email( $params['recipient'] ) || preg_match( '/[\r\n\[\]]/', $params['recipient'] ) ) {
 				return self::invalid();
@@ -422,15 +474,14 @@ final class Bhranti_Forms {
 	}
 
 	/**
-	 * Require a real human destination decision and preserve native integrations.
+	 * Preserve native integrations before considering notification approval.
 	 *
 	 * @param array|WP_Error $before Fresh native state.
 	 * @param array          $definition Proposed definition.
 	 * @param int            $requester_id Human account.
-	 * @param int            $session_id Private conversation.
 	 * @return true|WP_Error
 	 */
-	private static function writable( $before, $definition, $requester_id, $session_id ) {
+	private static function writable( $before, $definition, $requester_id ) {
 		if ( is_wp_error( $before ) ) {
 			return $before;
 		}
@@ -440,25 +491,54 @@ final class Bhranti_Forms {
 		if ( 'dashboard' === $definition['notifications'] && ! self::availability()['dashboard_storage'] ) {
 			return self::storage_missing();
 		}
+		return true;
+	}
+
+	/**
+	 * Whether this write would establish a new notification destination.
+	 *
+	 * @param array $before Current saved state.
+	 * @param array $definition Proposed definition.
+	 * @return bool
+	 */
+	private static function notification_changed( $before, $definition ) {
 		$old = $before['managed']['definition'] ?? array();
-		if ( ( $old['notifications'] ?? '' ) === $definition['notifications'] && ( $old['recipient'] ?? '' ) === ( $definition['recipient'] ?? '' ) ) {
-			return true;
+		return ( $old['notifications'] ?? '' ) !== $definition['notifications'] || ( $old['recipient'] ?? '' ) !== ( $definition['recipient'] ?? '' );
+	}
+
+	/**
+	 * Bind the approved command to the current native form state.
+	 *
+	 * @param array $before Current saved state.
+	 * @param array $command Canonical proposed command.
+	 * @return string
+	 */
+	private static function approval_fingerprint( $before, $command ) {
+		return self::fingerprint(
+			array(
+				'state'   => $before,
+				'command' => $command,
+			)
+		);
+	}
+
+	/**
+	 * Name the exact notification effect in the private approval card.
+	 *
+	 * @param int   $id Saved form ID, or zero for creation.
+	 * @param array $definition Proposed definition.
+	 * @return string
+	 */
+	private static function approval_summary( $id, $definition ) {
+		if ( 'dashboard' === $definition['notifications'] ) {
+			return $id ? __( 'Change this form to dashboard-only storage? Flamingo will store new submissions and email notifications will be disabled. Previous submissions and email effects cannot be undone.', 'bhranti' ) : __( 'Create this form with dashboard-only storage? Flamingo will store new submissions and email notifications will be disabled. New forms have no automatic deletion Undo.', 'bhranti' );
 		}
-		$messages = get_post_meta( $session_id, 'bhranti_messages', true );
-		foreach ( array_reverse( array_slice( is_array( $messages ) ? $messages : array(), -50 ) ) as $message ) {
-			if ( 'user' !== ( $message['role'] ?? '' ) || ! is_string( $message['content'] ?? null ) ) {
-				continue;
-			}
-			if ( 'email' === $definition['notifications'] ) {
-				preg_match_all( '/[a-z0-9.!#$%&\x27*+\/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/i', $message['content'], $emails );
-				if ( in_array( strtolower( $definition['recipient'] ), array_map( 'strtolower', $emails[0] ), true ) ) {
-					return true;
-				}
-			} elseif ( ! empty( $definition['notification_evidence'] ) && false !== strpos( $message['content'], $definition['notification_evidence'] ) ) {
-				return true;
-			}
+		if ( $id ) {
+			/* translators: %s: email address receiving form submissions. */
+			return sprintf( __( 'Change this form to email new submissions to %s? Previous submissions and email effects cannot be undone.', 'bhranti' ), $definition['recipient'] );
 		}
-		return self::error( 'bhranti_forms_destination', __( 'Ask how this form’s requests should reach the business. Use its human-provided email address, or quote the human request for dashboard-only storage.', 'bhranti' ), 403 );
+		/* translators: %s: email address receiving form submissions. */
+		return sprintf( __( 'Create this form and email new submissions to %s? New forms have no automatic deletion Undo.', 'bhranti' ), $definition['recipient'] );
 	}
 
 	/**
@@ -559,7 +639,6 @@ final class Bhranti_Forms {
 			if ( is_wp_error( $after ) || $after['properties'] !== $properties || $after['title'] !== $definition['title'] || 'publish' !== $after['status'] ) {
 				return self::save_error();
 			}
-			unset( $definition['notification_evidence'] );
 			$managed = array(
 				'requester_id' => (int) $requester_id,
 				'definition'   => $definition,

@@ -32,7 +32,7 @@ Small edits can happen directly. For larger projects, Bhranti asks about your au
 
 = Stay in control =
 
-Choose which actions Bhranti may take in Bhranti > Settings. Review an Approve/Cancel card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Supported deletion or Trash also needs approval. Cancelling stops the current task. Deleting a plugin is disabled by default.
+Choose which actions Bhranti may take in Bhranti > Settings. Review an Approve/Cancel card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Creating a Contact Form 7 form, changing its notification destination, moving supported content to Trash, or making a WooCommerce store or other site pages visible requires an exact Approve/Deny card. Declining approval stops the current task. Deleting a plugin is disabled by default.
 
 Approved plugin changes and explicit plugin Undo run as your authenticated WordPress account. Other site actions use a dedicated Bhranti account and require both accounts’ permissions. Logs identify the account that performed each action. Bhranti does not edit WordPress core, theme or plugin source files, or change accounts, roles, credentials or security settings.
 
@@ -65,7 +65,7 @@ No. Manage your AI connection in WordPress Settings > Connectors. Bhranti has no
 
 Supported changes have a Roll back action for seven days. Bhranti checks for later edits before restoring an item so it does not overwrite someone else's work.
 
-Undo is not available for everything. Plugin installation or uninstallation, generated media and newly created forms have no automatic removal Undo. Plugin status changes can restore the earlier active status, but not every effect of activation. Plugin uninstall may permanently remove its data; reinstalling does not restore it. Emails, webhooks and other plugin side effects may remain.
+Undo is not available for everything. Plugin installation or uninstallation, generated media and newly created forms have no automatic removal Undo. A form update that changes its notification destination cannot be rolled back; request the earlier destination again and approve the new card. The same applies when undoing a restrictive WooCommerce visibility change would expose pages to visitors. Plugin status changes can restore the earlier active status, but not every effect of activation. Plugin uninstall may permanently remove its data; reinstalling does not restore it. Emails, webhooks and other plugin side effects may remain.
 
 = Does it keep working if I close the browser? =
 

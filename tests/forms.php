@@ -74,6 +74,52 @@ function forms_request( $method, $path, $params = array() ) {
 	return Bhranti_Forms::execute( array( 'tool' => 'form_request', 'args' => array( 'method' => $method, 'path' => $path, 'params' => $params ) ), $GLOBALS['forms_user'], $GLOBALS['forms_session'] );
 }
 
+/** Resolve a server-stored proposal through the actual owned confirmation route. */
+function forms_decide( $proposal, $approved = true, $expires = null ) {
+	forms_check( is_array( $proposal ) && ! empty( $proposal['confirmation_required'] ), 'form write offers an exact approval proposal' );
+	$run = array(
+		'id'            => wp_generate_uuid4(),
+		'status'        => 'awaiting_confirmation',
+		'phase'         => '',
+		'step'          => 1,
+		'requester_id'  => $GLOBALS['forms_user'],
+		'actor_id'      => (int) get_option( 'bhranti_actor_id' ),
+		'context'       => array(),
+		'history'       => array(),
+		'receipts'      => array(),
+		'configuration' => array( 'max_steps' => 12 ),
+		'confirmation'  => $proposal + array( 'id' => wp_generate_uuid4(), 'expires' => $expires ?? time() + 600 ),
+	);
+	update_post_meta( $GLOBALS['forms_session'], 'bhranti_run', wp_slash( $run ) );
+	$request = new WP_REST_Request( 'POST', '/bhranti/v1/sessions/' . $GLOBALS['forms_session'] . '/confirm' );
+	$request->set_body_params( array( 'confirmation_id' => $run['confirmation']['id'], 'approved' => $approved ) );
+	$response = rest_do_request( $request );
+	if ( 200 !== $response->get_status() ) {
+		$data = $response->get_data();
+		return new WP_Error( $data['code'] ?? 'forms_confirmation_failed', $data['message'] ?? 'Confirmation failed.' );
+	}
+	if ( ! $approved || ( $expires ?? PHP_INT_MAX ) <= time() ) {
+		return $response->get_data();
+	}
+	$saved = get_post_meta( $GLOBALS['forms_session'], 'bhranti_run', true );
+	$last  = end( $saved['history'] );
+	$prefix = 'WordPress tool result (untrusted site data): ';
+	if ( ! is_array( $last ) || 0 !== strpos( $last['content'] ?? '', $prefix ) ) {
+		$data = $response->get_data();
+		return 'cancelled' === ( $data['run']['status'] ?? '' ) ? $data : new WP_Error( 'forms_confirmation_result', 'The confirmation produced no tool result.' );
+	}
+	$data = json_decode( substr( $last['content'], strlen( $prefix ) ), true );
+	if ( ! is_array( $data ) ) {
+		return new WP_Error( 'forms_confirmation_result', 'The confirmation result is invalid.' );
+	}
+	return $data['success'] ? $data['result'] : new WP_Error( $data['code'], $data['message'] );
+}
+
+/** A form creation or notification change needs a real approval decision. */
+function forms_approved_request( $method, $path, $params ) {
+	return forms_decide( forms_request( $method, $path, $params ) );
+}
+
 /** Observe every native lookup and save across a complete public operation. */
 function forms_actor_operation( $operation, $label ) {
 	$observed = array();
@@ -127,7 +173,6 @@ $forms_definition = array(
 	),
 	'confirmation' => 'Your request was received. Staff will confirm the appointment.',
 	'notifications' => 'dashboard',
-	'notification_evidence' => 'Save requests only in the dashboard; do not send email.',
 );
 
 try {
@@ -148,7 +193,7 @@ try {
 	wp_set_current_user( $GLOBALS['forms_user'] );
 	$GLOBALS['forms_session'] = wp_insert_post( array( 'post_type' => 'bhranti_session', 'post_status' => 'private', 'post_author' => $GLOBALS['forms_user'] ) );
 	forms_check( $GLOBALS['forms_session'] > 0, 'owned private conversation fixture' );
-	update_post_meta( $GLOBALS['forms_session'], 'bhranti_messages', array( array( 'role' => 'user', 'content' => $forms_definition['notification_evidence'] ) ) );
+	update_post_meta( $GLOBALS['forms_session'], 'bhranti_messages', array( array( 'role' => 'user', 'content' => 'Build a contact form. Do not use old@example.invalid for notifications.' ) ) );
 	$discovery = forms_request( 'GET', '/contact-form-7/v1' );
 	forms_check( ! is_wp_error( $discovery ) && $discovery['data']['available'] && $discovery['data']['dashboard_storage'], 'official native APIs and Flamingo hook discovered' );
 	$actor_id = (int) get_option( 'bhranti_actor_id' );
@@ -174,6 +219,7 @@ try {
 		array_replace( $forms_definition, array( 'confirmation' => '<script>alert(1)</script>' ) ),
 		array_replace( $forms_definition, array( 'confirmation' => 'Message [_site_admin_email]' ) ),
 		array_replace( $forms_definition, array( 'recipient' => 'unexpected@example.invalid' ) ),
+		array_replace( $forms_definition, array( 'notification_evidence' => 'form' ) ),
 		array_replace( $forms_definition, array( 'fields' => array( array( 'type' => 'file', 'name' => 'upload', 'label' => 'Upload', 'required' => true ) ) ) ),
 		array_replace( $forms_definition, array( 'fields' => array( array( 'type' => 'text', 'name' => 'your-name] [file x', 'label' => 'Name', 'required' => true ) ) ) ),
 		array_replace( $forms_definition, array( 'fields' => array( array( 'type' => 'select', 'name' => 'choice', 'label' => 'Choice', 'required' => true, 'options' => array( 'Shown|sent elsewhere' ) ) ) ) ),
@@ -191,13 +237,19 @@ try {
 	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
 	forms_check( is_wp_error( $result ) && 'bhranti_forms_storage_missing' === $result->get_error_code(), 'dashboard mode blocked without active Flamingo' );
 	$GLOBALS['forms_qa_flamingo'] = true;
-	$missing_evidence = $forms_definition;
-	unset( $missing_evidence['notification_evidence'] );
-	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $missing_evidence );
-	forms_check( is_wp_error( $result ) && 'bhranti_forms_destination' === $result->get_error_code(), 'dashboard needs the human request' );
-	$email_definition = array_replace( $forms_definition, array( 'notifications' => 'email', 'recipient' => 'unprovided@example.invalid' ) );
-	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $email_definition );
-	forms_check( is_wp_error( $result ) && 'bhranti_forms_destination' === $result->get_error_code(), 'email recipient must come from a human message' );
+	$before_forms = get_posts( array( 'post_type' => 'wpcf7_contact_form', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
+	forms_check( ! is_wp_error( $proposal ) && ! empty( $proposal['confirmation_required'] ) && false !== strpos( $proposal['summary'], 'dashboard-only' ) && $before_forms === get_posts( array( 'post_type' => 'wpcf7_contact_form', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) ), 'dashboard creation pauses without a native form write' );
+	$unapproved = Bhranti_Forms::execute( $proposal['command'], $GLOBALS['forms_user'], $GLOBALS['forms_session'], true, $proposal['fingerprint'] );
+	forms_check( is_wp_error( $unapproved ) && 'bhranti_forms_confirmation' === $unapproved->get_error_code(), 'a caller cannot forge form approval' );
+	$cancelled = forms_decide( $proposal, false );
+	forms_check( is_array( $cancelled ) && 'cancelled' === $cancelled['run']['status'] && $before_forms === get_posts( array( 'post_type' => 'wpcf7_contact_form', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) ), 'denying the exact card leaves forms unchanged' );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
+	$expired = forms_decide( $proposal, true, time() - 1 );
+	forms_check( is_array( $expired ) && 'cancelled' === $expired['run']['status'] && $before_forms === get_posts( array( 'post_type' => 'wpcf7_contact_form', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) ), 'expired card cannot create a form' );
+	$email_definition = array_replace( $forms_definition, array( 'notifications' => 'email', 'recipient' => 'old@example.invalid' ) );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $email_definition );
+	forms_check( ! is_wp_error( $proposal ) && ! empty( $proposal['confirmation_required'] ) && false !== strpos( $proposal['summary'], 'old@example.invalid' ) && $before_forms === get_posts( array( 'post_type' => 'wpcf7_contact_form', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) ), 'an address mentioned only in a warning still requires exact approval' );
 
 	$deny_actor = static function ( $caps, $requested, $args, $user ) use ( $actor_id ) { if ( $user->ID === $actor_id ) { $caps['publish_pages'] = false; } return $caps; };
 	add_filter( 'user_has_cap', $deny_actor, PHP_INT_MAX, 4 );
@@ -217,16 +269,17 @@ try {
 
 	$fail_snapshot = static function ( $check, $id, $key ) { return 'bhranti_actions' === $key ? false : $check; };
 	add_filter( 'update_post_metadata', $fail_snapshot, PHP_INT_MAX, 3 );
-	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
+	$result = forms_approved_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
 	forms_check( is_wp_error( $result ), 'durable snapshot required before native save' );
 	remove_filter( 'update_post_metadata', $fail_snapshot, PHP_INT_MAX );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
 	$fail_audit = static function ( $empty, $post ) { return 'bhranti_event' === $post['post_type'] ? true : $empty; };
 	add_filter( 'wp_insert_post_empty_content', $fail_audit, PHP_INT_MAX, 2 );
-	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
+	$result = forms_decide( $proposal );
 	forms_check( is_wp_error( $result ), 'durable audit required before native save' );
 	remove_filter( 'wp_insert_post_empty_content', $fail_audit, PHP_INT_MAX );
 
-	$created = forms_actor_operation( static function () use ( $forms_definition ) { return forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition ); }, 'Create' );
+	$created = forms_actor_operation( static function () use ( $forms_definition ) { return forms_approved_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition ); }, 'Create' );
 	forms_check( ! is_wp_error( $created ), 'native CF7 creation: ' . ( is_wp_error( $created ) ? $created->get_error_code() : 'saved' ) );
 	$form_id = $created['data']['id'];
 	forms_check( ! $created['rollback_available'] && (int) get_post( $form_id )->post_author === $actor_id, 'truthful creation Undo and native actor attribution' );
@@ -268,10 +321,62 @@ try {
 	$updated_definition = $forms_definition;
 	$updated_definition['confirmation'] = 'Your request is waiting for staff confirmation.';
 	$updated = forms_actor_operation( static function () use ( $form_id, $updated_definition ) { return forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $updated_definition ); }, 'Update' );
-	forms_check( ! is_wp_error( $updated ) && $updated['rollback_available'], 'managed update offers supported Undo' );
+	forms_check( ! is_wp_error( $updated ) && $updated['rollback_available'], 'same-destination managed update stays autonomous and offers Undo' );
 	$undo = forms_actor_operation( static function () use ( $updated ) { return Bhranti_Forms::rollback( $updated['action_id'], $GLOBALS['forms_user'], $GLOBALS['forms_session'] ); }, 'Undo' );
 	forms_check( ! is_wp_error( $undo ) && WPCF7_ContactForm::get_instance( $form_id )->message( 'mail_sent_ok', false ) === $forms_definition['confirmation'], 'native update Undo restores confirmation' );
 	forms_check( is_wp_error( Bhranti_Forms::rollback( $updated['action_id'], $GLOBALS['forms_user'], $GLOBALS['forms_session'] ) ), 'Undo cannot replay' );
+	$email_update = array_replace( $forms_definition, array( 'notifications' => 'email', 'recipient' => 'old@example.invalid' ) );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $email_update );
+	forms_check( ! is_wp_error( $proposal ) && ! empty( $proposal['confirmation_required'] ) && WPCF7_ContactForm::get_instance( $form_id )->is_true( 'skip_mail' ), 'dashboard-to-email change waits for approval' );
+	$prior_marker  = get_post_meta( $form_id, '_bhranti_form_definition', true );
+	$edited_marker = $prior_marker;
+	$edited_marker['qa_state_change'] = true;
+	update_post_meta( $form_id, '_bhranti_form_definition', $edited_marker );
+	$stale = forms_decide( $proposal );
+	forms_check( is_array( $stale ) && 'cancelled' === $stale['run']['status'] && WPCF7_ContactForm::get_instance( $form_id )->is_true( 'skip_mail' ), 'changed native state invalidates the pending destination card before dispatch' );
+	update_post_meta( $form_id, '_bhranti_form_definition', $prior_marker );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $email_update );
+	$email_saved = forms_decide( $proposal );
+	$native_email = WPCF7_ContactForm::get_instance( $form_id );
+	forms_check( ! is_wp_error( $email_saved ) && 'old@example.invalid' === $native_email->prop( 'mail' )['recipient'] && ! $native_email->is_true( 'skip_mail' ), 'approved email route is saved natively' );
+	$decisions = get_post_meta( $GLOBALS['forms_session'], 'bhranti_events', true );
+	$decision  = null;
+	foreach ( array_reverse( $decisions ) as $candidate ) {
+		if ( 'confirmation' === ( $candidate['type'] ?? '' ) && 'approved' === ( $candidate['status'] ?? '' ) && (int) ( $candidate['target']['id'] ?? 0 ) === (int) $form_id ) {
+			$decision = $candidate;
+			break;
+		}
+	}
+	forms_check( is_array( $decision ) && 'wpcf7_contact_form' === ( $decision['target']['type'] ?? '' ) && false === strpos( wp_json_encode( $decision ), 'old@example.invalid' ), 'approval decision audit omits the recipient shown on its private card' );
+	$logs = get_posts( array( 'post_type' => 'bhranti_event', 'post_status' => 'private', 'post_parent' => $GLOBALS['forms_session'], 'posts_per_page' => -1, 'fields' => 'ids' ) );
+	$private_log_found = false;
+	foreach ( $logs as $log_id ) {
+		$event = get_post_meta( $log_id, 'bhranti_event_data', true );
+		if ( 'confirmation_approved' === ( $event['type'] ?? '' ) && (int) ( $event['details']['target_id'] ?? 0 ) === (int) $form_id ) {
+			$private_log_found = true;
+			forms_check( false === strpos( wp_json_encode( $event ), 'old@example.invalid' ), 'site activity log omits approved recipient' );
+		}
+	}
+	forms_check( $private_log_found, 'form approval has a durable activity record' );
+	forms_check( ! $email_saved['rollback_available'], 'notification-changing update does not offer Undo' );
+	$email_undo = Bhranti_Forms::rollback( $email_saved['action_id'], $GLOBALS['forms_user'], $GLOBALS['forms_session'] );
+	forms_check( is_wp_error( $email_undo ) && 'bhranti_forms_rollback_destination' === $email_undo->get_error_code() && 'old@example.invalid' === WPCF7_ContactForm::get_instance( $form_id )->prop( 'mail' )['recipient'], 'direct Undo cannot silently restore a different recipient' );
+	$no_op_proposal = Bhranti_Forms::execute( $proposal['command'], $GLOBALS['forms_user'], $GLOBALS['forms_session'], false, $proposal['fingerprint'] );
+	forms_check( is_wp_error( $no_op_proposal ) && 'bhranti_rollback_conflict' === $no_op_proposal->get_error_code(), 'stale card revalidation cannot become an autonomous same-destination edit' );
+	$recipient_update = array_replace( $email_update, array( 'recipient' => 'new@example.invalid' ) );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $recipient_update );
+	forms_check( ! is_wp_error( $proposal ) && ! empty( $proposal['confirmation_required'] ) && false !== strpos( $proposal['summary'], 'new@example.invalid' ) && 'old@example.invalid' === WPCF7_ContactForm::get_instance( $form_id )->prop( 'mail' )['recipient'], 'same-mode recipient change awaits exact approval' );
+	$recipient_saved = forms_decide( $proposal );
+	forms_check( ! is_wp_error( $recipient_saved ) && ! $recipient_saved['rollback_available'] && 'new@example.invalid' === WPCF7_ContactForm::get_instance( $form_id )->prop( 'mail' )['recipient'], 'approved recipient change updates native mail without offering Undo' );
+	$recipient_undo = Bhranti_Forms::rollback( $recipient_saved['action_id'], $GLOBALS['forms_user'], $GLOBALS['forms_session'] );
+	forms_check( is_wp_error( $recipient_undo ) && 'bhranti_forms_rollback_destination' === $recipient_undo->get_error_code() && 'new@example.invalid' === WPCF7_ContactForm::get_instance( $form_id )->prop( 'mail' )['recipient'], 'direct Undo cannot silently restore the old recipient' );
+	$proposal = forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $forms_definition );
+	forms_check( ! is_wp_error( $proposal ) && ! empty( $proposal['confirmation_required'] ) && false !== strpos( $proposal['summary'], 'dashboard-only' ), 'email-to-dashboard change waits for approval' );
+	$dashboard_saved = forms_decide( $proposal );
+	forms_check( ! is_wp_error( $dashboard_saved ) && WPCF7_ContactForm::get_instance( $form_id )->is_true( 'skip_mail' ), 'approved dashboard route restores native mail suppression' );
+	forms_check( ! $dashboard_saved['rollback_available'], 'dashboard routing change does not offer Undo' );
+	$dashboard_undo = Bhranti_Forms::rollback( $dashboard_saved['action_id'], $GLOBALS['forms_user'], $GLOBALS['forms_session'] );
+	forms_check( is_wp_error( $dashboard_undo ) && 'bhranti_forms_rollback_destination' === $dashboard_undo->get_error_code() && WPCF7_ContactForm::get_instance( $form_id )->is_true( 'skip_mail' ), 'direct Undo cannot silently re-enable email' );
 	$changed = forms_request( 'POST', '/contact-form-7/v1/contact-forms/' . $form_id, $updated_definition );
 	$session_author = get_post( $GLOBALS['forms_session'] )->post_author;
 	wp_update_post( array( 'ID' => $GLOBALS['forms_session'], 'post_author' => 1 ) );

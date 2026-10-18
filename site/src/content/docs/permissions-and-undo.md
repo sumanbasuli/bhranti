@@ -1,19 +1,19 @@
 ---
 title: "Approvals and Undo"
-description: "Approve individual plugin changes and deletions, and restore supported changes with Roll back."
+description: "Review exact approvals for plugins, forms, deletions and store visibility, and restore supported changes."
 order: 6
 group: "Control the work"
 ---
 
-Your saved action switches and WordPress permissions determine what Bhranti can change. Approval cards let you review each plugin change and supported deletion. Roll back can restore supported changes.
+Your saved action switches and WordPress permissions determine what Bhranti can change. Approval cards let you review plugin changes, form notification destinations, supported deletions and changes that make store or site pages visible. Roll back can restore supported changes.
 
 For the exact meaning of every switch, see [Settings and permissions](/docs/settings/).
 
 ## Review an approval
 
-1. Ask for the specific plugin change or item to be moved to Trash.
+1. Ask for the specific change.
 2. Wait for the **Approval required** card in the conversation.
-3. Read the action summary and check the named item. Open the item link if you need to inspect it.
+3. Read the exact action summary, including any notification address or visibility change. Open the item link if you need to inspect it.
 4. Select **Approve** only if you want the listed changes. For a plugin change, select **Cancel** to stop.
 5. Read the resulting action status. Declining approval stops the current task; earlier saved changes remain.
 
@@ -21,13 +21,19 @@ After a decision, the card folds into the task’s chronological action history.
 
 A typed “yes,” “approve,” or “go ahead” is not a replacement for this card. The approval applies only to your request and that item as you reviewed it. It expires after **ten minutes** and can be used only once. If it expires or the item changes, request a fresh review and approval.
 
-Background work pauses for your approval before any plugin change or supported deletion. Permanent content deletion is blocked.
+Background work pauses for your approval before these changes. Permanent content deletion is blocked.
 
 ## Approve plugin changes
 
 Each plugin installation or later status change or uninstall needs an approval card, even when its switches are enabled. An installation card can list **install and activate** together: one approval performs both, with no second prompt. If activation is not listed, the current WordPress.org directory package installs inactive. Later activation or deactivation needs a new card.
 
 Approved plugin operations run directly as your signed-in WordPress account. Plugin status Roll back also runs as your account after its explicit confirmation. Logs retain the actual acting user.
+
+## Approve form delivery and store visibility
+
+Creating a Contact Form 7 form or changing where an existing form sends new submissions requires an **Approve/Deny** card. Review the exact email recipient, or confirm that dashboard-only storage will use Flamingo and disable email notifications. An update that keeps the notification destination does not need another card.
+
+WooCommerce changes that turn off coming soon or reveal other site pages while store pages remain in coming soon mode also need an **Approve/Deny** card. Read the visibility effect before approving.
 
 ## Understand plugin deletion
 
@@ -61,6 +67,8 @@ Rolling back newly created content may move it to Trash. Rolling back an update 
 | Plugin installation | Has no automatic removal Undo. |
 | Permanent plugin uninstall | Cannot be rolled back. Reinstallation does not recover removed data. |
 | New Contact Form 7 form | Cannot automatically delete the new form. You can separately roll back the page change that added it. |
+| Contact Form 7 update | Can restore a supported edit only when the notification destination stayed the same. To restore an earlier recipient or switch between email and dashboard-only storage, request that change again and approve its card. |
+| WooCommerce store visibility | Cannot roll back a restrictive change if that would expose the store or other pages. Request the visibility change again and approve its card. |
 | Emails, webhooks or other third-party side effects | Are not necessarily reversed when the site content is restored. |
 
 Disabling an action switch does not itself undo earlier work. Deleting the conversation removes the saved copies needed to roll back its changes but leaves completed site changes and audit entries in place.

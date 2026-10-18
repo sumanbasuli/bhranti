@@ -49,9 +49,11 @@ Set up other payment gateways and account connections yourself. Before launch, t
 
 ## Change store visibility deliberately
 
-Bhranti can change WooCommerce’s coming-soon and store-page visibility options. If your store has an assigned Cart page, that page must be valid and published. WooCommerce may republish it during the visibility change, so Bhranti also checks the permissions to edit and publish it. A Cart page assignment is not always required.
+Bhranti can change WooCommerce’s coming-soon and store-page visibility options. Turning off coming soon or revealing other site pages while the store remains in coming soon mode requires an exact **Approve/Deny** card. Review what visitors will see before approving.
 
-State whether visitors should see the store while you work and which products may be published.
+If your store has an assigned Cart page, that page must be valid and published. WooCommerce may republish it during the visibility change, so Bhranti also checks the permissions to edit and publish it. A Cart page assignment is not always required.
+
+State whether visitors should see the store while you work and which products may be published. A **Roll back** that would expose the store or other pages is unavailable; request that visibility change again and approve its new card.
 
 ## Install or activate a plugin
 

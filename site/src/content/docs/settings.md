@@ -27,14 +27,14 @@ Routine switches are enabled by default. **Delete plugins** is disabled by defau
 
 | Switch | What it allows |
 | --- | --- |
-| **Edit content** | Edits to supported posts, pages, forms and product content. |
+| **Edit content** | Edits to supported posts, pages, forms and product content. Creating a form or changing its notification destination also requires an exact Approve/Deny card. |
 | **Publish content** | Publishing supported content and editing content that is already published, private or scheduled. The relevant content-editing permission is also required. |
 | **Move content to Trash** | Moving supported items to Trash. You must still approve each item using its Approve/Deny card. Permanent content deletion remains blocked. |
 | **Manage comments** | Supported comment changes. Trash may also require the Trash switch and approval. |
 | **Manage media** | Supported image generation, media details and media assignments. It does not allow arbitrary file uploads or replacement. |
 | **Manage navigation** | Changes to supported navigation and menu items. Some menu and category operations are unavailable. |
 | **Manage templates and design** | Supported template customizations, template parts and global styles. It does not grant access to theme source files. |
-| **Change site settings** | Supported WordPress and WooCommerce setup settings. Credentials and security settings cannot be changed. |
+| **Change site settings** | Supported WordPress and WooCommerce setup settings. Making the store or other site pages visible also requires an exact Approve/Deny card. Credentials and security settings cannot be changed. |
 | **Install plugins** | Install the current WordPress.org directory package after its Approve/Cancel card. The card may include activation when both switches allow it. ZIP files and other package URLs are unsupported. |
 | **Activate or deactivate plugins** | Allow activation listed on an installation card, or a later status change with its own approval. Roll back restores status only; lifecycle effects may remain. |
 | **Delete plugins** | Permanent uninstall of eligible inactive plugins, only after its own Approve/Cancel card. Uninstall can remove plugin data and cannot be rolled back. |

@@ -16,7 +16,7 @@ final class Bhranti_Commerce {
 	public static function catalog() {
 		return array(
 			'commerce_request' => array(
-				'description' => 'Manage a WooCommerce store through reviewed native APIs. First GET /wc/v3 for availability and safe setting paths. If WooCommerce is missing, use plugin_request for directory slug woocommerce. Choose status active only when the installation card explicitly includes activation and current install/activation switches and native capabilities allow both. One approval covers the listed installation and activation; use inactive when activation is not included, and request new approval for later status changes. Never claim the store is ready until successful native results. GET /wc/v3/products and /wc/v3/products/categories searches existing catalog items. POST /wc/v3/products creates a simple product, default draft; example params {"name":"Handmade bowl","type":"simple","status":"draft","regular_price":"25.00","description":"<p>Confirmed product details.</p>"}. Product fields: name,slug,status,type=simple,description,short_description,regular_price,sale_price,sku,featured,catalog_visibility,virtual,manage_stock,stock_quantity,stock_status,backorders,sold_individually,weight,dimensions,categories:[{id:1}],images:[{id:123}],menu_order,reviews_allowed. Images must be existing native Media Library IDs; no remote uploads. POST product item updates it. DELETE product item only trashes after the human Approve button; never send force. POST categories supports name,slug,parent,description,display,menu_order; category deletion is unavailable. Store settings: GET the exact allowed path returned by discovery; POST it with only {"value":"..."}. Large country/state settings may return options plus option_groups. Both contain the original selectable keys; each grouped label is label_prefix followed by its options label. Send the complete option key unchanged. Reads and edits are bounded, audited and checked against native schemas and current permissions. Product Undo restores supported saved state; hook/email effects are not universally reversible. Ask for missing real products/prices/currency/shipping/payment decisions; never invent business facts or configure payment credentials, orders or customers. Store setup: GET/POST /wc/v3/shipping/zones (name,order); GET/POST /wc/v3/shipping/zones/{id}/locations with params {locations:[{type:country,code:IN}]} replacing the complete location list; GET/POST /wc/v3/shipping/zones/{id}/methods with method_id flat_rate/free_shipping/local_pickup,enabled,order,settings; GET/POST a specific /methods/{instance_id} without method_id. Read before updates. Supported method settings: title,tax_status,cost for flat_rate/local_pickup; title,requires,min_amount,ignore_discounts for free_shipping. Costs must be numeric strings, never expressions. GET/POST /wc/v3/payment_gateways/cod configures native cash on delivery only: enabled,title,description,settings {instructions,enable_for_virtual}. Cash on delivery covers all configured delivery methods unless native discovery supplies specific supported method options. Shipping zones govern delivery regions. Never create an order. GET /wc-admin/options reads shop visibility; POST accepts only woocommerce_coming_soon and woocommerce_store_pages_only as yes/no. Change visibility only when the user requests launch, and verify customer-facing setup first. Publish the assigned Cart page through the reviewed content tool before visibility; native visibility invalidation re-publishes that already published page and requires content/publishing permissions. No public shipping deletion; Undo can remove an unchanged, dependency-free item created by this chat.',
+				'description' => 'Manage a WooCommerce store through reviewed native APIs. First GET /wc/v3 for availability and safe setting paths. If WooCommerce is missing, use plugin_request for directory slug woocommerce. Choose status active only when the installation card explicitly includes activation and current install/activation switches and native capabilities allow both. One approval covers the listed installation and activation; use inactive when activation is not included, and request new approval for later status changes. Never claim the store is ready until successful native results. GET /wc/v3/products and /wc/v3/products/categories searches existing catalog items. POST /wc/v3/products creates a simple product, default draft; example params {"name":"Handmade bowl","type":"simple","status":"draft","regular_price":"25.00","description":"<p>Confirmed product details.</p>"}. Product fields: name,slug,status,type=simple,description,short_description,regular_price,sale_price,sku,featured,catalog_visibility,virtual,manage_stock,stock_quantity,stock_status,backorders,sold_individually,weight,dimensions,categories:[{id:1}],images:[{id:123}],menu_order,reviews_allowed. Images must be existing native Media Library IDs; no remote uploads. POST product item updates it. DELETE product item only trashes after the human Approve button; never send force. POST categories supports name,slug,parent,description,display,menu_order; category deletion is unavailable. Store settings: GET the exact allowed path returned by discovery; POST it with only {"value":"..."}. Large country/state settings may return options plus option_groups. Both contain the original selectable keys; each grouped label is label_prefix followed by its options label. Send the complete option key unchanged. Reads and edits are bounded, audited and checked against native schemas and current permissions. Product Undo restores supported saved state; hook/email effects are not universally reversible. Ask for missing real products/prices/currency/shipping/payment decisions; never invent business facts or configure payment credentials, orders or customers. Store setup: GET/POST /wc/v3/shipping/zones (name,order); GET/POST /wc/v3/shipping/zones/{id}/locations with params {locations:[{type:country,code:IN}]} replacing the complete location list; GET/POST /wc/v3/shipping/zones/{id}/methods with method_id flat_rate/free_shipping/local_pickup,enabled,order,settings; GET/POST a specific /methods/{instance_id} without method_id. Read before updates. Supported method settings: title,tax_status,cost for flat_rate/local_pickup; title,requires,min_amount,ignore_discounts for free_shipping. Costs must be numeric strings, never expressions. GET/POST /wc/v3/payment_gateways/cod configures native cash on delivery only: enabled,title,description,settings {instructions,enable_for_virtual}. Cash on delivery covers all configured delivery methods unless native discovery supplies specific supported method options. Shipping zones govern delivery regions. Never create an order. GET /wc-admin/options reads shop visibility; POST accepts only woocommerce_coming_soon and woocommerce_store_pages_only as yes/no. Change visibility only when the user requests launch, and verify customer-facing setup first. Any POST that sets woocommerce_coming_soon=no or woocommerce_store_pages_only=yes requires exact human approval in chat, even if the current value is already public. Approval is bound to the current saved visibility and Cart state. Undo cannot write either public visibility value; request that change and approve it separately. Publish the assigned Cart page through the reviewed content tool before visibility; native visibility invalidation re-publishes that already published page and requires content/publishing permissions. No public shipping deletion; Undo can remove an unchanged, dependency-free item created by this chat.',
 				'parameters'  => array(
 					'type'                 => 'object',
 					'properties'           => array(
@@ -199,6 +199,30 @@ final class Bhranti_Commerce {
 			if ( $expected_fingerprint && ! hash_equals( $expected_fingerprint, $fingerprint ) ) {
 				return self::refused( self::error( 'bhranti_rollback_conflict', __( 'This product changed after approval was requested. Review it again.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
 			}
+			$visibility_approval = self::visibility_approval( $review );
+			if ( 'visibility' === $review['kind'] && $expected_fingerprint && ! $confirmed && ! $visibility_approval ) {
+				return self::refused( self::error( 'bhranti_commerce_confirmation', __( 'The approved visibility change is no longer pending. Review the current store visibility.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
+			}
+			if ( $visibility_approval ) {
+				if ( ! $confirmed ) {
+					$logged = self::audit( 'action_blocked', __( 'A public store visibility setting requires human approval.', 'bhranti' ), $session_id, $requester_id, $actor_id, $details );
+					if ( is_wp_error( $logged ) ) {
+						return $logged;
+					}
+					return array(
+						'confirmation_required' => true,
+						'command'               => $review['command'],
+						'fingerprint'           => $fingerprint,
+						'target'                => self::target( $review ),
+						'action'                => $visibility_approval,
+						'summary'               => 'launch_store' === $visibility_approval ? __( 'Turn off WooCommerce coming soon, allowing the store to be public?', 'bhranti' ) : __( 'Limit coming soon to store pages, allowing other site pages to be public?', 'bhranti' ),
+						'audit_summary'         => 'launch_store' === $visibility_approval ? __( 'WooCommerce public store visibility setting.', 'bhranti' ) : __( 'WooCommerce public site-page visibility setting.', 'bhranti' ),
+					);
+				}
+				if ( ! class_exists( 'Bhranti_Agent' ) || ! Bhranti_Agent::consume_commerce_approval( $review['command'], $requester_id, $session_id, $fingerprint ) ) {
+					return self::refused( self::error( 'bhranti_commerce_confirmation', __( 'This visibility change requires your current approval.', 'bhranti' ), 403 ), $session_id, $requester_id, $actor_id, $details );
+				}
+			}
 			if ( 'DELETE' === $review['method'] && ! $confirmed ) {
 				$logged = self::audit( 'action_blocked', __( 'Moving a product to Trash requires human approval.', 'bhranti' ), $session_id, $requester_id, $actor_id, $details );
 				if ( is_wp_error( $logged ) ) {
@@ -268,9 +292,17 @@ final class Bhranti_Commerce {
 			if ( is_wp_error( $saved ) ) {
 				return self::uncertain( $saved );
 			}
+			$rollback_available = 'visibility' !== $review['kind'] || ! self::visibility_approval(
+				array(
+					'kind'   => 'visibility',
+					'method' => 'POST',
+					'params' => Bhranti_Commerce_Setup::restore_params( $review, $snapshot ),
+				)
+			);
+
 			$logged  = self::audit( 'action_completed', __( 'WooCommerce catalog or store setting updated.', 'bhranti' ), $session_id, $requester_id, $actor_id, $details + array( 'target' => self::target( $review ) ) );
 			$summary = 'DELETE' === $review['method'] ? __( 'Product moved to Trash.', 'bhranti' ) : ( 'product' === $review['kind'] ? __( 'Product saved.', 'bhranti' ) : ( 'category' === $review['kind'] ? __( 'Product category saved.', 'bhranti' ) : __( 'Store setting saved.', 'bhranti' ) ) );
-			return is_wp_error( $logged ) ? self::uncertain( $logged ) : self::result( self::project( $data, $review['kind'] ), self::target( $review ), $id, true, $summary );
+			return is_wp_error( $logged ) ? self::uncertain( $logged ) : self::result( self::project( $data, $review['kind'] ), self::target( $review ), $id, $rollback_available, $summary );
 		} catch ( Throwable $error ) {
 			// A native hook can throw after saving. Never treat that boundary as safe to replay.
 			$code = 'bhranti_commerce_interrupted';
@@ -360,6 +392,9 @@ final class Bhranti_Commerce {
 			$restore_review = self::review( $restore_command, $requester_id, $actor_id, true );
 			if ( is_wp_error( $restore_review ) ) {
 				return self::refused( $restore_review, $session_id, $requester_id, $actor_id, $details );
+			}
+			if ( self::visibility_approval( $restore_review ) ) {
+				return self::refused( self::error( 'bhranti_commerce_confirmation', __( 'Undo would make the store or site public. Request the visibility change and approve it in chat instead.', 'bhranti' ), 409 ), $session_id, $requester_id, $actor_id, $details );
 			}
 			$details['method'] = $restore_review['method'];
 			$allowed           = self::policy( $restore_review, $current );
@@ -1221,6 +1256,26 @@ final class Bhranti_Commerce {
 			return self::error( 'bhranti_commerce_preservation', __( 'This category contains markup that this account cannot preserve. Use the native category editor for this change.', 'bhranti' ), 403 );
 		}
 		return true;
+	}
+
+	/**
+	 * Identify a WooCommerce visibility command that can expose pages to visitors.
+	 *
+	 * Classify the values being written, independent of the current state. A
+	 * concurrent native change can turn an apparent no-op into a public launch
+	 * between our state check and WooCommerce's eventual option write.
+	 *
+	 * @param array $review Reviewed native command.
+	 * @return string Approval action, or an empty string.
+	 */
+	private static function visibility_approval( $review ) {
+		if ( 'visibility' !== $review['kind'] || 'POST' !== $review['method'] ) {
+			return '';
+		}
+		if ( 'no' === ( $review['params']['woocommerce_coming_soon'] ?? null ) ) {
+			return 'launch_store';
+		}
+		return 'yes' === ( $review['params']['woocommerce_store_pages_only'] ?? null ) ? 'reveal_site_pages' : '';
 	}
 
 	/**
