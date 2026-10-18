@@ -215,7 +215,7 @@ final class Bhranti_Commerce {
 						'fingerprint'           => $fingerprint,
 						'target'                => self::target( $review ),
 						'action'                => $visibility_approval,
-						'summary'               => 'launch_store' === $visibility_approval ? __( 'Turn off WooCommerce coming soon, allowing the store to be public?', 'bhranti' ) : __( 'Limit coming soon to store pages, allowing other site pages to be public?', 'bhranti' ),
+						'summary'               => self::visibility_approval_summary( $review ),
 						'audit_summary'         => 'launch_store' === $visibility_approval ? __( 'WooCommerce public store visibility setting.', 'bhranti' ) : __( 'WooCommerce public site-page visibility setting.', 'bhranti' ),
 					);
 				}
@@ -1276,6 +1276,32 @@ final class Bhranti_Commerce {
 			return 'launch_store';
 		}
 		return 'yes' === ( $review['params']['woocommerce_store_pages_only'] ?? null ) ? 'reveal_site_pages' : '';
+	}
+
+	/**
+	 * Disclose every setting in a combined native visibility write.
+	 *
+	 * The confirmation UI displays only this summary, so a second option must
+	 * not be hidden behind the first option's approval label.
+	 *
+	 * @param array $review Reviewed native visibility command.
+	 * @return string Human-readable approval summary.
+	 */
+	private static function visibility_approval_summary( $review ) {
+		$params = $review['params'];
+		if ( 1 === count( $params ) ) {
+			return 'no' === ( $params['woocommerce_coming_soon'] ?? null ) ? __( 'Turn off WooCommerce coming soon, allowing the store to be public?', 'bhranti' ) : __( 'Limit coming soon to store pages, allowing other site pages to be public?', 'bhranti' );
+		}
+
+		$effects = array();
+		if ( isset( $params['woocommerce_coming_soon'] ) ) {
+			$effects[] = 'no' === $params['woocommerce_coming_soon'] ? __( 'Turn off coming soon so the store can be public.', 'bhranti' ) : __( 'Turn on coming soon for the store.', 'bhranti' );
+		}
+		if ( isset( $params['woocommerce_store_pages_only'] ) ) {
+			$effects[] = 'yes' === $params['woocommerce_store_pages_only'] ? __( 'Limit coming soon to store pages so other site pages can be public.', 'bhranti' ) : __( 'Apply coming soon to the whole site while it is on.', 'bhranti' );
+		}
+		/* translators: %s: Full sentences describing every visibility option in one native write. */
+		return sprintf( __( 'Approve these WooCommerce visibility settings together? %s', 'bhranti' ), implode( ' ', $effects ) );
 	}
 
 	/**

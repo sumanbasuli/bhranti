@@ -20,7 +20,15 @@
 	}
 	function containsText(value) {
 		const normalized = normalize(value);
-		for (const text of new Set([normalized, normalized.replace(/<[^>]*>/gsu, '')])) {
+		// Match the server's adjacent-element label rule without treating a prose
+		// paragraph that merely mentions passwords as a credential binding.
+		const adjacent = normalized.replace(/(?:<[a-z][a-z0-9:-]*\b[^>]*>\s*){1,4}([^<>]{1,80})(?:\s*<\/[a-z][a-z0-9:-]*\s*>\s*){1,4}(?=<[a-z][a-z0-9:-]*\b[^>]*>)/giu, (whole, label) => {
+			const probe = label.trim() + '=bhranti_probe';
+			binding.lastIndex = 0;
+			const match = binding.exec(probe);
+			return match && match.index === 0 && match[0] === probe && match[1] === 'bhranti_probe' ? label + ': ' : whole;
+		});
+		for (const text of new Set([normalized, normalized.replace(/<[^>]*>/gsu, ''), adjacent.replace(/<[^>]*>/gsu, '')])) {
 		for (const pattern of patterns) { pattern.lastIndex = 0; if (pattern.test(text)) return true; }
 		binding.lastIndex = 0;
 		let match;
@@ -33,8 +41,13 @@
 	}
 	function contains(value, depth = 0) {
 		if (depth > 32) return true;
-		if (value && typeof value === 'object') return Object.entries(value).some(([key, item]) => contains(item, depth + 1) || !Array.isArray(value) && (item && typeof item === 'object' || typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') && contains(key + ' = ' + (item && typeof item === 'object' ? JSON.stringify(item) : typeof item === 'boolean' ? item ? '1' : '' : String(item)), depth + 1));
+		if (value && typeof value === 'object') return Object.entries(value).some(([key, item]) => contains(item, depth + 1) || !Array.isArray(value) && containsText(key + ' = bhranti_probe') && boundValue(key, item, depth + 1));
 		return typeof value === 'string' && value !== '' && containsText(value);
+	}
+	function boundValue(key, value, depth) {
+		if (depth > 32) return true;
+		if (value && typeof value === 'object') return Object.values(value).some((item) => boundValue(key, item, depth + 1));
+		return (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && containsText(key + ' = ' + (typeof value === 'boolean' ? value ? '1' : '' : String(value)));
 	}
 	window.bhrantiCredentials = { contains };
 })();

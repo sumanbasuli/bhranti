@@ -55,7 +55,7 @@ REGEX
 		}
 		if ( is_array( $value ) ) {
 			foreach ( $value as $key => $item ) {
-				if ( self::contains( $item, $depth + 1 ) || ( is_string( $key ) && ( is_scalar( $item ) || is_array( $item ) ) && self::contains( $key . ' = ' . ( is_array( $item ) ? wp_json_encode( $item ) : (string) $item ), $depth + 1 ) ) ) {
+				if ( self::contains( $item, $depth + 1 ) || ( is_string( $key ) && self::contains( $key . ' = bhranti_probe' ) && self::bound_value( $key, $item, $depth + 1 ) ) ) {
 					return true;
 				}
 			}
@@ -66,7 +66,18 @@ REGEX
 		}
 		$text  = self::normalize( $value );
 		$rules = self::rules();
-		foreach ( array_unique( array( $text, preg_replace( '/<[^>]*>/s', '', $text ) ) ) as $candidate ) {
+		// A credential label and its value may occupy adjacent HTML elements.
+		// Mark only an exact label as a binding before stripping tags; prose such as
+		// "How to reset password" remains ordinary text.
+		$adjacent = preg_replace_callback(
+			'#(?:<[a-z][a-z0-9:-]*\b[^>]*>\s*){1,4}([^<>]{1,80})(?:\s*</[a-z][a-z0-9:-]*\s*>\s*){1,4}(?=<[a-z][a-z0-9:-]*\b[^>]*>)#iu',
+			static function ( $match ) use ( $rules ) {
+				$probe = trim( $match[1] ) . '=bhranti_probe';
+				return preg_match( '~\A' . str_replace( '~', '\\~', $rules['binding'] ) . '\z~iu', $probe, $bound ) && 'bhranti_probe' === $bound[1] ? $match[1] . ': ' : $match[0];
+			},
+			$text
+		);
+		foreach ( array_unique( array( $text, preg_replace( '/<[^>]*>/s', '', $text ), preg_replace( '/<[^>]*>/s', '', $adjacent ) ) ) as $candidate ) {
 			foreach ( $rules['patterns'] as $pattern ) {
 				if ( preg_match( '~' . str_replace( '~', '\\~', $pattern ) . '~iu', $candidate ) ) {
 					return true;
@@ -81,6 +92,22 @@ REGEX
 			}
 		}
 		return false;
+	}
+
+	/** Check scalar leaves under a credential-labeled structured key. */
+	private static function bound_value( $key, $value, $depth ) {
+		if ( $depth > 32 ) {
+			return true;
+		}
+		if ( is_array( $value ) ) {
+			foreach ( $value as $item ) {
+				if ( self::bound_value( $key, $item, $depth + 1 ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return is_scalar( $value ) && self::contains( $key . ' = ' . (string) $value, $depth + 1 );
 	}
 
 	/**
@@ -150,7 +177,8 @@ REGEX
 	public static function redact( $value ) {
 		if ( is_array( $value ) ) {
 			foreach ( $value as $key => $item ) {
-				$value[ $key ] = is_string( $key ) && is_scalar( $item ) && self::contains( array( $key => $item ) ) ? '[Sensitive text withheld]' : self::redact( $item );
+				$sensitive_container = is_string( $key ) && is_array( $item ) && self::contains( $key . ' = bhranti_probe' ) && self::bound_value( $key, $item, 0 );
+				$value[ $key ]       = $sensitive_container || ( is_string( $key ) && is_scalar( $item ) && self::contains( array( $key => $item ) ) ) ? '[Sensitive text withheld]' : self::redact( $item );
 			}
 			return $value;
 		}

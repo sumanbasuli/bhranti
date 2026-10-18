@@ -29,7 +29,7 @@ final class Bhranti_Panel {
 	 * @return bool
 	 */
 	private static function allowed() {
-		return is_user_logged_in() && current_user_can( 'manage_options' ) && ( ! class_exists( 'Bhranti_Render' ) || ! Bhranti_Render::is_frame() );
+		return Bhranti_Workspace::can_access() && ( ! class_exists( 'Bhranti_Render' ) || ! Bhranti_Render::is_frame() );
 	}
 
 	/**

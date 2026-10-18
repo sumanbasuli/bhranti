@@ -22,7 +22,7 @@ final class Bhranti_Log_Screen {
 	 * @param string $hook Current administration screen.
 	 */
 	public static function enqueue( $hook ) {
-		if ( 'bhranti_page_bhranti-logs' === $hook && current_user_can( 'manage_options' ) ) {
+		if ( 'bhranti_page_bhranti-logs' === $hook && Bhranti_Workspace::can_access() ) {
 			wp_enqueue_style( 'bhranti-logs', plugins_url( 'assets/logs.css', BHRANTI_FILE ), array(), BHRANTI_VERSION );
 		}
 	}
@@ -85,7 +85,7 @@ final class Bhranti_Log_Screen {
 
 	/** Render a native administration activity view. */
 	public static function render() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Bhranti_Workspace::can_access() ) {
 			return;
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only search and pagination, with no saved preference or mutation.
@@ -402,7 +402,7 @@ else :
 
 	/** Send an authenticated local download without writing a public file. */
 	public static function download() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Bhranti_Workspace::can_access() ) {
 			wp_die( esc_html__( 'You do not have permission to download these logs.', 'bhranti' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( 'bhranti_export_logs' );

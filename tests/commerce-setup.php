@@ -282,6 +282,12 @@ setup_check( is_array( $already_scope ) && ! empty( $already_scope['confirmation
 $GLOBALS['setup_options']['woocommerce_store_pages_only'] = 'yes';
 $scope_noop = Bhranti_Commerce::execute( $scope_command, 1, 77 );
 setup_check( is_array( $scope_noop ) && ! empty( $scope_noop['confirmation_required'] ) && 0 === $GLOBALS['setup_dispatches'], 'A public site-page visibility no-op still requires approval' );
+$combined_scope_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_coming_soon' => 'yes', 'woocommerce_store_pages_only' => 'yes' ) ) );
+$combined_scope = Bhranti_Commerce::execute( $combined_scope_command, 1, 77 );
+setup_check( is_array( $combined_scope ) && ! empty( $combined_scope['confirmation_required'] ) && $combined_scope_command === $combined_scope['command'] && false !== strpos( $combined_scope['summary'], 'Turn on coming soon for the store.' ) && false !== strpos( $combined_scope['summary'], 'Limit coming soon to store pages' ) && 0 === $GLOBALS['setup_dispatches'], 'Combined site-page approval card discloses both visibility effects before any write' );
+$combined_launch_command = array( 'tool' => 'commerce_request', 'args' => array( 'method' => 'POST', 'path' => '/wc-admin/options', 'params' => array( 'woocommerce_coming_soon' => 'no', 'woocommerce_store_pages_only' => 'no' ) ) );
+$combined_launch = Bhranti_Commerce::execute( $combined_launch_command, 1, 77 );
+setup_check( is_array( $combined_launch ) && ! empty( $combined_launch['confirmation_required'] ) && $combined_launch_command === $combined_launch['command'] && false !== strpos( $combined_launch['summary'], 'Turn off coming soon so the store can be public.' ) && false !== strpos( $combined_launch['summary'], 'Apply coming soon to the whole site' ) && 0 === $GLOBALS['setup_dispatches'], 'Combined store-launch approval card discloses both visibility effects before any write' );
 $classification = new ReflectionMethod( 'Bhranti_Commerce', 'visibility_approval' );
 foreach ( array(
     array( array( 'woocommerce_coming_soon' => 'yes' ), '' ),

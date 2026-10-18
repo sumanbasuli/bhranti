@@ -23,14 +23,21 @@ const cases = [
   ['password: <QAZFixtureBracketPassword47!>', true],
   ['<b>password</b>: QAZFixtureHtmlPassword47!', true],
   ['pass<strong>word</strong>: QAZFixtureHtmlPassword47!', true],
+  ['<p>Password</p><p>QAZFixtureAdjacentPassword47!</p>', true],
+  ['<div><strong>API key</strong></div><code>QAZFixtureNestedKey47!</code>', true],
+  ['<span>Access token</span><span>QAZFixtureToken47!</span>', true],
   ["define( 'DB_PASSWORD', 'QAZFixtureWpConfigPassword47!' );", true],
   ["define( 'AUTH_KEY', 'QAZFixtureWpAuthKey1234567890AbCdEf' );", true],
   ['password%3DQAZFixtureEncodedPassword47! %FF', true],
   ['password%3DQAZFixtureEncodedPassword47! %C0%AF', true],
   [{ password: ['QAZFixtureArrayPassword47!'] }, true],
   [{ password: { value: 'QAZFixtureNestedPassword47!' } }, true],
+  [{ password: { value: '[REDACTED]' } }, false],
   ['The access token is missing.', false],
   ['password: "<YOUR_API_KEY>"', false],
+  ['<p>Password</p><p>[REDACTED]</p>', false],
+  ['<p>API key</p><p>Required</p>', false],
+  ['<p>How to reset password</p><p>Use Settings</p>', false],
   ['api_key = [redacted]', false],
   ['password = ***', false],
   ['password = "required"', false],
@@ -129,6 +136,13 @@ async function uiChecks() {
       assert.equal(page.requests.length, 0, 'Attached ' + location + ' credentials block before POST'); assert.equal(page.api.state.session.messages.length, 1); assert.equal(page.warning().hidden, false);
     } finally { page.close(); }
   }
+  page = fixture();
+  try {
+    page.w.document.getElementById('native-content').innerHTML = '<p>Password</p><p>QAZFixtureAdjacentPassword47!</p>';
+    page.edit('Please review the page'); await page.api.sendMessage();
+    assert.equal(page.requests.length, 0, 'Adjacent-element credentials in captured HTML block before POST');
+    assert.equal(page.warning().hidden, false);
+  } finally { page.close(); }
   page = fixture();
   try {
     page.api.state.screenshot = { mime_type: 'image/png', data: fakeKey }; page.edit('Use the attached screenshot'); await page.api.sendMessage();

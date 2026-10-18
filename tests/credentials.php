@@ -99,6 +99,9 @@ $cred_secrets = array(
 	'brace_wrapped' => 'password: {QAZFixtureBracePassword47!}',
 	'angle_wrapped' => 'password: <QAZFixtureAnglePassword47!>',
 	'html_split' => '<b>password</b>:QAZFixtureHtmlSplitPassword47!',
+	'html_adjacent' => '<p>Password</p><p>QAZFixtureAdjacentPassword47!</p>',
+	'html_adjacent_nested' => '<div><strong>API key</strong></div><code>QAZFixtureNestedKey47!</code>',
+	'html_adjacent_token' => '<span>Access token</span><span>QAZFixtureToken47!</span>',
 	'php_db_password' => "define( 'DB_PASSWORD', 'QAZFixtureDefineDbPassword47!' );",
 	'php_auth_key' => "define( 'AUTH_KEY', 'QAZFixtureDefineAuthKey47!' );",
 	'percent_invalid_suffix' => rawurlencode( 'password=QAZFixturePercentPassword47!' ) . '%FF',
@@ -120,6 +123,9 @@ $cred_normal = array(
 	'Authorization: Bearer <token>',
 	'password: [REDACTED]',
 	'password: [YOUR_PASSWORD]',
+	'<p>Password</p><p>[REDACTED]</p>',
+	'<p>API key</p><p>Required</p>',
+	'<p>How to reset password</p><p>Use Settings</p>',
 	'password: {YOUR_PASSWORD}',
 	'password: <YOUR_PASSWORD>',
 	'Change the task step limit to 129.',
@@ -139,6 +145,7 @@ cred_check( Bhranti_Credentials::contains( array( 'password' => 'QAZFixtureStruc
 cred_check( Bhranti_Credentials::contains( array( 'password' => array( 'value' => 'QAZFixtureNestedPassword47!' ) ) ), 'A nested credential-key value cannot bypass the structured detector.' );
 cred_check( Bhranti_Credentials::contains( array( 'credentials' => array( 'password' => array( 'values' => array( 'QAZFixtureDeepPassword47!' ) ) ) ) ), 'Credential keys remain sensitive through nested container values.' );
 cred_check( ! Bhranti_Credentials::contains( array( 'password' => '[REDACTED]' ) ), 'Structured redacted placeholders remain safe.' );
+cred_check( ! Bhranti_Credentials::contains( array( 'password' => array( 'value' => '[REDACTED]' ) ) ), 'Nested structured redacted placeholders remain safe.' );
 cred_check( Bhranti_Credentials::memory_secret( 'QAZOpaqueFixtureToken1234567890AbCdEfGhIjKlMn' ), 'Memory also rejects a bare opaque token.' );
 cred_check( ! Bhranti_Credentials::memory_secret( 'I prefer concise and friendly writing' ), 'Ordinary preference remains permitted by the shared memory predicate.' );
 cred_check( ! Bhranti_Credentials::contains( Bhranti_Credentials::error()->get_error_message() ) && 'bhranti_credentials' === Bhranti_Credentials::error()->get_error_code(), 'Fixed safe credential errors never contain the triggering input.' );
@@ -147,6 +154,10 @@ $cred_redacted = Bhranti_Credentials::redact( $cred_result );
 cred_check( ! Bhranti_Credentials::contains( $cred_redacted ) && true === $cred_redacted['success'] && $cred_result['receipt'] === $cred_redacted['receipt'] && $cred_result['data']['safe'] === $cred_redacted['data']['safe'], 'Model-result withholding removes credential values while preserving successful receipt/status and unrelated content.' );
 $cred_redacted = Bhranti_Credentials::redact( array( 'success' => true, 'description' => $cred_secrets['html_split'] ) );
 cred_check( ! Bhranti_Credentials::contains( $cred_redacted ) && true === $cred_redacted['success'], 'HTML-split credential labels are withheld from tool observations without changing successful status.' );
+$cred_redacted = Bhranti_Credentials::redact( array( 'success' => true, 'description' => $cred_secrets['html_adjacent'] ) );
+cred_check( ! Bhranti_Credentials::contains( $cred_redacted ) && true === $cred_redacted['success'] && '[Sensitive text withheld]' === $cred_redacted['description'], 'Adjacent HTML credential labels are withheld from tool observations while preserving successful status.' );
+$cred_redacted = Bhranti_Credentials::redact( array( 'success' => true, 'data' => array( 'password' => array( 'value' => 'QAZFixtureNestedResult47!' ), 'safe' => 'Ordinary page title' ) ) );
+cred_check( ! Bhranti_Credentials::contains( $cred_redacted ) && true === $cred_redacted['success'] && '[Sensitive text withheld]' === $cred_redacted['data']['password'] && 'Ordinary page title' === $cred_redacted['data']['safe'], 'Nested credential-labeled results are withheld before model observation without losing unrelated data.' );
 
 foreach ( array( 'title', 'selected_block' ) as $cred_context_field ) {
 	cred_reset();
@@ -155,6 +166,8 @@ foreach ( array( 'title', 'selected_block' ) as $cred_context_field ) {
 }
 cred_reset();
 cred_reject_start( 'Please inspect the selected paragraph.', array( 'selected_block' => array( 'name' => 'core/paragraph', 'content' => $cred_secrets['html_split'] ) ), 'HTML-split credential in selected-block context' );
+cred_reset();
+cred_reject_start( 'Please inspect the selected paragraph.', array( 'selected_block' => array( 'name' => 'core/paragraph', 'content' => $cred_secrets['html_adjacent'] ) ), 'Adjacent HTML credential in selected-block context' );
 cred_reset();
 $cred_request = new class( array( 'id' => 17, 'content' => 'password:QAZFixtureHtmlSplitPassword47!', 'context' => array() ) ) extends ArrayObject {
 	public function get_json_params() { return array( 'content' => '<b>password</b>:QAZFixtureHtmlSplitPassword47!', 'context' => array() ); }
