@@ -98,6 +98,11 @@ final class Bhranti_Actions {
 		$service_email = 'bhranti+' . get_current_blog_id() . '@example.invalid';
 		$actor_id      = absint( get_option( 'bhranti_actor_id' ) );
 		$actor         = $actor_id ? get_userdata( $actor_id ) : false;
+		$email_owner   = ( ! $actor || ! $actor->user_email ) ? email_exists( $service_email ) : false;
+		if ( $email_owner && (int) $email_owner !== $actor_id ) {
+			// A retained author account from an earlier install may own the first address.
+			$service_email = 'bhranti+' . get_current_blog_id() . '-' . str_replace( '-', '', wp_generate_uuid4() ) . '@example.invalid';
+		}
 		if ( $actor_id && ( ! $actor || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() || array( 'bhranti_agent' ) !== $actor->roles || array( 'bhranti_agent' => true ) !== $actor->caps ) ) {
 			return self::error( 'bhranti_actor_invalid', __( 'The managed Bhranti account needs administrator review.', 'bhranti' ), 409 );
 		}

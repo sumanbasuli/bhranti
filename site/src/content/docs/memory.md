@@ -52,6 +52,10 @@ If older memory contains text that fails these checks, it is withheld from AI re
 
 Your server must support the file storage and encryption Bhranti uses for private memory. If it does not, the card explains the problem and you can still chat.
 
+If your host runs background jobs through PHP CLI under a different Unix user from the web server, ask the site administrator to run those jobs as the same file owner. Bhranti keeps memory files and their locks owner-only; a different process owner cannot read or update them. WordPress’s usual web-request cron does not need this adjustment.
+
 Memory is stored in encrypted files belonging to your account. If your site administrator changes WordPress’s authentication keys, earlier memory can become unreadable; you can reset it in Settings. WordPress personal-data export, erasure and plugin uninstall also cover this memory.
+
+On a multisite network, an interrupted plugin deletion can leave memory unavailable until the administrator retries deletion or explicitly reactivates Bhranti. Preferences already erased during the interrupted attempt cannot be restored by reactivation.
 
 Conversations are stored separately in the WordPress database and are not encrypted there. [Read the full privacy guide](/docs/ai-and-privacy/).

@@ -20,6 +20,12 @@ final class Bhranti_Memory {
 	 * @var array<string, resource>
 	 */
 	private static $completed_uninstall_gates = array();
+	/**
+	 * A network uninstall owns one retained gate while per-site gates are released.
+	 *
+	 * @var bool
+	 */
+	private static $network_uninstall_active = false;
 
 	/** Register human-only review/reset and native account erasure. */
 	public static function register() {
@@ -38,6 +44,35 @@ final class Bhranti_Memory {
 	 * @return true
 	 */
 	public static function activate( $network_wide = false ) {
+		if ( is_multisite() ) {
+			$result = self::site_gate(
+				'activate',
+				static function () use ( $network_wide ) {
+					return self::activate_sites( $network_wide );
+				},
+				0
+			);
+		} else {
+			$result = self::activate_sites( $network_wide );
+		}
+		if ( is_wp_error( $result ) ) {
+			wp_die(
+				esc_html__( 'Bhranti could not safely enable private memory. Check the site storage permissions and try activating the plugin again.', 'bhranti' ),
+				esc_html__( 'Bhranti activation stopped', 'bhranti' ),
+				array( 'response' => 500 )
+			);
+			exit;
+		}
+		return true;
+	}
+
+	/**
+	 * Activate only after the network gate has excluded concurrent uninstall.
+	 *
+	 * @param bool $network_wide Whether WordPress is activating on every site.
+	 * @return true|WP_Error
+	 */
+	private static function activate_sites( $network_wide ) {
 		$result = true;
 		if ( $network_wide && is_multisite() ) {
 			$offset = 0;
@@ -81,15 +116,7 @@ final class Bhranti_Memory {
 				}
 			);
 		}
-		if ( is_wp_error( $result ) ) {
-			wp_die(
-				esc_html__( 'Bhranti could not safely enable private memory. Check the site storage permissions and try activating the plugin again.', 'bhranti' ),
-				esc_html__( 'Bhranti activation stopped', 'bhranti' ),
-				array( 'response' => 500 )
-			);
-			exit;
-		}
-		return true;
+		return $result;
 	}
 
 	/** Register owned endpoints; no caller-supplied user or filesystem path. */
@@ -567,7 +594,37 @@ final class Bhranti_Memory {
 			'uninstall',
 			static function () {
 				return self::uninstall_site_data();
-			}
+			},
+			null,
+			! self::$network_uninstall_active
+		);
+	}
+
+	/**
+	 * Keep one network gate until shutdown while releasing each cleaned site's gate.
+	 *
+	 * The network gate excludes activation between site sweeps. Each site's own
+	 * durable tombstone still rejects a loaded request after its lock is released.
+	 *
+	 * @param callable $callback Network uninstall operation.
+	 * @return mixed
+	 */
+	public static function uninstall_network( $callback ) {
+		if ( ! is_multisite() || self::$network_uninstall_active ) {
+			return self::error( 'storage', 503 );
+		}
+		return self::site_gate(
+			'uninstall',
+			static function () use ( $callback ) {
+				self::$network_uninstall_active = true;
+				try {
+					$result = call_user_func( $callback );
+					return true === $result || is_wp_error( $result ) ? $result : self::error( 'storage', 500 );
+				} finally {
+					self::$network_uninstall_active = false;
+				}
+			},
+			0
 		);
 	}
 
@@ -765,14 +822,18 @@ final class Bhranti_Memory {
 	 *
 	 * @param string   $mode Write, uninstall or activate.
 	 * @param callable $callback Operation protected by the site gate.
+	 * @param int|null $gate_id Explicit network gate ID, or current site ID.
+	 * @param bool     $retain Retain a successful uninstall gate until shutdown.
 	 * @return mixed
+	 * @throws Throwable If the protected operation throws after best-effort gate recovery.
 	 */
-	private static function site_gate( $mode, $callback ) {
+	private static function site_gate( $mode, $callback, $gate_id = null, $retain = true ) {
 		$base = realpath( WP_CONTENT_DIR );
-		if ( ! $base || ! in_array( $mode, array( 'write', 'uninstall', 'activate' ), true ) ) {
+		if ( ! $base || ! in_array( $mode, array( 'write', 'uninstall', 'activate' ), true ) || ( null !== $gate_id && 0 !== $gate_id ) ) {
 			return self::error( 'storage', 503 );
 		}
-		$path = $base . '/.bhranti-memory-site-' . get_current_blog_id() . '.php';
+		$path   = $base . '/.bhranti-memory-site-' . ( null === $gate_id ? get_current_blog_id() : $gate_id ) . '.php';
+		$shared = 0 === $gate_id && 'write' === $mode;
 		if ( isset( self::$completed_uninstall_gates[ $path ] ) ) {
 			return 'uninstall' === $mode ? call_user_func( $callback ) : self::error( 'busy', 409 );
 		}
@@ -782,7 +843,7 @@ final class Bhranti_Memory {
 			if ( ! is_writable( $base ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- A native gate file requires native flock; avoid initializing a gate where the base is unwritable.
 				// Memory is optional on an unwritable fresh site; there is no tombstone to clear.
 				if ( 'activate' === $mode ) {
-					return true;
+					return null === $gate_id ? true : call_user_func( $callback );
 				}
 				return self::error( 'storage', 503 );
 			}
@@ -811,7 +872,7 @@ final class Bhranti_Memory {
 			if ( ! self::same_gate_inode( $path, $handle ) ) {
 				return self::error( 'storage', 503 );
 			}
-			if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+			if ( ! flock( $handle, ( $shared && ! $created ? LOCK_SH : LOCK_EX ) | LOCK_NB ) ) {
 				return self::error( 'busy', 409 );
 			}
 			if ( ! self::same_gate_inode( $path, $handle ) ) {
@@ -835,8 +896,20 @@ final class Bhranti_Memory {
 			if ( ! self::same_gate_inode( $path, $handle ) ) {
 				return self::error( 'storage', 503 );
 			}
-			$result = call_user_func( $callback );
-			if ( 'uninstall' === $mode && true === $result ) {
+			// The first network writer keeps EX; later writers take SH on the initialized gate.
+			try {
+				$result = call_user_func( $callback );
+			} catch ( Throwable $failure ) {
+				// An interrupted network uninstall stays tombstoned if recovery itself fails.
+				if ( 'uninstall' === $mode && 0 === $gate_id && self::same_gate_inode( $path, $handle ) ) {
+					self::write_gate_state( $handle, self::GATE_ACTIVE );
+				}
+				throw $failure;
+			}
+			if ( 'uninstall' === $mode && 0 === $gate_id && true !== $result && ( ! self::same_gate_inode( $path, $handle ) || ! self::write_gate_state( $handle, self::GATE_ACTIVE ) ) ) {
+				return self::error( 'storage', 503 );
+			}
+			if ( 'uninstall' === $mode && true === $result && $retain ) {
 				// Core deletes plugin files after uninstall.php returns; hold this inode until request shutdown.
 				self::$completed_uninstall_gates[ $path ] = $handle;
 
@@ -931,14 +1004,24 @@ final class Bhranti_Memory {
 	 * @param callable $callback Operation under lock.
 	 * @param bool     $create Create directory when needed.
 	 * @param bool     $site_gate_held Whether uninstall already holds the site gate.
+	 * @param bool     $network_gate_held Whether a shared network gate is held.
 	 * @return mixed
 	 */
-	private static function locked( $user_id, $callback, $create = true, $site_gate_held = false ) {
-		if ( ! $site_gate_held ) {
+	private static function locked( $user_id, $callback, $create = true, $site_gate_held = false, $network_gate_held = false ) {
+		if ( ! $site_gate_held && ! $network_gate_held && is_multisite() ) {
 			return self::site_gate(
 				'write',
 				static function () use ( $user_id, $callback, $create ) {
-					return self::locked( $user_id, $callback, $create, true );
+					return self::locked( $user_id, $callback, $create, false, true );
+				},
+				0
+			);
+		}
+		if ( ! $site_gate_held ) {
+			return self::site_gate(
+				'write',
+				static function () use ( $user_id, $callback, $create, $network_gate_held ) {
+					return self::locked( $user_id, $callback, $create, true, $network_gate_held );
 				}
 			);
 		}
