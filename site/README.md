@@ -24,18 +24,27 @@ The deployable files are in `dist/`. `node_modules/`, `dist/`, and `.astro/` are
 
 ## Deploy to Cloudflare
 
-For a Cloudflare Pages project connected to the parent repository:
+For a Cloudflare Workers project connected to the parent repository:
+
+- Root directory: `site`
+- Build command: leave blank
+- Deploy command: `npx wrangler deploy`
+- Node version: `24`
+
+The checked-in `wrangler.jsonc` runs `npm run build` before deploying the static `dist/` directory. Keep its `name` aligned with your Cloudflare Worker name (`bhranti`). This site does not need the Astro Cloudflare server adapter.
+
+For a Cloudflare Pages project instead:
 
 - Root directory: `site`
 - Build command: `npm run build`
 - Output directory: `dist`
 - Node version: `24`
 
-If the website is moved to its own repository, leave the root-directory setting blank. The static `dist/` directory can also be deployed as Cloudflare Workers static assets or to another static host. No deployment has been performed by this project setup.
+If the website is moved to its own repository, leave the root-directory setting blank. The static `dist/` directory can also be deployed to another static host.
 
-Set the custom domain to `bhranti.org` in the host. Astro already uses `https://bhranti.org` for canonical and sitemap URLs. Update `astro.config.mjs` if that domain changes. The `public/_headers` file supplies Cloudflare Pages headers, including the Markdown content type.
+Set the custom domain to `bhranti.org` in the host. Astro already uses `https://bhranti.org` for canonical and sitemap URLs. Update `astro.config.mjs` if that domain changes. The `public/_headers` file supplies Cloudflare static-asset headers, including the Markdown content type.
 
-Official deployment guide: https://developers.cloudflare.com/pages/framework-guides/deploy-an-astro-site/
+Official deployment guides: [Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/astro/) and [Pages](https://developers.cloudflare.com/pages/framework-guides/deploy-an-astro-site/).
 
 ## Edit the content
 
