@@ -14,8 +14,16 @@ require_once __DIR__ . '/includes/class-bhranti-memory.php';
  * Delete workspace records and site-specific user options on one site.
  */
 $bhranti_remove_site_data = static function () {
+	$bhranti_memory_removed = Bhranti_Memory::uninstall_site();
+	if ( is_wp_error( $bhranti_memory_removed ) ) {
+		wp_die(
+			esc_html__( 'Bhranti could not erase private memory. Check the site storage permissions and try deleting the plugin again.', 'bhranti' ),
+			esc_html__( 'Bhranti uninstall stopped', 'bhranti' ),
+			array( 'response' => 500 )
+		);
+		exit;
+	}
 	wp_unschedule_hook( 'bhranti_run_tick', true );
-	Bhranti_Memory::uninstall_site();
 	$bhranti_retained_count = 0;
 	do {
 		$bhranti_sessions = get_posts(

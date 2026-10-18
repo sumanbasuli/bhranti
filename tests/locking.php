@@ -3,7 +3,7 @@
  * Atomic option-lock checks in one disposable local WordPress clone.
  *
  * BHRANTI_LOCK_NATIVE_WP_ROOT=/private/tmp/bhranti-production-security-qa-20261018 php tests/locking.php
- * The test touches one new, random lock option in that clone only.
+ * The test touches new, random lock options and private sidecars in that clone only.
  *
  * @package Bhranti
  */
@@ -57,6 +57,48 @@ function lock_cache_clear( $name ) {
 	wp_cache_delete( 'alloptions', 'options' );
 }
 
+/** Publish a worker result atomically so existence always means complete data. */
+function lock_publish_result( $path, $contents ) {
+	$temporary = $path . '.writing-' . getmypid();
+	$written   = file_put_contents( $temporary, $contents, LOCK_EX );
+	if ( strlen( $contents ) !== $written || ! rename( $temporary, $path ) ) {
+		throw new RuntimeException( 'Could not publish an isolated lock-test worker result.' );
+	}
+}
+
+/** Mirror the helper's file name for disposable sidecar safety checks. */
+function lock_sidecar_path( $name ) {
+	global $wpdb;
+	$database = realpath( FQDB );
+	return dirname( $database ) . '/.ht-bhranti-lock-' . substr( hash( 'sha256', basename( $database ) . "\n" . $wpdb->options . "\n" . $name ), 0, 40 );
+}
+
+/** A symlink or directory in the database folder must never become a lock. */
+function lock_unsafe_sidecar( $name, $root ) {
+	$path   = lock_sidecar_path( $name );
+	$target = $root . '/wp-content/qa-temp/lock-sidecar-' . wp_generate_uuid4();
+	lock_check( ! file_exists( $path ) && ! is_link( $path ), 'Unsafe-sidecar test name is unused.' );
+	file_put_contents( $target, 'unchanged', LOCK_EX );
+	try {
+		lock_check( symlink( $target, $path ), 'Symlink fixture created.' );
+		lock_check( false === Bhranti_Lock::acquire( $name, 1 ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A symlink fails closed on acquisition and activity checks.' );
+		lock_check( 'unchanged' === file_get_contents( $target ), 'A rejected symlink target is not modified.' );
+	} finally {
+		if ( is_link( $path ) ) {
+			unlink( $path );
+		}
+		unlink( $target );
+	}
+	try {
+		lock_check( mkdir( $path, 0700 ), 'Directory fixture created.' );
+		lock_check( false === Bhranti_Lock::acquire( $name, 1 ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A non-regular sidecar fails closed.' );
+	} finally {
+		if ( is_dir( $path ) ) {
+			rmdir( $path );
+		}
+	}
+}
+
 /** Wait for process barrier files without relying on scheduler timing. */
 function lock_wait_files( $paths ) {
 	$deadline = microtime( true ) + 20;
@@ -83,15 +125,33 @@ if ( '--worker' === ( $argv[1] ?? '' ) ) {
 	if ( ! preg_match( '/\Abhranti_lock_[1-9][0-9]*\z/D', $worker_name ) || ! is_string( $worker_dir ) || 0 !== strpos( $worker_dir, $lock_root . '/wp-content/qa-temp/lock-race-' ) || ! in_array( $worker_slot, array( 1, 2 ), true ) ) {
 		throw new RuntimeException( 'Invalid disposable lock-test worker arguments.' );
 	}
-	file_put_contents( $worker_dir . '/ready-' . $worker_slot, '1', LOCK_EX );
+	lock_publish_result( $worker_dir . '/ready-' . $worker_slot, '1' );
 	lock_wait_files( array( $worker_dir . '/start' ) );
 	$worker_token = Bhranti_Lock::acquire( $worker_name, 600 );
-	file_put_contents( $worker_dir . '/result-' . $worker_slot, wp_json_encode( array( 'won' => is_array( $worker_token ), 'token' => $worker_token ) ), LOCK_EX );
+	lock_publish_result( $worker_dir . '/result-' . $worker_slot, wp_json_encode( array( 'won' => is_array( $worker_token ), 'token' => $worker_token ) ) );
 	if ( is_array( $worker_token ) ) {
 		lock_wait_files( array( $worker_dir . '/release' ) );
 		$released = Bhranti_Lock::release( $worker_name, $worker_token );
-		file_put_contents( $worker_dir . '/released-' . $worker_slot, $released ? '1' : '0', LOCK_EX );
+		lock_publish_result( $worker_dir . '/released-' . $worker_slot, $released ? '1' : '0' );
 	}
+	exit( 0 );
+}
+
+if ( '--held-worker' === ( $argv[1] ?? '' ) ) {
+	$worker_name = $argv[2] ?? '';
+	$worker_dir  = realpath( $argv[3] ?? '' );
+	if ( ! preg_match( '/\Abhranti_lock_[1-9][0-9]*\z/D', $worker_name ) || ! is_string( $worker_dir ) || 0 !== strpos( $worker_dir, $lock_root . '/wp-content/qa-temp/lock-held-' ) ) {
+		throw new RuntimeException( 'Invalid disposable held-lock worker arguments.' );
+	}
+	$worker_token = Bhranti_Lock::acquire( $worker_name, 1 );
+	lock_publish_result( $worker_dir . '/ready', wp_json_encode( $worker_token ) );
+	if ( ! is_array( $worker_token ) ) {
+		exit( 1 );
+	}
+	lock_wait_files( array( $worker_dir . '/check' ) );
+	lock_publish_result( $worker_dir . '/owned', Bhranti_Lock::owns( $worker_name, $worker_token ) ? '1' : '0' );
+	lock_wait_files( array( $worker_dir . '/release' ) );
+	Bhranti_Lock::release( $worker_name, $worker_token );
 	exit( 0 );
 }
 
@@ -138,6 +198,63 @@ function lock_two_process_race( $name, $root ) {
 			fclose( $item[1] );
 			fclose( $item[2] );
 			proc_close( $item[0] );
+		}
+		$wpdb->delete( $wpdb->options, array( 'option_name' => $name ), array( '%s' ) );
+		lock_cache_clear( $name );
+		foreach ( glob( $directory . '/*' ) as $path ) {
+			unlink( $path );
+		}
+		rmdir( $directory );
+	}
+}
+
+/** Keep a worker alive beyond its option TTL, then terminate it without release. */
+function lock_live_past_lease( $name, $root ) {
+	global $wpdb;
+
+	$directory = $root . '/wp-content/qa-temp/lock-held-' . wp_generate_uuid4();
+	if ( ! mkdir( $directory, 0700 ) ) {
+		throw new RuntimeException( 'Could not create the held-lock test barrier.' );
+	}
+	$command = array( PHP_BINARY, __FILE__, '--held-worker', $name, $directory );
+	$pipes   = array();
+	$process = proc_open( $command, array( 0 => array( 'pipe', 'r' ), 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes, null, array_merge( getenv(), array( 'BHRANTI_LOCK_NATIVE_WP_ROOT' => $root ) ) );
+	if ( ! is_resource( $process ) ) {
+		rmdir( $directory );
+		throw new RuntimeException( 'Could not start a held-lock test worker.' );
+	}
+	fclose( $pipes[0] );
+	$successor = null;
+	try {
+		lock_wait_files( array( $directory . '/ready' ) );
+		$owner = json_decode( file_get_contents( $directory . '/ready' ), true );
+		lock_check( is_array( $owner ) && maybe_serialize( $owner ) === lock_row( $name ), 'The independent worker holds the original option token.' );
+		sleep( 2 );
+		lock_check( $owner['expires'] < time() && true === Bhranti_Lock::active( $name, 1 ), 'A live guard keeps the lock active after its option lease expires.' );
+		lock_check( false === Bhranti_Lock::acquire( $name, 1 ) && maybe_serialize( $owner ) === lock_row( $name ), 'A competing process cannot reclaim an expired option while its owner still runs.' );
+		file_put_contents( $directory . '/check', '1', LOCK_EX );
+		lock_wait_files( array( $directory . '/owned' ) );
+		lock_check( '1' === file_get_contents( $directory . '/owned' ), 'The original worker still owns its exact token after the lease expires.' );
+		proc_terminate( $process, 9 );
+		proc_close( $process );
+		$process = null;
+		lock_check( false === Bhranti_Lock::active( $name, 1 ), 'A crashed worker releases the process guard, exposing the expired uncertain phase.' );
+		$successor = Bhranti_Lock::acquire( $name, 1 );
+		lock_check( is_array( $successor ) && Bhranti_Lock::owns( $name, $successor ) && maybe_serialize( $successor ) === lock_row( $name ), 'The next worker autonomously reclaims an abandoned expired option.' );
+		lock_check( Bhranti_Lock::release( $name, $successor ) && null === lock_row( $name ), 'The replacement releases only its own option and guard.' );
+		$successor = null;
+	} finally {
+		file_put_contents( $directory . '/check', '1', LOCK_EX );
+		file_put_contents( $directory . '/release', '1', LOCK_EX );
+		if ( is_resource( $process ) ) {
+			$state = proc_get_status( $process );
+			if ( $state['running'] ) {
+				proc_terminate( $process, 9 );
+			}
+			proc_close( $process );
+		}
+		if ( is_array( $successor ) ) {
+			Bhranti_Lock::release( $name, $successor );
 		}
 		$wpdb->delete( $wpdb->options, array( 'option_name' => $name ), array( '%s' ) );
 		lock_cache_clear( $name );
@@ -215,4 +332,9 @@ try {
 $race_name = 'bhranti_lock_' . random_int( 100000000, 999999999 );
 lock_check( null === lock_row( $race_name ), 'The independent-process lock name did not already exist.' );
 lock_two_process_race( $race_name, $lock_root );
+$held_name = 'bhranti_lock_' . random_int( 100000000, 999999999 );
+lock_check( null === lock_row( $held_name ), 'The live-expiry lock name did not already exist.' );
+lock_live_past_lease( $held_name, $lock_root );
+$unsafe_name = 'bhranti_lock_' . random_int( 100000000, 999999999 );
+lock_unsafe_sidecar( $unsafe_name, $lock_root );
 echo "Passed {$lock_checks} isolated WordPress lock checks.\n";

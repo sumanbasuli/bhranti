@@ -71,9 +71,9 @@ REGEX
 		// "How to reset password" remains ordinary text.
 		$adjacent = preg_replace_callback(
 			'#(?:<[a-z][a-z0-9:-]*\b[^>]*>\s*){1,4}([^<>]{1,80})(?:\s*</[a-z][a-z0-9:-]*\s*>\s*){1,4}(?=<[a-z][a-z0-9:-]*\b[^>]*>)#iu',
-			static function ( $match ) use ( $rules ) {
-				$probe = trim( $match[1] ) . '=bhranti_probe';
-				return preg_match( '~\A' . str_replace( '~', '\\~', $rules['binding'] ) . '\z~iu', $probe, $bound ) && 'bhranti_probe' === $bound[1] ? $match[1] . ': ' : $match[0];
+			static function ( $html_match ) use ( $rules ) {
+				$probe = trim( $html_match[1] ) . '=bhranti_probe';
+				return preg_match( '~\A' . str_replace( '~', '\\~', $rules['binding'] ) . '\z~iu', $probe, $bound ) && 'bhranti_probe' === $bound[1] ? $html_match[1] . ': ' : $html_match[0];
 			},
 			$text
 		);
@@ -94,7 +94,14 @@ REGEX
 		return false;
 	}
 
-	/** Check scalar leaves under a credential-labeled structured key. */
+	/**
+	 * Check scalar leaves under a credential-labeled structured key.
+	 *
+	 * @param string $key   Structured key to check.
+	 * @param mixed  $value Nested value.
+	 * @param int    $depth Current nesting depth.
+	 * @return bool Whether a credential was found.
+	 */
 	private static function bound_value( $key, $value, $depth ) {
 		if ( $depth > 32 ) {
 			return true;

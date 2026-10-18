@@ -10,14 +10,86 @@ defined( 'ABSPATH' ) || exit;
 
 /** Saved data never grants permissions or supplies executable instructions. */
 final class Bhranti_Memory {
-	const GUARD = "<?php\n// Bhranti private memory.\nexit;\n?>\n";
-	const LIMIT = 131072;
+	const GUARD            = "<?php\n// Bhranti private memory.\nexit;\n?>\n";
+	const LIMIT            = 131072;
+	const GATE_ACTIVE      = "<?php\n// Bhranti private memory gate.\nexit;\n// active\n";
+	const GATE_UNINSTALLED = "<?php\n// Bhranti private memory gate.\nexit;\n// uninstalled\n";
+	/**
+	 * Gate handles retained until request shutdown after successful uninstall.
+	 *
+	 * @var array<string, resource>
+	 */
+	private static $completed_uninstall_gates = array();
 
 	/** Register human-only review/reset and native account erasure. */
 	public static function register() {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 		add_action( 'deleted_user', array( __CLASS__, 'deleted_user' ) );
 		add_action( 'admin_init', array( __CLASS__, 'privacy_policy' ) );
+		if ( defined( 'BHRANTI_FILE' ) && function_exists( 'register_activation_hook' ) ) {
+			register_activation_hook( BHRANTI_FILE, array( __CLASS__, 'activate' ) );
+		}
+	}
+
+	/**
+	 * Re-enable private memory only during an explicit plugin activation.
+	 *
+	 * @param bool $network_wide Whether WordPress is activating on every site.
+	 * @return true
+	 */
+	public static function activate( $network_wide = false ) {
+		$result = true;
+		if ( $network_wide && is_multisite() ) {
+			$offset = 0;
+			do {
+				$sites = get_sites(
+					array(
+						'fields'  => 'ids',
+						'number'  => 100,
+						'offset'  => $offset,
+						'orderby' => 'id',
+						'order'   => 'ASC',
+					)
+				);
+				foreach ( $sites as $site_id ) {
+					switch_to_blog( (int) $site_id );
+					try {
+						$result = self::site_gate(
+							'activate',
+							static function () {
+								return true;
+							}
+						);
+					} finally {
+						restore_current_blog();
+					}
+					if ( is_wp_error( $result ) ) {
+						break;
+					}
+				}
+				if ( is_wp_error( $result ) ) {
+					break;
+				}
+				$count   = count( $sites );
+				$offset += $count;
+			} while ( 100 === $count );
+		} else {
+			$result = self::site_gate(
+				'activate',
+				static function () {
+					return true;
+				}
+			);
+		}
+		if ( is_wp_error( $result ) ) {
+			wp_die(
+				esc_html__( 'Bhranti could not safely enable private memory. Check the site storage permissions and try activating the plugin again.', 'bhranti' ),
+				esc_html__( 'Bhranti activation stopped', 'bhranti' ),
+				array( 'response' => 500 )
+			);
+			exit;
+		}
+		return true;
 	}
 
 	/** Register owned endpoints; no caller-supplied user or filesystem path. */
@@ -427,6 +499,17 @@ final class Bhranti_Memory {
 	 * @return bool|WP_Error True if a file was removed; false if none existed.
 	 */
 	public static function erase_user( $user_id ) {
+		return self::erase_user_under_gate( $user_id, false );
+	}
+
+	/**
+	 * Remove an owner payload while reusing the uninstall site's gate when held.
+	 *
+	 * @param int  $user_id Owner.
+	 * @param bool $site_gate_held Whether uninstall holds the gate.
+	 * @return bool|WP_Error
+	 */
+	private static function erase_user_under_gate( $user_id, $site_gate_held ) {
 		return self::locked(
 			$user_id,
 			static function ( $fs, $path ) {
@@ -435,7 +518,8 @@ final class Bhranti_Memory {
 				}
 				return $fs->delete( $path, false, 'f' ) ? true : self::error( 'storage', 500 );
 			},
-			false
+			false,
+			$site_gate_held
 		);
 	}
 
@@ -473,30 +557,110 @@ final class Bhranti_Memory {
 		} while ( 100 === $count );
 	}
 
-	/** Remove only recognized own files on the current site, preserving unknown files. */
+	/**
+	 * Remove only recognized own files on the current site, preserving unknown files.
+	 *
+	 * @return true|WP_Error Whether private memory was completely removed.
+	 */
 	public static function uninstall_site() {
+		return self::site_gate(
+			'uninstall',
+			static function () {
+				return self::uninstall_site_data();
+			}
+		);
+	}
+
+	/** Sweep this site's owned files only while its durable gate is held. */
+	private static function uninstall_site_data() {
+		$content = realpath( WP_CONTENT_DIR );
+		if ( ! $content ) {
+			return self::error( 'storage', 503 );
+		}
+		$root      = $content . '/bhranti-memory';
+		$directory = $root . '/site-' . get_current_blog_id();
+		if ( is_link( $root ) || is_link( $directory ) || ( file_exists( $root ) && ! is_dir( $root ) ) ) {
+			return self::error( 'storage', 503 );
+		}
+		if ( ! file_exists( $root ) ) {
+			return true;
+		}
+		$fs = self::filesystem();
+		if ( is_wp_error( $fs ) ) {
+			return $fs;
+		}
+		$root_files = $fs->dirlist( $root );
+		if ( ! is_array( $root_files ) ) {
+			return self::error( 'storage', 503 );
+		}
+		if ( ! isset( $root_files[ 'site-' . get_current_blog_id() ] ) ) {
+			return true;
+		}
 		$path = self::path( 1 );
 		if ( is_wp_error( $path ) ) {
-			return;
+			return $path;
 		}
-		$fs        = self::filesystem();
-		$directory = dirname( $path );
-		$files     = $fs->dirlist( $directory );
-		foreach ( is_array( $files ) ? $files : array() as $name => $info ) {
-			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\z/', $name, $match ) && ! is_link( $directory . '/' . $name ) ) {
-				self::erase_user( (int) $match[1] );
+		$files = $fs->dirlist( $directory );
+		if ( ! is_array( $files ) ) {
+			return self::error( 'storage', 503 );
+		}
+		foreach ( $files as $name => $info ) {
+			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\z/', $name, $match ) ) {
+				if ( is_link( $directory . '/' . $name ) || 'f' !== $info['type'] ) {
+					return self::error( 'storage', 503 );
+				}
+				$erased = self::erase_user_under_gate( (int) $match[1], true );
+				if ( is_wp_error( $erased ) || $fs->exists( $directory . '/' . $name ) ) {
+					return is_wp_error( $erased ) ? $erased : self::error( 'storage', 500 );
+				}
 			}
 		}
 		$files = $fs->dirlist( $directory );
-		foreach ( is_array( $files ) ? $files : array() as $name => $info ) {
+		if ( ! is_array( $files ) ) {
+			return self::error( 'storage', 503 );
+		}
+		foreach ( $files as $name => $info ) {
 			$file = $directory . '/' . $name;
-			if ( is_link( $file ) || 'f' !== $info['type'] ) {
-				continue;
+			if ( preg_match( '/\Auser-[1-9][0-9]*\.php\z/', $name ) ) {
+				return self::error( 'storage', 500 );
 			}
-			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\.lock\z/', $name, $match ) && ! $fs->exists( $directory . '/user-' . $match[1] . '.php' ) ) {
-				$fs->delete( $file, false, 'f' );
-			} elseif ( preg_match( '/\Auser-[1-9][0-9]*\.php\.[a-f0-9-]{36}\.tmp\z/', $name ) && $fs->size( $file ) <= self::LIMIT && 0 === strpos( $fs->get_contents( $file ), self::GUARD ) ) {
-				$fs->delete( $file, false, 'f' );
+			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\.lock\z/', $name, $match ) ) {
+				if ( is_link( $file ) || 'f' !== $info['type'] ) {
+					return self::error( 'storage', 500 );
+				}
+				$handle = fopen( $file, 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Native filesystem has no flock handle API.
+				if ( ! $handle ) {
+					return self::error( 'storage', 500 );
+				}
+				try {
+					if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+						return self::error( 'busy', 409 );
+					}
+					if ( $fs->exists( $directory . '/user-' . $match[1] . '.php' ) || ! $fs->delete( $file, false, 'f' ) ) {
+						return self::error( 'storage', 500 );
+					}
+				} finally {
+					flock( $handle, LOCK_UN );
+					fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
+				}
+			} elseif ( preg_match( '/\Auser-[1-9][0-9]*\.php\.[a-f0-9-]{36}\.tmp\z/', $name ) ) {
+				if ( is_link( $file ) || 'f' !== $info['type'] ) {
+					return self::error( 'storage', 500 );
+				}
+				$size = $fs->size( $file );
+				$raw  = false !== $size && $size <= self::LIMIT ? $fs->get_contents( $file ) : false;
+				if ( ! is_string( $raw ) || 0 !== strpos( $raw, self::GUARD ) || ! $fs->delete( $file, false, 'f' ) ) {
+					return self::error( 'storage', 500 );
+				}
+			}
+		}
+		$files = $fs->dirlist( $directory );
+		if ( ! is_array( $files ) ) {
+			return self::error( 'storage', 503 );
+		}
+		foreach ( array_keys( $files ) as $name ) {
+			if ( preg_match( '/\Auser-[1-9][0-9]*\.php(?:\.lock|\.[a-f0-9-]{36}\.tmp)?\z/', $name ) ) {
+				return self::error( 'storage', 500 );
 			}
 		}
 		foreach ( array( $directory, dirname( $directory ) ) as $folder ) {
@@ -506,6 +670,7 @@ final class Bhranti_Memory {
 				$fs->delete( $folder, false, 'd' );
 			}
 		}
+		return true;
 	}
 
 	/**
@@ -596,6 +761,136 @@ final class Bhranti_Memory {
 	}
 
 	/**
+	 * Keep one stable gate inode outside the memory tree across uninstall attempts.
+	 *
+	 * @param string   $mode Write, uninstall or activate.
+	 * @param callable $callback Operation protected by the site gate.
+	 * @return mixed
+	 */
+	private static function site_gate( $mode, $callback ) {
+		$base = realpath( WP_CONTENT_DIR );
+		if ( ! $base || ! in_array( $mode, array( 'write', 'uninstall', 'activate' ), true ) ) {
+			return self::error( 'storage', 503 );
+		}
+		$path = $base . '/.bhranti-memory-site-' . get_current_blog_id() . '.php';
+		if ( isset( self::$completed_uninstall_gates[ $path ] ) ) {
+			return 'uninstall' === $mode ? call_user_func( $callback ) : self::error( 'busy', 409 );
+		}
+		$before  = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Absence is expected before the first memory operation.
+		$created = false;
+		if ( false === $before ) {
+			if ( ! is_writable( $base ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- A native gate file requires native flock; avoid initializing a gate where the base is unwritable.
+				// Memory is optional on an unwritable fresh site; there is no tombstone to clear.
+				if ( 'activate' === $mode ) {
+					return true;
+				}
+				return self::error( 'storage', 503 );
+			}
+			$old_umask = umask( 0177 );
+			try {
+				$handle = @fopen( $path, 'x+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Exclusive creation may lose a race; a handle is required for flock.
+			} finally {
+				umask( $old_umask );
+			}
+			$created = (bool) $handle;
+			if ( ! $created ) {
+				$before = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A failed exclusive create may be a concurrent creator.
+			}
+		}
+		if ( ! $created ) {
+			if ( ! self::valid_gate_stat( $before ) ) {
+				return self::error( 'storage', 503 );
+			}
+			$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Verify the opened inode before reading or writing it.
+		}
+		if ( ! $handle ) {
+			return self::error( 'storage', 503 );
+		}
+		$keep = false;
+		try {
+			if ( ! self::same_gate_inode( $path, $handle ) ) {
+				return self::error( 'storage', 503 );
+			}
+			if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+				return self::error( 'busy', 409 );
+			}
+			if ( ! self::same_gate_inode( $path, $handle ) ) {
+				return self::error( 'storage', 503 );
+			}
+			$stat = fstat( $handle );
+			if ( ! is_array( $stat ) || $stat['size'] > strlen( self::GATE_UNINSTALLED ) || ! rewind( $handle ) ) {
+				return self::error( 'storage', 503 );
+			}
+			$state = stream_get_contents( $handle, strlen( self::GATE_UNINSTALLED ) + 1 );
+			if ( ! is_string( $state ) || ! in_array( $state, array( '', self::GATE_ACTIVE, self::GATE_UNINSTALLED ), true ) ) {
+				return self::error( 'storage', 503 );
+			}
+			if ( 'write' === $mode && ( self::GATE_UNINSTALLED === $state || ( '' === $state && ! $created ) ) ) {
+				return self::error( 'storage', 503 );
+			}
+			$required = 'uninstall' === $mode ? self::GATE_UNINSTALLED : self::GATE_ACTIVE;
+			if ( $required !== $state && ! self::write_gate_state( $handle, $required ) ) {
+				return self::error( 'storage', 503 );
+			}
+			if ( ! self::same_gate_inode( $path, $handle ) ) {
+				return self::error( 'storage', 503 );
+			}
+			$result = call_user_func( $callback );
+			if ( 'uninstall' === $mode && true === $result ) {
+				// Core deletes plugin files after uninstall.php returns; hold this inode until request shutdown.
+				self::$completed_uninstall_gates[ $path ] = $handle;
+
+				$keep = true;
+			}
+			return $result;
+		} finally {
+			if ( ! $keep ) {
+				flock( $handle, LOCK_UN );
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
+			}
+		}
+	}
+
+	/**
+	 * Confirm both path and open handle still name the same private regular file.
+	 *
+	 * @param string   $path Gate path.
+	 * @param resource $handle Open gate handle.
+	 * @return bool
+	 */
+	private static function same_gate_inode( $path, $handle ) {
+		clearstatcache( true, $path );
+		$path_stat = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Treat a missing or replaced gate as a storage error.
+		$open_stat = fstat( $handle );
+		return self::valid_gate_stat( $path_stat ) && self::valid_gate_stat( $open_stat ) && $path_stat['dev'] === $open_stat['dev'] && $path_stat['ino'] === $open_stat['ino'];
+	}
+
+	/**
+	 * Never accept a symlink, hard link, directory or world-readable gate.
+	 *
+	 * @param array|false $stat Native file stat.
+	 * @return bool
+	 */
+	private static function valid_gate_stat( $stat ) {
+		return is_array( $stat ) && 0100000 === ( $stat['mode'] & 0170000 ) && 0600 === ( $stat['mode'] & 0777 ) && 1 === $stat['nlink'];
+	}
+
+	/**
+	 * Persist an exact static state before an uninstall sweep or activation.
+	 *
+	 * @param resource $handle Locked gate handle.
+	 * @param string   $state Exact state to store.
+	 * @return bool
+	 */
+	private static function write_gate_state( $handle, $state ) {
+		if ( ! rewind( $handle ) || ! ftruncate( $handle, 0 ) ) {
+			return false;
+		}
+		$written = fwrite( $handle, $state ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Write the exact state through the verified, locked inode; WP_Filesystem has no locked-handle API.
+		return strlen( $state ) === $written && fflush( $handle ) && rewind( $handle ) && stream_get_contents( $handle, strlen( $state ) + 1 ) === $state;
+	}
+
+	/**
 	 * Resolve only fixed plugin-owned paths; never follow links below wp-content.
 	 *
 	 * @param int  $user_id Owner.
@@ -635,9 +930,18 @@ final class Bhranti_Memory {
 	 * @param int      $user_id Owner.
 	 * @param callable $callback Operation under lock.
 	 * @param bool     $create Create directory when needed.
+	 * @param bool     $site_gate_held Whether uninstall already holds the site gate.
 	 * @return mixed
 	 */
-	private static function locked( $user_id, $callback, $create = true ) {
+	private static function locked( $user_id, $callback, $create = true, $site_gate_held = false ) {
+		if ( ! $site_gate_held ) {
+			return self::site_gate(
+				'write',
+				static function () use ( $user_id, $callback, $create ) {
+					return self::locked( $user_id, $callback, $create, true );
+				}
+			);
+		}
 		$path = self::path( $user_id, $create );
 		if ( is_wp_error( $path ) ) {
 			return $path;
