@@ -1100,7 +1100,7 @@ final class Bhranti_Agent {
 			return null;
 		}
 		$hash  = self::command_hash( $command );
-		$title = 'generate_image' === $command['tool'] ? mb_strtolower( preg_replace( '/\s+/u', ' ', trim( sanitize_text_field( $command['args']['title'] ?? '' ) ) ) ) : '';
+		$title = 'generate_image' === $command['tool'] ? preg_replace( '/\s+/u', ' ', trim( sanitize_text_field( $command['args']['title'] ?? '' ) ) ) : '';
 		$seen  = array();
 		foreach ( array_reverse( $run['receipts'] ?? array() ) as $receipt ) {
 			if ( true !== ( $receipt['success'] ?? false ) || ( $receipt['run_id'] ?? '' ) !== $run['id'] || ! in_array( $receipt['operation'] ?? '', array( 'write', 'image' ), true ) ) {
@@ -1108,7 +1108,8 @@ final class Bhranti_Agent {
 			}
 			$entity = $receipt['entity'] ?? '';
 			$create = $receipt['created'] ?? ( ( in_array( $receipt['tool'], array( 'wp_request', 'plugin_request' ), true ) && preg_match( '#\A/wp/v2/(?!settings\z)[a-zA-Z0-9_-]+\z#', $receipt['path'] ) ) || ( 'commerce_request' === $receipt['tool'] && preg_match( '#\A/wc/v3/(?:products(?:/categories)?|shipping/zones(?:/(?:0|[1-9][0-9]*)/methods)?)\z#', $receipt['path'] ) ) || ( 'form_request' === $receipt['tool'] && '/contact-form-7/v1/contact-forms' === $receipt['path'] ) );
-			if ( ( ( $receipt['command_hash'] ?? '' ) === $hash && ( $create || 'image' === $receipt['operation'] || '' === $entity || ! isset( $seen[ $entity ] ) ) ) || ( '' !== $title && 'image' === $receipt['operation'] && mb_strtolower( preg_replace( '/\s+/u', ' ', trim( sanitize_text_field( $receipt['target']['title'] ?? '' ) ) ) ) === $title ) ) {
+			// PCRE's Unicode case comparison works even when optional mbstring is unavailable.
+			if ( ( ( $receipt['command_hash'] ?? '' ) === $hash && ( $create || 'image' === $receipt['operation'] || '' === $entity || ! isset( $seen[ $entity ] ) ) ) || ( '' !== $title && 'image' === $receipt['operation'] && 1 === preg_match( '/\A' . preg_quote( $title, '/' ) . '\z/iu', preg_replace( '/\s+/u', ' ', trim( sanitize_text_field( $receipt['target']['title'] ?? '' ) ) ) ) ) ) {
 				return $receipt;
 			}
 			$seen[ $entity ] = true;

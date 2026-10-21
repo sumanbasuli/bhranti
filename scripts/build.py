@@ -92,8 +92,8 @@ def collect_files():
 
 def validate_metadata():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        fail("VERSION must contain a numeric version such as 0.1.0")
+    if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version):
+        fail("VERSION must contain a numeric version such as 1.1 or 1.1.0")
     plugin = (ROOT / MAIN_FILE).read_text(encoding="utf-8")[:8192]
     readme = (ROOT / "readme.txt").read_text(encoding="utf-8")
     for name in (
@@ -125,6 +125,35 @@ def validate_metadata():
     if (ROOT / "LICENSE").stat().st_size == 0:
         fail("LICENSE must contain the distribution license")
     return version
+
+
+def collect_listing_assets():
+    """Match local listing screenshots to the numbered WordPress.org captions."""
+    readme = (ROOT / "readme.txt").read_text(encoding="utf-8")
+    sections = re.findall(r"^== Screenshots ==[ \t]*\r?\n(.*?)(?=^== |\Z)", readme, re.M | re.S)
+    if len(sections) != 1:
+        fail("readme.txt needs exactly one Screenshots section")
+    lines = [line.strip() for line in sections[0].splitlines() if line.strip()]
+    captions = [re.fullmatch(r"([1-9]\d*)\.[ \t]+(\S.*)", line) for line in lines]
+    if not captions or any(caption is None for caption in captions) or [int(caption[1]) for caption in captions] != list(range(1, len(captions) + 1)):
+        fail("Screenshots captions must be nonempty and numbered consecutively from 1")
+    directory = ROOT / "wordpress-org/assets"
+    if (ROOT / "wordpress-org").is_symlink() or directory.is_symlink() or not directory.is_dir():
+        fail("wordpress-org/assets/ must be a real directory")
+    files = list(directory.iterdir())
+    expected = {"screenshot-{}.jpg".format(number) for number in range(1, len(captions) + 1)}
+    if {path.name for path in files} != expected:
+        fail("Listing screenshot filenames must match the numbered readme.txt captions exactly")
+    for path in files:
+        if path.is_symlink() or not path.is_file():
+            fail("Listing screenshots must be regular files, not symlinks: " + path.name)
+        if path.stat().st_size > 10_000_000:
+            fail("Listing screenshot exceeds WordPress.org's 10 MB limit: " + path.name)
+        data = path.read_bytes()
+        if not data.startswith(b"\xff\xd8\xff") or not data.endswith(b"\xff\xd9"):
+            fail("Listing screenshot must be a JPEG: " + path.name)
+    print("WordPress.org screenshots and captions: passed ({})".format(len(files)))
+    return sorted(files, key=lambda path: int(re.search(r"\d+", path.name)[0]))
 
 
 def lint_php(files):
@@ -180,10 +209,11 @@ def validate_dependencies(files):
     print("Runtime dependencies and bundled source hashes: passed")
 
 
-def create_zip(destination, files):
+def create_zip(destination, files, root=None, prefix=SLUG + "/"):
+    root = root or ROOT
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in files:
-            name = SLUG + "/" + path.relative_to(ROOT).as_posix()
+            name = prefix + path.relative_to(root).as_posix()
             entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_DEFLATED
             entry.create_system = 3
@@ -191,24 +221,27 @@ def create_zip(destination, files):
             archive.writestr(entry, path.read_bytes())
 
 
-def verify_zip(destination, files):
-    expected = {SLUG + "/" + path.relative_to(ROOT).as_posix() for path in files}
+def verify_zip(destination, files, root=None, prefix=SLUG + "/"):
+    root = root or ROOT
+    expected = {prefix + path.relative_to(root).as_posix() for path in files}
     with zipfile.ZipFile(destination) as archive:
         if archive.testzip() is not None:
             fail("ZIP integrity check failed")
         names = archive.namelist()
         if set(names) != expected or len(names) != len(expected):
-            fail("ZIP contents do not match the runtime allowlist")
+            fail("ZIP contents do not match the source allowlist")
         for path in files:
-            name = SLUG + "/" + path.relative_to(ROOT).as_posix()
+            name = prefix + path.relative_to(root).as_posix()
             if archive.read(name) != path.read_bytes():
                 fail("ZIP content does not match source: " + name)
 
 
-def package(version, files):
+def package(version, files, listing_files=None):
     build = ROOT / "build"
     if build.is_symlink() or (build.exists() and not build.is_dir()):
         fail("build/ must be a real directory inside the plugin root")
+    if listing_files is None:
+        listing_files = collect_listing_assets()
     build.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".package-", dir=build) as temporary:
         stage = Path(temporary)
@@ -224,8 +257,12 @@ def package(version, files):
         verify_zip(archive, files)
         versioned = stage / (SLUG + "-" + version + ".zip")
         shutil.copyfile(archive, versioned)
+        listing_archive = stage / "wordpress-org-assets.zip"
+        listing_root = ROOT / "wordpress-org/assets"
+        create_zip(listing_archive, listing_files, root=listing_root, prefix="")
+        verify_zip(listing_archive, listing_files, root=listing_root, prefix="")
         checksum_lines = []
-        for path in (archive, versioned):
+        for path in (archive, versioned, listing_archive):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             line = digest + "  " + path.name + "\n"
             (stage / (path.name + ".sha256")).write_text(line, encoding="ascii")
@@ -246,7 +283,7 @@ def package(version, files):
             path.replace(target)
     print("ZIP contents: passed ({} runtime files)".format(len(files)))
     print("Built {} {}".format(SLUG, version))
-    for name in (SLUG + "/", SLUG + ".zip", SLUG + "-" + version + ".zip", "SHA256SUMS"):
+    for name in (SLUG + "/", SLUG + ".zip", SLUG + "-" + version + ".zip", "wordpress-org-assets.zip", "SHA256SUMS"):
         print("  build/" + name)
 
 
@@ -257,13 +294,14 @@ def main():
     files = collect_files()
     version = validate_metadata()
     print("Metadata: passed (version {})".format(version))
+    listing_files = collect_listing_assets()
     lint_php(files)
     lint_javascript(files)
     validate_dependencies(files)
     if args.check:
         print("Source checks passed")
     else:
-        package(version, files)
+        package(version, files, listing_files)
 
 
 if __name__ == "__main__":

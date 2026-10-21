@@ -869,6 +869,9 @@ final class Bhranti_Memory {
 		}
 		$keep = false;
 		try {
+			if ( $created && ! self::secure_created_gate( $path, $handle ) ) {
+				return self::error( 'storage', 503 );
+			}
 			if ( ! self::same_gate_inode( $path, $handle ) ) {
 				return self::error( 'storage', 503 );
 			}
@@ -922,6 +925,36 @@ final class Bhranti_Memory {
 				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
 			}
 		}
+	}
+
+	/**
+	 * Set private permissions only on the empty inode this request created exclusively.
+	 *
+	 * Some filesystems do not apply umask during creation. Existing gates are never
+	 * repaired here: their permissions and tombstones must pass the strict checks.
+	 *
+	 * @param string   $path New gate path.
+	 * @param resource $handle Exclusively created gate handle.
+	 * @return bool
+	 */
+	private static function secure_created_gate( $path, $handle ) {
+		clearstatcache( true, $path );
+		$path_stat = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A missing or replaced new gate must fail closed.
+		$open_stat = fstat( $handle );
+		foreach ( array( $path_stat, $open_stat ) as $stat ) {
+			if ( ! is_array( $stat ) || 0100000 !== ( $stat['mode'] & 0170000 ) || 1 !== $stat['nlink'] || 0 !== $stat['size'] ) {
+				return false;
+			}
+		}
+		if ( $path_stat['dev'] !== $open_stat['dev'] || $path_stat['ino'] !== $open_stat['ino'] ) {
+			return false;
+		}
+		if ( 0600 !== ( $path_stat['mode'] & 0777 ) || 0600 !== ( $open_stat['mode'] & 0777 ) ) {
+			if ( ! @chmod( $path, 0600 ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- This native lock gate requires verified inode identity and exact permissions around the local change.
+				return false;
+			}
+		}
+		return self::same_gate_inode( $path, $handle );
 	}
 
 	/**

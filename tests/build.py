@@ -33,6 +33,7 @@ def fixture():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)
         shutil.copytree(ROOT / "includes", destination / "includes")
+        shutil.copytree(ROOT / "wordpress-org/assets", destination / "wordpress-org/assets")
         with patch.object(builder, "ROOT", destination):
             yield destination
 
@@ -43,6 +44,7 @@ class PackagingTests(unittest.TestCase):
         cls.version = (ROOT / "VERSION").read_text().strip()
         cls.archive = ROOT / "build/bhranti.zip"
         cls.versioned = ROOT / ("build/bhranti-" + cls.version + ".zip")
+        cls.listing = ROOT / "build/wordpress-org-assets.zip"
         cls.builds = []
         for attempt in (1, 2):
             result = subprocess.run(
@@ -55,6 +57,8 @@ class PackagingTests(unittest.TestCase):
                 cls.archive.read_bytes(),
                 (ROOT / "build/SHA256SUMS").read_bytes(),
                 Path(str(cls.versioned) + ".sha256").read_bytes(),
+                cls.listing.read_bytes(),
+                Path(str(cls.listing) + ".sha256").read_bytes(),
             ))
             print("Real-source build {}: passed through ./build.sh".format(attempt), flush=True)
 
@@ -90,21 +94,101 @@ class PackagingTests(unittest.TestCase):
         installed = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()}
         self.assertEqual(installed, names)
 
-    def test_checksums_cover_both_packages(self):
+    def test_listing_screenshots_are_separate_from_the_plugin(self):
+        files = builder.collect_listing_assets()
+        with zipfile.ZipFile(self.listing) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertEqual(archive.namelist(), [path.name for path in files])
+            for path in files:
+                self.assertEqual(archive.read(path.name), path.read_bytes())
+        with zipfile.ZipFile(self.archive) as archive:
+            self.assertFalse(any("screenshot-" in name or "wordpress-org" in name for name in archive.namelist()))
+
+    def test_checksums_cover_all_packages(self):
         expected = "".join(
             hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
-            for path in (self.archive, self.versioned)
+            for path in (self.archive, self.versioned, self.listing)
         )
         self.assertEqual((ROOT / "build/SHA256SUMS").read_text(), expected)
-        for path in (self.archive, self.versioned):
+        for path in (self.archive, self.versioned, self.listing):
             line = hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
             self.assertEqual(Path(str(path) + ".sha256").read_text(), line)
+
+    def test_missing_or_invalid_screenshot_captions_are_rejected(self):
+        for section in ("", "== Screenshots ==\n\n", "== Screenshots ==\n1. First\n3. Third\n\n", "== Screenshots ==\n1. First\n1. Second\n\n", "== Screenshots ==\nUnnumbered caption\n\n", "== Screenshots ==\n1. \n\n"):
+            with self.subTest(section=section), fixture() as root:
+                readme = root / "readme.txt"
+                updated, count = re.subn(
+                    r"^== Screenshots ==[ \t]*\r?\n.*?(?=^== |\Z)",
+                    section, readme.read_text(), flags=re.M | re.S,
+                )
+                self.assertEqual(count, 1)
+                readme.write_text(updated)
+                with self.assertRaisesRegex(ValueError, "Screenshots"):
+                    builder.collect_listing_assets()
+
+    def test_screenshot_filenames_must_match_captions_exactly(self):
+        for change in ("extra", "missing", "uppercase", "wrong-extension"):
+            with self.subTest(change=change), fixture() as root:
+                path = root / "wordpress-org/assets/screenshot-1.jpg"
+                if change == "extra":
+                    shutil.copyfile(path, path.with_name("screenshot-999.jpg"))
+                elif change == "missing":
+                    path.unlink()
+                elif change == "uppercase":
+                    path.rename(path.with_name("screenshot-1.JPG"))
+                else:
+                    path.rename(path.with_suffix(".png"))
+                with self.assertRaisesRegex(ValueError, "match.*captions"):
+                    builder.collect_listing_assets()
+
+    def test_listing_images_must_be_bounded_jpegs(self):
+        for data, message in ((b"not a JPEG", "must be a JPEG"), (b"\xff\xd8\xff" + b"\0" * 10_000_000 + b"\xff\xd9", "10 MB limit")):
+            with self.subTest(message=message), fixture() as root:
+                (root / "wordpress-org/assets/screenshot-1.jpg").write_bytes(data)
+                with self.assertRaisesRegex(ValueError, message):
+                    builder.collect_listing_assets()
+
+    def test_symlinked_listing_sources_are_rejected(self):
+        for name in ("wordpress-org", "wordpress-org/assets", "wordpress-org/assets/screenshot-1.jpg"):
+            with self.subTest(path=name), fixture() as root:
+                path = root / name
+                original = root / ("original-" + path.name)
+                path.rename(original)
+                path.symlink_to(original, target_is_directory=original.is_dir())
+                with self.assertRaisesRegex(ValueError, "real directory|symlinks"):
+                    builder.collect_listing_assets()
 
     def test_metadata_version_mismatch_is_rejected(self):
         with fixture() as root:
             (root / "VERSION").write_text("9999.0.0\n")
             with self.assertRaisesRegex(ValueError, "must match"):
                 builder.validate_metadata()
+
+    def test_two_and_three_component_release_versions(self):
+        for version in ("1.1", "1.1.1"):
+            with self.subTest(version=version), fixture() as root:
+                previous = (root / "VERSION").read_text().strip()
+                (root / "VERSION").write_text(version + "\n")
+                plugin = root / "bhranti.php"
+                plugin.write_text(plugin.read_text().replace(
+                    "Version: " + previous, "Version: " + version,
+                ).replace(
+                    "'BHRANTI_VERSION', '" + previous + "'",
+                    "'BHRANTI_VERSION', '" + version + "'",
+                ))
+                readme = root / "readme.txt"
+                readme.write_text(readme.read_text().replace(
+                    "Stable tag: " + previous, "Stable tag: " + version,
+                ).replace("= " + previous + " =", "= " + version + " ="))
+                self.assertEqual(builder.validate_metadata(), version)
+
+    def test_invalid_release_versions_are_rejected(self):
+        for version in ("1", "v1.1", "1.1-beta", "1..1", "1.1/path"):
+            with self.subTest(version=version), fixture() as root:
+                (root / "VERSION").write_text(version + "\n")
+                with self.assertRaisesRegex(ValueError, "numeric version"):
+                    builder.validate_metadata()
 
     def test_runtime_version_constant_mismatch_is_rejected(self):
         with fixture() as root:
@@ -182,7 +266,7 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(list(outside.iterdir()), [marker])
 
     def test_named_output_symlinks_are_rejected_without_following(self):
-        for name in ("bhranti", "bhranti.zip", "SHA256SUMS"):
+        for name in ("bhranti", "bhranti.zip", "wordpress-org-assets.zip", "wordpress-org-assets.zip.sha256", "SHA256SUMS"):
             with self.subTest(output=name), fixture() as root:
                 (root / "build").mkdir()
                 marker = root / "outside.txt"
@@ -206,7 +290,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_nonruntime_files_are_excluded(self):
         with fixture() as root:
-            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "assets/debug.log"):
+            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "assets/debug.log", "wordpress-org/assets/screenshot-999.jpg"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("must never ship")

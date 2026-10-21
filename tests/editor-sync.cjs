@@ -7,13 +7,13 @@ let JSDOM;
 try { ({ JSDOM } = require('jsdom')); }
 catch { ({ JSDOM } = require(process.env.BHRANTI_TEST_JSDOM_PATH || '/Users/txsadhu/node_modules/jsdom')); }
 const source = fs.readFileSync(path.join(process.env.BHRANTI_TEST_PLUGIN_ROOT || path.dirname(__dirname), 'assets/admin.js'), 'utf8');
-const marker = 'syncTrigger(); if (settings.autoOpen) openPanel();';
-assert.equal(source.split(marker).length, 2, 'Instrument only the actual known initializer');
+const marker = /syncTrigger\(\s*\);\s*if\s*\(\s*settings\.autoOpen\s*\)\s*openPanel\(\s*\);/g;
+assert.equal((source.match(marker) || []).length, 1, 'Instrument only the actual known initializer');
 const names = [...source.matchAll(/^\t(?:async )?function (\w+)\(/gm)].map((match) => match[1]);
 const instrumented = source
   .replace(/window\.location\.assign\(([^;]+)\);/g, 'window.review.navigation.push({ kind: "assign", url: $1 });')
   .replace(/window\.location\.reload\([^;]*\);/g, 'window.review.navigation.push({ kind: "reload", url: window.location.href });')
-  .replace(marker, 'window.review = { state, editorSync, ' + names.join(', ') + ', navigation: [] }; ' + marker);
+  .replace(marker, (initializer) => 'window.review = { state, editorSync, ' + names.join(', ') + ', navigation: [] }; ' + initializer);
 const runId = '91000000-1000-4000-8000-100000000017';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 function record(id = 99, type = 'page', text = 'Saved before Bhranti.') {

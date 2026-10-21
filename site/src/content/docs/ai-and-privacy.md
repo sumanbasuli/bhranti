@@ -5,7 +5,7 @@ order: 11
 group: "Help and privacy"
 ---
 
-Bhranti sends requests to the AI provider configured in **Settings → Connectors**, using WordPress’s AI Client. Manage provider sign-in, models and approvals there. Bhranti stores no separate connector key, collects no telemetry and loads its interface assets from your site.
+Bhranti sends requests to the AI provider configured in **Settings → Connectors**, using WordPress’s AI Client. Manage provider sign-in and connection approvals there. Available models and features depend on your connection. Bhranti stores no separate connector key, collects no telemetry and loads its interface assets from your site.
 
 Opening the sidebar does not contact the AI provider. Sending a request can use your connected account’s allowance or incur provider charges.
 

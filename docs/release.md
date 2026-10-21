@@ -10,16 +10,18 @@ Requirements: Bash, Python 3.9 or newer, PHP CLI, and Node.js. No npm or Compose
 ./build.sh
 ```
 
-For version `1.0.0`, the outputs are:
+For version `1.1`, the outputs are:
 
 | Output | Purpose |
 | --- | --- |
 | `build/bhranti/` | Clean installable plugin directory |
 | `build/bhranti.zip` | ZIP to upload through WordPress Plugins → Add New Plugin → Upload Plugin |
-| `build/bhranti-1.0.0.zip` | Identical versioned ZIP for a release |
+| `build/bhranti-1.1.zip` | Identical versioned ZIP for a release |
 | `build/bhranti.zip.sha256` | Unversioned ZIP checksum |
-| `build/bhranti-1.0.0.zip.sha256` | Versioned ZIP checksum |
-| `build/SHA256SUMS` | Both checksums |
+| `build/bhranti-1.1.zip.sha256` | Versioned ZIP checksum |
+| `build/wordpress-org-assets.zip` | Screenshots for the WordPress.org listing |
+| `build/wordpress-org-assets.zip.sha256` | Listing screenshots checksum |
+| `build/SHA256SUMS` | Checksums for all three ZIPs |
 
 The generated `build/` directory is ignored by Git. Builds replace their own named outputs; unrelated files and older versioned archives remain. Identical inputs on the same Python/zlib toolchain produce identical ZIP bytes, with sorted entries, fixed timestamps and file modes.
 
@@ -45,9 +47,21 @@ Keep the five bundled `skills/*/SKILL.md` documents: the running harness reads t
 
 The Astro website, screenshots, development docs, tests, build tools, Git files, local configuration and dependencies are excluded. The plugin relies on the site's native WordPress AI Client and connectors; it does not bundle other installed plugins. Packages reject symlinked runtime inputs and output targets.
 
+## WordPress.org listing screenshots
+
+Keep the listing screenshots in `wordpress-org/assets/`, named `screenshot-1.jpg`, `screenshot-2.jpg`, and so on. Add one numbered caption for each image under `== Screenshots ==` in `readme.txt`, in the same order. Use real screenshots of the plugin and check that no private site information is visible before adding them.
+
+While the plugin is awaiting review, keep these files in Git. The GitHub README displays them through relative image links; SVN access is not needed to maintain or display them in the repository.
+
+The build checks that filenames and captions match exactly, images have JPEG markers and each file is no larger than WordPress.org's 10 MB limit. It rejects symlinks and unexpected files. The separate `build/wordpress-org-assets.zip` contains only these numbered JPGs at its root. Screenshots stay out of the installable plugin ZIP.
+
+After WordPress.org approves the plugin and grants SVN access, extract `wordpress-org-assets.zip` into the SVN checkout's top-level `assets/` directory, beside `trunk/` and `tags/`. Add the new images to SVN and set `svn:mime-type` to `image/jpeg` before committing them. Do not put listing screenshots in `trunk/assets/` or inside a version tag. Keep the corresponding readme captions in the released plugin's `readme.txt`.
+
+The [official plugin assets guide](https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/) explains the directory layout, screenshot filenames and MIME properties. Listing images are cached by WordPress.org, so changes may take time to appear.
+
 ## Change the version
 
-Before a release, update all of these to the same numeric `major.minor.patch` version:
+Before a release, update all of these to the same numeric `major.minor` or `major.minor.patch` version:
 
 1. `VERSION`.
 2. The `Version:` header and `BHRANTI_VERSION` constant in `bhranti.php`.
@@ -71,8 +85,8 @@ The workflow is `.github/workflows/release.yml`. Configure a GitHub remote and p
 A first push with no available previous `main` commit only creates an artifact. For the initial release, push `main`, then create and push the matching tag, for example:
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1
+git push origin v1.1
 ```
 
 Create the tag only from the intended release commit after it is on `main`. Future changes to `VERSION` on `main` create their tags automatically. Versions starting with `0.` are marked as GitHub prereleases.

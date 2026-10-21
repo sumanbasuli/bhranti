@@ -24,7 +24,11 @@ final class Bhranti_Chat {
 		if ( ! is_string( $reply ) || '' === $reply ) {
 			return '';
 		}
-		$reply = wp_check_invalid_utf8( mb_strcut( $reply, 0, 240000 ), true );
+		if ( strlen( $reply ) > 240000 ) {
+			// Keep the byte limit without requiring mbstring or splitting a UTF-8 character.
+			$reply = preg_replace( '/(?:[\xC2-\xDF]|[\xE0-\xEF][\x80-\xBF]?|[\xF0-\xF4][\x80-\xBF]{0,2})\z/', '', substr( $reply, 0, 240000 ) );
+		}
+		$reply = wp_check_invalid_utf8( $reply, true );
 		// Remove native block serialization only; never invoke dynamic renderers.
 		$reply = preg_replace( '/<!--\s*\/?wp:[\s\S]*?-->/', '', $reply );
 		// Literal code remains readable, including angle brackets and PHP examples.

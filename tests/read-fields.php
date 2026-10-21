@@ -60,6 +60,21 @@ function _doing_it_wrong( $function, $message, $version ) { throw new RuntimeExc
 function wp_remote_request() { throw new RuntimeException( 'HTTP forbidden in offline test.' ); }
 function wp_ai_client_prompt() { throw new RuntimeException( 'AI forbidden in offline test.' ); }
 
+/** In-memory lock boundary; the production lock has a separate filesystem suite. */
+final class Bhranti_Lock {
+    public static function acquire( $name, $ttl ) {
+        if ( isset( $GLOBALS['rf_options'][ $name ] ) ) { return false; }
+        $token = wp_generate_uuid4();
+        $GLOBALS['rf_options'][ $name ] = $token;
+        return $token;
+    }
+    public static function release( $name, $token ) {
+        if ( ( $GLOBALS['rf_options'][ $name ] ?? null ) !== $token ) { return false; }
+        unset( $GLOBALS['rf_options'][ $name ] );
+        return true;
+    }
+}
+
 final class Bhranti_Settings { public static function task_catalog() { return array(); } }
 final class Bhranti_Commerce { public static function catalog() { return array(); } }
 final class Bhranti_Site { public static function is_theme_request( $request ) { return false; } }
@@ -94,6 +109,14 @@ function rf_check( $condition, $label ) { if ( ! $condition ) { throw new Runtim
 function rf_command( $params, $method = 'GET', $path = '/wp/v2/pages' ) { return array( 'tool' => 'wp_request', 'args' => array( 'method' => $method, 'path' => $path, 'params' => $params ) ); }
 function rf_run( $params, $method = 'GET', $path = '/wp/v2/pages' ) { return Bhranti_Actions::execute( rf_command( $params, $method, $path ), 7, 1 ); }
 function rf_review( $params, $method = 'GET' ) { return (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( $params, $method, '/wp/v2/pages/9033' ), 7, 11 ); }
+
+// The in-memory lock seam must retain the same refusal and ownership boundary.
+$actor_lock = Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 );
+rf_check( is_string( $actor_lock ) && false === Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 ), 'An occupied fixture lock cannot be acquired twice.' );
+$blocked = rf_run( array() );
+rf_check( is_wp_error( $blocked ) && 'bhranti_actor_busy' === $blocked->get_error_code() && 0 === $GLOBALS['rf_dispatches'], 'A busy actor lock blocks the actual Actions path before native dispatch.' );
+rf_check( false === Bhranti_Lock::release( 'bhranti_actor_setup_lock', 'different-owner' ) && $actor_lock === $GLOBALS['rf_options']['bhranti_actor_setup_lock'], 'A different owner cannot release the fixture lock.' );
+rf_check( true === Bhranti_Lock::release( 'bhranti_actor_setup_lock', $actor_lock ) && ! isset( $GLOBALS['rf_options']['bhranti_actor_setup_lock'] ), 'The fixture lock owner releases it without changing other options.' );
 
 // Exact request observed in the real store flow must be accepted unchanged.
 $params = array( 'context' => 'edit', 'include' => array( 9033, 9034, 9035, 9036, 9037 ), 'status' => 'any', 'per_page' => 20, '_fields' => 'id,title,status' );

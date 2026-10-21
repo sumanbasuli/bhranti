@@ -2,6 +2,8 @@
 
 These notes describe the implementation and verification workflow. For installation and everyday use, start with the [project README](../README.md).
 
+The maintained source, issue tracker and packaging tools are in the [public Bhranti repository](https://github.com/sumanbasuli/bhranti).
+
 ## Build and release
 
 Run `./build.sh` from this repository to make `build/bhranti.zip`, the versioned ZIP, a clean plugin folder, and SHA-256 checksums. Python 3, PHP CLI and Node.js are required. `./build.sh --check` validates inputs without writing a package; `python3 tests/build.py` verifies packaging and exclusions.
@@ -23,7 +25,7 @@ See [Build and release](release.md) for outputs, first-release instructions and 
 - Search and inspection through reviewed WordPress REST endpoints and the native WordPress.org plugin directory; site, rendered current-page HTML/text, selected Gutenberg blocks, optional browser-chosen screenshots and reference images. Public design URLs supplied in recent human messages are inspected through bounded native safe HTTP as inert HTML/text and color/font hints; this does not render a screenshot. Exact native block metadata helps construct current installed blocks without lazy variation callbacks or asset payloads.
 - Native AI image generation checks current human/actor upload formats, native image-editor support and upload limits before requesting one image. It requests a supported native output format where advertised, then can convert or resize bounded raster bytes locally without another generation. Images retain descriptive alt text and traceable logs, and remain in the library after a page-content rollback.
 - Private file-backed memory remembers explicitly requested language, tone, design and workflow preferences, plus bounded verified image-handling observations. Settings lets each administrator review and reset their own memory. Fresh native capabilities and permissions always prevail; transient provider errors never become permanent unsupported claims.
-- Reviewed content and settings operations executed as a dedicated managed **Bhranti** WordPress user, limited by both that user's and the requesting administrator's permissions. Writes are blocked when native filtering under those permissions would alter existing markup.
+- Reviewed content and settings operations executed as a dedicated managed **Bhranti** WordPress user, limited by both that user's and the requesting administrator's permissions. Writes are blocked when native filtering under those permissions would change existing content. The preservation check permits only equivalent spacing before a void element's self-closing slash, while keeping attributes and other content exact.
 - Settings provides enforced switches for content editing/publishing, Trash, comments, media, navigation, design, site settings and plugin installation/activation/deletion. Routine actions default on; plugin deletion defaults off.
 - Each native plugin installation or later status/deletion operation requires an owned Approve/Cancel card. An installation card may explicitly include activation when both current switches and native capabilities allow it. The approved click synchronously dispatches native create with the listed active/inactive status as the requester; included activation needs no second prompt. Installation without activation remains inactive. The authenticated human dispatches approved mutations and explicit plugin Undo directly through the reviewed core controller; planning and reads retain the managed identity. Logs record the actual acting user. Plugin deletion warns about permanent uninstall data loss. Activation status can be restored when unchanged; lifecycle hook effects cannot. Reinstalling does not restore deleted data.
 - WooCommerce integration discovers availability, searches and edits simple products, assigns existing media and categories, creates product categories, and changes selected business location, countries/units, currency, catalog, inventory and store-page settings through native WooCommerce controllers. Native shipping zones/locations and flat-rate/free-shipping/local-pickup methods, offline cash-on-delivery and shop visibility complete the supported store setup, with the same audit and conflict-safe Undo. Visibility changes require the assigned Cart already published and respect its native cache-invalidation side effect. Product creation defaults to draft. Product Trash requires approval; supported catalog and setting changes retain conflict-safe Undo. A requested store task can use the existing native plugin installer to add WooCommerce. Payment accounts remain in native human setup; this integration does not transact, process orders or expose customer records.
@@ -47,7 +49,27 @@ The installed native AI transport returns completed replies; Bhranti does not si
 
 ## Development and verification
 
-Requires WordPress 7.0+ and PHP 7.4+. Runtime assets use WordPress core React components for Settings and local JavaScript/CSS for the sidebar; no frontend build is required. See `AGENTS.md` for the user's persistent project requirements.
+Requires WordPress 7.0+ and PHP 8.0+. Runtime assets use WordPress core React components for Settings and local JavaScript/CSS for the sidebar; no frontend build is required. See `AGENTS.md` for the user's persistent project requirements.
+
+`tests/activation-native.php` verifies clean activation with debugging enabled, no output or HTTP requests, exact private-memory gate permissions, rejection of a preexisting unsafe gate, and conflict-safe native Settings saves through new and existing SQLite guards. Run it only in a disposable Playground against the packaged plugin:
+
+```sh
+./build.sh
+npx @wp-playground/cli@3.1.60 php --php=8.0 --wp=7.0 \
+  --mount="$PWD/build/bhranti:/wordpress/wp-content/plugins/bhranti" \
+  --mount="$PWD/tests:/review-tests" \
+  --define-bool BHRANTI_ACTIVATION_TEST true \
+  --define-bool WP_DEBUG true \
+  --define-bool DISABLE_WP_CRON true \
+  --define-bool WP_HTTP_BLOCK_EXTERNAL true \
+  -- /review-tests/activation-native.php
+```
+
+`php -d disable_functions=mb_strcut,mb_strtolower tests/optional-mbstring.php` checks byte-safe UTF-8 truncation and image recovery with optional mbstring functions unavailable. It uses native WordPress formatting without bootstrapping a site or contacting AI. Set `BHRANTI_TEST_WP_ROOT` if WordPress core is installed elsewhere.
+
+`php tests/lock-sidecar.php` checks SQLite lock-file creation, existing-file preservation, removal races, ignored creation masks and denied permission changes in isolated temporary files. It does not bootstrap a site or use a database, network or AI.
+
+`tests/content-preservation-native.php` checks existing-content preservation with native KSES and REST writes on uniquely marked disposable posts. It permits equivalent void-tag closing space while rejecting changes to attributes, unsafe markup and other content. The test requires its explicit mutation flag and a dedicated, marked native demonstration fixture; it never runs against an ordinary site or contacts an AI provider.
 
 Run syntax checks, WordPress Coding Standards and the official Plugin Check against the distribution. Real WordPress tests in `tests/integration.php`, `tests/actions.php`, `tests/settings.php`, `tests/permissions.php` and `tests/plugins.php` run only with `BHRANTI_TEST_WP_ROOT` and `BHRANTI_TEST_ALLOW_MUTATION=1`, and reject any site other than `https://bhranti.wp.local/`. They use a local fake provider and uniquely marked disposable records; they must never change preexisting site content.
 

@@ -4,12 +4,12 @@
 
 Bhranti is a WordPress-aware assistant for administrators working on content, design, and supported site operations. The website helps visitors understand the product, inspect how it works, and follow a human-friendly setup guide.
 
-The current work is a local static Astro website intended for `https://bhranti.org`. Cloudflare deployment is a later step. The download page uses the requested temporary `#` link from `src/data/release.ts`; replace it with the public `sumanbasuli/bhranti` release ZIP URL when published.
+The static Astro website is configured for `https://bhranti.org` and Cloudflare hosting. The public source repository is [sumanbasuli/bhranti](https://github.com/sumanbasuli/bhranti). The download page uses the requested temporary `#` link from `src/data/release.ts`; replace it with the public release ZIP URL when published.
 
 ## Confirmed behavior
 
 - Plugin and admin-bar label: Bhranti. Release version and compatibility requirements come from `src/data/release.ts`.
-- Requires WordPress 7.0+ and PHP 7.4+.
+- Requires WordPress 7.0+ and PHP 8.0+.
 - Chat stays alongside the current WordPress editor or site page.
 - The native WordPress AI Client and Settings → Connectors own provider configuration. Bhranti does not hold connector credentials.
 - Relevant current-page/block context and explicitly attached reference images or screenshots can accompany a message.
@@ -46,4 +46,4 @@ The current work is a local static Astro website intended for `https://bhranti.o
 
 ## Voice
 
-Warm, precise, practical. Explain useful tasks and decisions before technical internals. Use “Download Bhranti”, “Get started”, “Documentation”, “Approve”, “Deny”, “Undo”, “Stop”, and “Settings → Connectors” consistently. Qualify supported capabilities and restoration limits where a visitor makes the relevant decision.
+Warm, precise, practical. Explain useful tasks and decisions before technical internals. Use “Download Bhranti”, “Get started”, “Documentation”, “Approve”, “Undo”, “Stop”, and “Settings → Connectors” consistently. Plugin approval cards use “Cancel”; other approval cards use “Deny”. Qualify supported capabilities and restoration limits where a visitor makes the relevant decision.

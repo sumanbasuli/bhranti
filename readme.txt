@@ -1,10 +1,10 @@
 === Bhranti ===
-Contributors: sumanbasuli
+Contributors: txsadhu
 Tags: ai, assistant, content, productivity, automation
 Requires at least: 7.0
 Tested up to: 7.1
-Requires PHP: 7.4
-Stable tag: 1.0.1
+Requires PHP: 8.0
+Stable tag: 1.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,7 +48,7 @@ Ask Bhranti to remember preferences about language, tone, design or workflow. Re
 
 == Installation ==
 
-1. In Plugins > Add New Plugin > Upload Plugin, select the installable Bhranti ZIP and activate it. You need WordPress 7.0 or later and PHP 7.4 or later.
+1. In Plugins > Add New Plugin > Upload Plugin, select the installable Bhranti ZIP and activate it. You need WordPress 7.0 or later and PHP 8.0 or later.
 2. Configure a compatible AI text connection in Settings > Connectors and complete any approval your connector requires.
 3. Open Bhranti > Settings to review the allowed actions and optional instructions.
 4. Open Bhranti from the admin bar or block editor toolbar and send your first request. Add only the page context or images you want to share.
@@ -111,13 +111,37 @@ Chats are owned by the administrator who created them. Other administrators can 
 
 Uninstall removes Bhranti's workspace data and revokes its managed account's elevated access. It preserves created site content and authorship; you can remove or reassign that account later through WordPress.
 
+== Screenshots ==
+
+1. Edit a post beside Bhranti and review its saved changes and action history.
+2. Follow Bhranti's actions as it works, with the editor protected from accidental edits.
+3. Preview the updated draft on your site while keeping the conversation open.
+
+== Source code ==
+
+The public source repository, issue tracker and release packaging tools are available at https://github.com/sumanbasuli/bhranti. Build instructions are in docs/release.md in that repository.
+
+Bhranti's editable PHP, JavaScript and CSS source is included in this plugin. The files in includes/ and the first-party files in assets/ are maintained directly. The first-party JavaScript is not compiled, bundled or minified; WordPress supplies its native React components and script dependencies.
+
+No npm or Composer build is needed to modify the plugin's browser assets. Edit the JavaScript and CSS files directly. Release packaging copies these source files unchanged into a standard ZIP archive.
+
 == License and credits ==
 
 Bhranti is free software under the GNU General Public License, version 2 or any later version, matching WordPress. See LICENSE for the full text. It is distributed without warranty.
 
-Bundled third-party code keeps its own notices: Bootstrap Icons uses MIT (assets/bootstrap-icons-LICENSE.txt); axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). The bundled axe-core script is built from the publicly available source at https://github.com/dequelabs/axe-core/tree/v4.14.0. The axe-core folder includes source information and additional third-party notices.
+Bundled third-party code keeps its own notices. Bootstrap Icons SVG paths in assets/admin.js and assets/editor.js come from https://github.com/twbs/icons and use MIT (assets/bootstrap-icons-LICENSE.txt).
+
+The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). Its original module source and build instructions are available at https://github.com/dequelabs/axe-core/tree/v4.14.0. The axe-core folder includes the readable upstream distribution, package metadata, source hashes and additional third-party notices.
 
 == Changelog ==
+
+= 1.1 =
+* Add screenshots of editing, live actions and Bhranti on the website.
+* Keep agent and skill instruction panels open while you edit.
+* Improve clean activation across supported hosting environments.
+* Require PHP 8.0 or later and improve compatibility on hosts without optional PHP extensions.
+* Improve source readability and document the included source and third-party libraries.
+* Correct the WordPress.org contributor name.
 
 = 1.0.1 =
 * Add links to the Bhranti website and the plugin author's website.

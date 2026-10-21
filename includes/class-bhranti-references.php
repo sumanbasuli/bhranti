@@ -159,12 +159,17 @@ final class Bhranti_References {
 			return self::error( __( 'The reference must be a readable HTML page. Attach a design image if this page is unavailable.', 'bhranti' ), 422 );
 		}
 		$truncated = strlen( $html ) > 524288;
-		$html      = mb_strcut( $html, 0, 524288, 'UTF-8' );
+		if ( $truncated ) {
+			// Discard only an incomplete trailing character at the exact UTF-8 byte boundary.
+			$html = preg_replace( '/(?:[\xC2-\xDF]|[\xE0-\xEF][\x80-\xBF]?|[\xF0-\xF4][\x80-\xBF]{0,2})\z/', '', substr( $html, 0, 524288 ) );
+		}
 		if ( wp_check_invalid_utf8( $html ) !== $html ) {
 			return self::error( __( 'The reference is not readable UTF-8 text. Attach a design image instead.', 'bhranti' ), 422 );
 		}
 		$visible = preg_replace( '#<(script|style|noscript|template|svg)\b[^>]*>[\s\S]*?(?:</\1\s*>|\z)#i', '', $html );
-		$visible = mb_strcut( $visible, 0, 512000, 'UTF-8' );
+		if ( strlen( $visible ) > 512000 ) {
+			$visible = preg_replace( '/(?:[\xC2-\xDF]|[\xE0-\xEF][\x80-\xBF]?|[\xF0-\xF4][\x80-\xBF]{0,2})\z/', '', substr( $visible, 0, 512000 ) );
+		}
 		$context = Bhranti_Context::page(
 			array(
 				'html' => $visible,

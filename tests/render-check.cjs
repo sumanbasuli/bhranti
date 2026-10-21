@@ -7,8 +7,8 @@ const crypto = require('node:crypto');
 let JSDOM;
 try { ({ JSDOM } = require('jsdom')); } catch (_) { ({ JSDOM } = require('/Users/txsadhu/node_modules/jsdom')); }
 const source = fs.readFileSync(path.join(__dirname, '../assets/render-check.js'), 'utf8');
-const original = 'window.BhrantiRender = Object.freeze({ run });';
-assert.equal(source.split(original).length, 2);
+const original = /window\.BhrantiRender\s*=\s*Object\.freeze\(\s*\{\s*run\s*\}\s*\);/g;
+assert.equal((source.match(original) || []).length, 1);
 const instrumented = source.replace(original, 'window.BhrantiRender = Object.freeze({ run, plain, bytes, INTEGRITY });');
 const axeUrl = 'https://render.invalid/wp-content/plugins/bhranti/assets/vendor/axe-core/axe.js?ver=4.14.0';
 const job = { id: 'd663dfd7-bc9d-4b7b-b801-79e188644212', run_id: 'e47e4df9-40cb-4577-b52f-d58394802a02', step: 7, post_id: 17, path: '/wp/v2/pages/17', url: 'https://render.invalid/fixture/?bhranti_render=9&bhranti_render_job=d663dfd7-bc9d-4b7b-b801-79e188644212', revision: 'a'.repeat(64), environment_revision: 'b'.repeat(64), marker: 'c'.repeat(64), expires: Math.floor(Date.now() / 1000) + 600, engine: 'axe-core', version: '4.14.0', viewports: [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 844 }] };

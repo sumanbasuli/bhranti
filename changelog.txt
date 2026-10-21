@@ -1,5 +1,13 @@
 === Bhranti release history ===
 
+= 1.1 =
+* Add screenshots of editing, live actions and Bhranti on the website.
+* Keep agent and skill instruction panels open while you edit.
+* Improve clean activation across supported hosting environments.
+* Require PHP 8.0 or later and improve compatibility on hosts without optional PHP extensions.
+* Improve source readability and document the included source and third-party libraries.
+* Correct the WordPress.org contributor name.
+
 = 1.0.1 =
 * Add links to the Bhranti website and the plugin author's website.
 

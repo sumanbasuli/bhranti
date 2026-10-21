@@ -47,8 +47,8 @@ jobs:
         shell: bash
         run: |
           version="$(tr -d '[:space:]' < VERSION)"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo 'VERSION must contain major.minor.patch.' >&2
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo 'VERSION must contain major.minor or major.minor.patch.' >&2
             exit 1
           fi
           tag="v$version"
@@ -112,15 +112,18 @@ jobs:
         run: |
           cd build
           sha256sum -c "bhranti-$RELEASE_VERSION.zip.sha256"
+          sha256sum -c wordpress-org-assets.zip.sha256
           cmp bhranti.zip "bhranti-$RELEASE_VERSION.zip"
 
-      - name: Save the installable ZIP for this run
+      - name: Save the plugin and listing assets for this run
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bhranti-${{ steps.version.outputs.version }}-${{ github.run_attempt }}
           path: |
             build/bhranti-${{ steps.version.outputs.version }}.zip
             build/bhranti-${{ steps.version.outputs.version }}.zip.sha256
+            build/wordpress-org-assets.zip
+            build/wordpress-org-assets.zip.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

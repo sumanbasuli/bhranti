@@ -1,43 +1,198 @@
-body.toplevel_page_bhranti { background: #1e1e1e; }
-body.toplevel_page_bhranti #wpcontent { padding-left: 0; margin-right: 12px; margin-bottom: 12px; min-height: calc(100dvh - 44px); border-radius: 12px; background: #fff; overflow: hidden; }
-body.toplevel_page_bhranti #wpbody-content > .wrap { margin: 0; }
-body.toplevel_page_bhranti #wpfooter { bottom: 12px; margin-right: 12px; }
-.bhranti-settings { width: 100%; color: #1e1e1e; }
-.bhranti-settings .bhranti-settings-header { padding: 16px 24px; border-bottom: 1px solid #f0f0f0; background: #fff; }
-.bhranti-settings .bhranti-settings-header h1 { padding: 0; margin: 0; font-size: 20px; font-weight: 500; line-height: 1.6; }
-.bhranti-settings .bhranti-settings-header p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: #50575e; }
-.bhranti-settings .bhranti-settings-content { box-sizing: border-box; width: 100%; max-width: 680px; padding: 24px; margin: 0 auto; }
-.bhranti-settings .bhranti-settings-card { border: 1px solid #ddd; border-radius: 12px; background: #fff; box-shadow: none; margin-bottom: 24px; overflow: hidden; }
-.bhranti-settings .components-card__header { gap: 12px; }
-.bhranti-settings .components-card__header h2 { font-size: 16px; line-height: 1.5; font-weight: 600; margin: 0; }
-.bhranti-settings .components-base-control { margin-bottom: 20px; }
-.bhranti-settings .bhranti-settings-permissions-help { margin: 0 0 24px; color: #50575e; font-size: 13px; line-height: 1.6; }
-.bhranti-settings .components-textarea-control__input { resize: vertical; min-height: 100px; }
-.bhranti-settings .components-panel__body { border: 0; padding: 0; }
-.bhranti-settings .components-panel__body-title { margin: 0; }
-.bhranti-settings .components-panel__body.is-opened > .components-panel__body-title { margin-bottom: 20px; }
-.bhranti-settings .bhranti-settings-skill { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px; padding: 0 16px; }
-.bhranti-settings .bhranti-settings-skill.is-opened { padding-bottom: 16px; }
-.bhranti-settings .bhranti-settings-skills-title { font-size: 14px; font-weight: 600; margin: 24px 0 16px; }
-.bhranti-settings .bhranti-settings-builtin { font-size: 12px; color: #50575e; }
-.bhranti-settings .bhranti-settings-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 32px 0 16px; }
-.bhranti-settings .bhranti-settings-section-heading h2 { margin: 0; font-size: 20px; }
-.bhranti-settings .bhranti-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-.bhranti-settings .bhranti-settings-confirm { margin: 0 0 16px; }
-.bhranti-settings .components-notice { margin: 0 0 20px; }
-.bhranti-settings .components-notice p { margin: 0; }
-.bhranti-settings .bhranti-settings-save { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 24px 0 40px; }
-.bhranti-settings .bhranti-settings-save > span { font-size: 12px; color: #50575e; }
-.bhranti-settings .bhranti-settings-loading { display: flex; align-items: center; gap: 12px; padding: 24px 0; }
-.bhranti-settings .bhranti-settings-memory-help { margin: 0 0 20px; color: #50575e; line-height: 1.6; }
-.bhranti-settings .bhranti-settings-memory-list { margin: 12px 0 20px; padding-left: 20px; list-style: disc; }
-.bhranti-settings .bhranti-settings-memory-list li { margin-bottom: 12px; overflow-wrap: anywhere; }
-.bhranti-settings .bhranti-settings-memory-time { display: block; margin-top: 4px; color: #646970; font-size: 12px; }
+/**
+ * Bhranti — Settings styles.
+ *
+ * Editable runtime source; no compilation is required.
+ *
+ * @license GPL-2.0-or-later
+ */
+body.toplevel_page_bhranti {
+	background: #1e1e1e;
+}
+body.toplevel_page_bhranti #wpcontent {
+	padding-left: 0;
+	margin-right: 12px;
+	margin-bottom: 12px;
+	min-height: calc(100dvh - 44px);
+	border-radius: 12px;
+	background: #fff;
+	overflow: hidden;
+}
+body.toplevel_page_bhranti #wpbody-content > .wrap {
+	margin: 0;
+}
+body.toplevel_page_bhranti #wpfooter {
+	bottom: 12px;
+	margin-right: 12px;
+}
+.bhranti-settings {
+	width: 100%;
+	color: #1e1e1e;
+}
+.bhranti-settings .bhranti-settings-header {
+	padding: 16px 24px;
+	border-bottom: 1px solid #f0f0f0;
+	background: #fff;
+}
+.bhranti-settings .bhranti-settings-header h1 {
+	padding: 0;
+	margin: 0;
+	font-size: 20px;
+	font-weight: 500;
+	line-height: 1.6;
+}
+.bhranti-settings .bhranti-settings-header p {
+	margin: 4px 0 0;
+	font-size: 13px;
+	line-height: 1.6;
+	color: #50575e;
+}
+.bhranti-settings .bhranti-settings-content {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 680px;
+	padding: 24px;
+	margin: 0 auto;
+}
+.bhranti-settings .bhranti-settings-card {
+	border: 1px solid #ddd;
+	border-radius: 12px;
+	background: #fff;
+	box-shadow: none;
+	margin-bottom: 24px;
+	overflow: hidden;
+}
+.bhranti-settings .components-card__header {
+	gap: 12px;
+}
+.bhranti-settings .components-card__header h2 {
+	font-size: 16px;
+	line-height: 1.5;
+	font-weight: 600;
+	margin: 0;
+}
+.bhranti-settings .components-base-control {
+	margin-bottom: 20px;
+}
+.bhranti-settings .bhranti-settings-permissions-help {
+	margin: 0 0 24px;
+	color: #50575e;
+	font-size: 13px;
+	line-height: 1.6;
+}
+.bhranti-settings .components-textarea-control__input {
+	resize: vertical;
+	min-height: 100px;
+}
+.bhranti-settings .components-panel__body {
+	border: 0;
+	padding: 0;
+}
+.bhranti-settings .components-panel__body-title {
+	margin: 0;
+}
+.bhranti-settings
+	.components-panel__body.is-opened
+	> .components-panel__body-title {
+	margin-bottom: 20px;
+}
+.bhranti-settings .bhranti-settings-skill {
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	margin-bottom: 16px;
+	padding: 0 16px;
+}
+.bhranti-settings .bhranti-settings-skill.is-opened {
+	padding-bottom: 16px;
+}
+.bhranti-settings .bhranti-settings-skills-title {
+	font-size: 14px;
+	font-weight: 600;
+	margin: 24px 0 16px;
+}
+.bhranti-settings .bhranti-settings-builtin {
+	font-size: 12px;
+	color: #50575e;
+}
+.bhranti-settings .bhranti-settings-section-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 32px 0 16px;
+}
+.bhranti-settings .bhranti-settings-section-heading h2 {
+	margin: 0;
+	font-size: 20px;
+}
+.bhranti-settings .bhranti-settings-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 12px;
+}
+.bhranti-settings .bhranti-settings-confirm {
+	margin: 0 0 16px;
+}
+.bhranti-settings .components-notice {
+	margin: 0 0 20px;
+}
+.bhranti-settings .components-notice p {
+	margin: 0;
+}
+.bhranti-settings .bhranti-settings-save {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 16px;
+	margin: 24px 0 40px;
+}
+.bhranti-settings .bhranti-settings-save > span {
+	font-size: 12px;
+	color: #50575e;
+}
+.bhranti-settings .bhranti-settings-loading {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 24px 0;
+}
+.bhranti-settings .bhranti-settings-memory-help {
+	margin: 0 0 20px;
+	color: #50575e;
+	line-height: 1.6;
+}
+.bhranti-settings .bhranti-settings-memory-list {
+	margin: 12px 0 20px;
+	padding-left: 20px;
+	list-style: disc;
+}
+.bhranti-settings .bhranti-settings-memory-list li {
+	margin-bottom: 12px;
+	overflow-wrap: anywhere;
+}
+.bhranti-settings .bhranti-settings-memory-time {
+	display: block;
+	margin-top: 4px;
+	color: #646970;
+	font-size: 12px;
+}
 @media (max-width: 782px) {
-	body.toplevel_page_bhranti #wpcontent { padding-left: 0; min-height: calc(100dvh - 58px); }
-	body.toplevel_page_bhranti.bhranti-panel-open #wpcontent, body.toplevel_page_bhranti.bhranti-panel-open #wpfooter { margin-right: 12px; }
+	body.toplevel_page_bhranti #wpcontent {
+		padding-left: 0;
+		min-height: calc(100dvh - 58px);
+	}
+	body.toplevel_page_bhranti.bhranti-panel-open #wpcontent,
+	body.toplevel_page_bhranti.bhranti-panel-open #wpfooter {
+		margin-right: 12px;
+	}
 }
 @media (max-width: 480px) {
-	.bhranti-settings .bhranti-settings-header { padding: 16px; }
-	.bhranti-settings .bhranti-settings-content { padding: 16px; }
+	.bhranti-settings .bhranti-settings-header {
+		padding: 16px;
+	}
+	.bhranti-settings .bhranti-settings-content {
+		padding: 16px;
+	}
 }

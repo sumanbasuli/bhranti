@@ -21,6 +21,7 @@ function get_translations_for_domain( $domain ) { return new class { public func
 function wp_strip_all_tags( $value ) { return strip_tags( $value ); }
 function get_bloginfo( $key ) { return 'Offline test site'; }
 function home_url( $path = '' ) { return 'https://bhranti.wp.local' . $path; }
+function wp_timezone_string() { return 'UTC'; }
 function wp_get_theme() { return new class { public function get( $key ) { return 'Fixture theme'; } }; }
 function wp_count_posts( $type ) { return (object) array( 'publish' => 0 ); }
 function add_action( ...$args ) { return true; }

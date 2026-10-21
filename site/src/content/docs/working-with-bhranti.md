@@ -23,7 +23,7 @@ The task strip above the composer reflects the current work. Common messages inc
 - **Running a WordPress action…** or a named action — Bhranti is carrying out that step.
 - **Waiting for the rendered preview check** — keep Bhranti open while it checks how the saved page displays.
 - **Waiting for your answer** — reply to the question in the chat.
-- **Waiting for your approval** — review the action and select **Approve** or **Deny**.
+- **Waiting for your approval** — review the action and select **Approve**, or decline with **Cancel** or **Deny** as shown on the card.
 - **Completed**, **Partially complete**, or **Task stopped** — read the final result to see what was finished and what remains.
 
 The status shows how long the current step has been running. Replies appear when that step is ready.

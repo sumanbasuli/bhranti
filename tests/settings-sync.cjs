@@ -41,6 +41,13 @@ function fixture(options = {}) {
     const id = element.useId();
     return h('div', { className: 'components-base-control' }, h('label', { htmlFor: id }, label), h(rows ? 'textarea' : 'input', { id, value, rows, disabled, type, min, max, step, onInput: (event) => onChange(event.target.value) }), help ? h('p', null, help) : null);
   }
+  function PanelBody({ children, title, initialOpen = true, className = '' }) {
+    // Core uses initialOpen while untouched, then retains the user's own toggle.
+    const [opened, setOpened] = element.useState(undefined);
+    if (!options.disclosures) return h('section', { className: 'components-panel__body ' + className }, h('h3', null, title), children);
+    const isOpened = opened === undefined ? initialOpen : opened;
+    return h('section', { className: 'components-panel__body ' + className + (isOpened ? ' is-opened' : '') }, h('h3', null, h('button', { type: 'button', 'aria-expanded': isOpened, onClick: () => setOpened(!isOpened) }, title)), isOpened ? children : null);
+  }
   // Mock native component control glue only. Hooks, batching, layout/effects,
   // roots, controlled inputs and synthetic event propagation remain real.
   w.wp.element = { ...element, createRoot: (...args) => { root = element.createRoot(...args); return root; } };
@@ -49,7 +56,7 @@ function fixture(options = {}) {
     ToggleControl: ({ label, checked, disabled, onChange }) => { const id = element.useId(); return h('label', { htmlFor: id }, label, h('input', { id, type: 'checkbox', checked, disabled, onChange: (event) => onChange(event.target.checked) })); },
     Button: ({ children, onClick, disabled, isBusy, className }) => h('button', { type: 'button', onClick, disabled, className, 'aria-busy': isBusy ? 'true' : undefined }, children),
     Notice: ({ children, status }) => h('section', { role: 'status', className: 'components-notice is-' + status }, children), Spinner: () => h('span', null, 'Loading'),
-    PanelBody: ({ children, title }) => h('section', { className: 'components-panel__body' }, h('h3', null, title), children),
+    PanelBody,
   };
   w.wp.i18n = { __: (text) => text };
   w.wp.apiFetch = async (request) => {
@@ -107,6 +114,67 @@ async function testInitialAndReactDirty() {
     equal(page.field('Task step limit').value, '240', 'React stores the requested limit'); equal(page.posts().length, 0, 'Editing and React add/remove never save automatically'); equal(page.gets().length, 1, 'Local edits never invent refresh reads');
     check(page.states.every((state) => state.detail === null && ['true', 'false'].includes(state.dirty) && ['true', 'false'].includes(state.busy)), 'Published state carries only the authoritative boolean dataset, without config or document payloads');
   } finally { held.resolve(initial()); await page.close(); }
+}
+
+async function testInstructionPanelDefaultsAndEditing() {
+  const page = fixture({ disclosures: true });
+  try {
+    await until(page, () => page.mount.dataset.bhrantiBusy === 'false', 'Initial empty instruction panel load');
+    const agentPanel = page.field('Agent instructions (agent.md)').closest('.components-panel__body');
+    check(agentPanel.classList.contains('is-opened'), 'An empty agent starts with instructions open');
+    page.field('Agent instructions (agent.md)').focus();
+    await page.input('Agent instructions (agent.md)', 'W');
+    check(agentPanel.classList.contains('is-opened'), 'The first agent instruction character cannot collapse its panel');
+    equal(page.w.document.activeElement, page.field('Agent instructions (agent.md)'), 'Typing retains the active instruction field');
+    await page.input('Agent instructions (agent.md)', 'Write clear and helpful copy.');
+    equal(page.field('Agent instructions (agent.md)').value, 'Write clear and helpful copy.', 'Further agent edits remain visible');
+    await page.click('Add skill');
+    check(agentPanel.classList.contains('is-opened'), 'Adding the first skill cannot collapse the containing agent');
+    let skillPanel = page.field('Skill name').closest('.components-panel__body');
+    check(skillPanel.classList.contains('is-opened'), 'A new empty skill starts open');
+    await page.input('Skill name', 'R');
+    check(skillPanel.classList.contains('is-opened'), 'The first skill name character cannot collapse its panel');
+    await page.input('Skill instructions (skill.md)', 'Review the saved content.');
+    equal(page.field('Skill instructions (skill.md)').value, 'Review the saved content.', 'Named skill instruction edits remain visible');
+    await page.click('R');
+    check(!skillPanel.classList.contains('is-opened'), 'The user can explicitly collapse a new skill');
+    await page.input('System prompt', 'Keep manual panel choices.');
+    check(!skillPanel.classList.contains('is-opened'), 'Other edits retain the user-collapsed skill');
+    await page.click('Add skill');
+    await page.input('Skill instructions (skill.md)', 'Instructions before a skill name.');
+    const unnamedSkill = page.field('Skill instructions (skill.md)').closest('.components-panel__body');
+    check(unnamedSkill.classList.contains('is-opened'), 'Typing instructions first also keeps an empty skill open');
+    await page.input('Skill name', 'Review later');
+    await page.click('Add agent');
+    await page.input('Agent name', 'Copy editor', 1);
+    await page.input('Agent instructions (agent.md)', 'Improve content clarity.', 1);
+    check(page.field('Agent instructions (agent.md)', 1).closest('.components-panel__body').classList.contains('is-opened'), 'A new agent retains its own open default while being filled in');
+    equal(page.posts().length, 0, 'Panel editing never autosaves settings');
+    await page.click('Save settings');
+    check(!skillPanel.classList.contains('is-opened'), 'Save acknowledgement preserves the user-collapsed skill');
+    check(unnamedSkill.classList.contains('is-opened'), 'Save acknowledgement preserves an untouched open skill');
+    check(agentPanel.classList.contains('is-opened'), 'Save acknowledgement preserves the original open agent');
+  } finally { await page.close(); }
+
+  const saved = initial();
+  saved.config.agents[0].agent_md = 'Existing saved instructions.';
+  saved.config.agents[0].skills.push({ id: 'existing-skill', name: 'Existing skill', skill_md: 'Existing saved skill.' });
+  const loaded = fixture({ disclosures: true, saved });
+  try {
+    await until(loaded, () => loaded.mount.dataset.bhrantiBusy === 'false', 'Saved instruction panels load');
+    equal(loaded.button('Instructions and skills').getAttribute('aria-expanded'), 'false', 'An already populated agent starts collapsed');
+    await loaded.click('Instructions and skills');
+    equal(loaded.button('Existing skill').getAttribute('aria-expanded'), 'false', 'An already populated skill starts collapsed');
+    await loaded.click('Existing skill');
+    await loaded.input('Skill instructions (skill.md)', 'Updated saved skill instructions.');
+    equal(loaded.button('Existing skill').getAttribute('aria-expanded'), 'true', 'An explicitly opened saved skill stays open while edited');
+    await loaded.click('Instructions and skills');
+    await loaded.input('System prompt', 'Unrelated update.');
+    equal(loaded.button('Instructions and skills').getAttribute('aria-expanded'), 'false', 'The user can collapse the agent and retain that choice during other edits');
+    await loaded.click('Instructions and skills');
+    await loaded.click('Existing skill');
+    equal(loaded.field('Skill instructions (skill.md)').value, 'Updated saved skill instructions.', 'Opening the agent again retains its unsaved skill document');
+  } finally { await loaded.close(); }
 }
 
 async function testAcknowledgedAndFailedSave() {
@@ -272,7 +340,7 @@ async function testMemoryFailureAndAvailability() {
 }
 
 async function main() {
-  for (const test of [testInitialAndReactDirty, testAcknowledgedAndFailedSave, testCommittedCleanRefreshAndDirtyDeferral, testEditsDuringRefresh, testChangedThenRestoredDuringRefresh, testCommitWhileSaving, testRefreshFailureAndUnmount, testNewCommitDuringRefresh, testMemoryReviewAndConfirmedReset, testMemoryFailureAndAvailability]) { currentCase = test.name; await test(); }
+  for (const test of [testInstructionPanelDefaultsAndEditing, testInitialAndReactDirty, testAcknowledgedAndFailedSave, testCommittedCleanRefreshAndDirtyDeferral, testEditsDuringRefresh, testChangedThenRestoredDuringRefresh, testCommitWhileSaving, testRefreshFailureAndUnmount, testNewCommitDuringRefresh, testMemoryReviewAndConfirmedReset, testMemoryFailureAndAvailability]) { currentCase = test.name; await test(); }
   equal(httpCalls, 0, 'All Settings React checks remain offline');
   console.log('PASS ' + checks + ' Settings sync checks; real WordPress React/element; no HTTP, AI, WordPress load or DB');
 }

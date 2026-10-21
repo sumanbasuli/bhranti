@@ -11,7 +11,7 @@ Bhranti opens beside WordPress, so you can ask for help where you are already wo
 
 You need:
 
-- **WordPress 7.0 or later** and **PHP 7.4 or later**.
+- **WordPress 7.0 or later** and **PHP 8.0 or later**.
 - An administrator account. First-time setup also needs permission to add users.
 - A compatible text provider configured in WordPress’s native **Settings → Connectors** screen.
 
@@ -25,13 +25,15 @@ You need:
 
 If you manage plugins through the filesystem, place the Bhranti folder in `wp-content/plugins`, then activate it from **Plugins**.
 
+Use the installable Bhranti release ZIP. GitHub’s automatic **Source code** archives contain the development checkout and are not the installation package. The [public GitHub repository](https://github.com/sumanbasuli/bhranti) contains the source, build instructions and issue tracker.
+
 ## 2. Connect your AI provider
 
 1. Open **Settings → Connectors** in WordPress.
 2. Follow your chosen provider’s setup instructions.
 3. Complete any connection approval your site asks for.
 
-Manage your provider connection and model in Connectors. You do not need to enter an API key in Bhranti Settings or install the separate WordPress AI plugin.
+Manage your provider connection in Connectors. Available models and features depend on that connection. You do not need to enter an API key in Bhranti Settings or install the separate WordPress AI plugin.
 
 ## 3. Open the sidebar
 

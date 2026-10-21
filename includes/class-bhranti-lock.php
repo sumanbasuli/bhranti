@@ -387,13 +387,32 @@ final class Bhranti_Lock {
 		if ( false !== $before && ! self::regular_file( $before ) ) {
 			return false;
 		}
-		$previous_umask = umask( 0077 );
-		try {
-			$handle = @fopen( $path, 'c' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem cannot provide a flock-capable handle; failure must be handled without warnings.
-		} finally {
-			umask( $previous_umask );
+		$created = false;
+		if ( false === $before ) {
+			$previous_umask = umask( 0077 );
+			try {
+				$handle = @fopen( $path, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Exclusive creation identifies the empty inode this request may secure.
+			} finally {
+				umask( $previous_umask );
+			}
+			$created = is_resource( $handle );
+			if ( ! $created ) {
+				clearstatcache( true, $path );
+				$before = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A failed exclusive create may mean another worker created the sidecar.
+			}
+		}
+		if ( ! $created ) {
+			if ( ! self::regular_file( $before ) || 0 !== ( $before['mode'] & 0077 ) ) {
+				return false;
+			}
+			$handle = @fopen( $path, 'r+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Open only the existing inode; a removed sidecar must never be recreated here.
 		}
 		if ( false === $handle ) {
+			return false;
+		}
+		if ( $created && ! self::secure_created_sqlite_guard( $path, $handle ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- A sidecar that could not be secured must not become an advisory lock.
+			fclose( $handle );
 			return false;
 		}
 		clearstatcache( true, $path );
@@ -405,6 +424,42 @@ final class Bhranti_Lock {
 			return false;
 		}
 		return $handle;
+	}
+
+	/**
+	 * Secure only the empty sidecar inode exclusively created by this request.
+	 *
+	 * Filesystems may ignore umask. Existing or replaced sidecars must pass the
+	 * normal strict checks and are never repaired or unlinked here.
+	 *
+	 * @param string   $path New sidecar path.
+	 * @param resource $handle Exclusively created sidecar handle.
+	 * @return bool Whether the same private inode is safe to lock.
+	 */
+	private static function secure_created_sqlite_guard( $path, $handle ) {
+		clearstatcache( true, $path );
+		$path_stat = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing or replaced sidecars must fail closed.
+		$open_stat = fstat( $handle );
+		foreach ( array( $path_stat, $open_stat ) as $stat ) {
+			if ( ! self::regular_file( $stat ) || 1 !== $stat['nlink'] || 0 !== $stat['size'] ) {
+				return false;
+			}
+		}
+		if ( $path_stat['dev'] !== $open_stat['dev'] || $path_stat['ino'] !== $open_stat['ino'] ) {
+			return false;
+		}
+		if ( ( 0600 !== ( $path_stat['mode'] & 0777 ) || 0600 !== ( $open_stat['mode'] & 0777 ) ) && ! @chmod( $path, 0600 ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Only the verified new empty inode may receive private permissions.
+			return false;
+		}
+		clearstatcache( true, $path );
+		$secured_path = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Verify the secured inode again before granting a handle.
+		$secured_open = fstat( $handle );
+		foreach ( array( $secured_path, $secured_open ) as $stat ) {
+			if ( ! self::regular_file( $stat ) || 1 !== $stat['nlink'] || 0 !== $stat['size'] || 0600 !== ( $stat['mode'] & 0777 ) || $path_stat['dev'] !== $stat['dev'] || $path_stat['ino'] !== $stat['ino'] ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

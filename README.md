@@ -4,7 +4,7 @@ An AI assistant that works alongside you in WordPress.
 
 Ask Bhranti to update a page, improve your writing, find an image or help set up a product catalog. It reads the relevant content, makes supported changes and shows its actions in a chat beside your editor.
 
-Requires WordPress 7.0+, PHP 7.4+ and a compatible AI text connection in **Settings → Connectors**. Image features depend on the connector and model. AI usage may count toward your provider allowance or incur charges.
+Requires WordPress 7.0+, PHP 8.0+ and a compatible AI text connection in **Settings → Connectors**. Image features depend on the connector and model. AI usage may count toward your provider allowance or incur charges.
 
 ## What you can do
 
@@ -15,6 +15,20 @@ Requires WordPress 7.0+, PHP 7.4+ and a compatible AI text connection in **Setti
 - Give Bhranti page, block or chosen image context while keeping your work visible.
 - Create agents with pasted agent.md instructions, add skill.md guidance, and save preferences you explicitly ask it to remember.
 - Follow longer tasks through saved work plans, background continuation and searchable activity logs.
+
+## Screenshots
+
+Edit a post beside Bhranti and review its saved changes and action history.
+
+![Bhranti beside the WordPress editor, showing saved changes and action history.](wordpress-org/assets/screenshot-1.jpg)
+
+Follow Bhranti's actions while the editor is protected from accidental edits.
+
+![Bhranti working on a post with its live actions and editor control overlay visible.](wordpress-org/assets/screenshot-2.jpg)
+
+Preview the updated draft on your site while keeping the conversation open.
+
+![The updated draft on the website with the Bhranti conversation open beside it.](wordpress-org/assets/screenshot-3.jpg)
 
 ## Get started
 

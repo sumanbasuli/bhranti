@@ -1716,7 +1716,8 @@ final class Bhranti_Actions {
 				'post_content_filtered' => 'post',
 			) as $field => $context ) {
 				$content = $post->$field;
-				if ( wp_kses( $content, $context ) !== $content ) {
+				$allowed = wp_kses( $content, $context );
+				if ( $allowed !== $content && self::void_tag_spacing( $allowed ) !== self::void_tag_spacing( $content ) ) {
 					return self::error( 'bhranti_action_preservation', __( 'This item contains markup Bhranti cannot preserve with its allowed permissions. Edit it in WordPress first.', 'bhranti' ), 403 );
 				}
 			}
@@ -1724,6 +1725,28 @@ final class Bhranti_Actions {
 			wp_set_current_user( $previous_user );
 		}
 		return true;
+	}
+
+	/**
+	 * Compare only optional whitespace before a void element's self-closing slash.
+	 *
+	 * KSES can insert this space while preserving an otherwise identical image.
+	 * Quoted attributes are whole tokens so their contents are never normalized.
+	 * Every other byte, including spacing in non-void tags, remains significant.
+	 *
+	 * @param string $content Saved or KSES-filtered markup.
+	 * @return string
+	 */
+	private static function void_tag_spacing( $content ) {
+		$normalized = preg_replace_callback(
+			'~<(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)(?=[\x20\t\r\n\f/>])(?:[^<>"\'/]++|/(?!>)|"[^"]*+"|\'[^\']*+\')*/>~i',
+			static function ( $tag ) {
+				$normalized = preg_replace( '/[\x20\t\r\n\f]+\/>\z/', '/>', $tag[0] );
+				return is_string( $normalized ) ? $normalized : $tag[0];
+			},
+			$content
+		);
+		return is_string( $normalized ) ? $normalized : $content;
 	}
 
 	/**

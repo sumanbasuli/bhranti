@@ -59,6 +59,12 @@ The button is labelled **Roll back**. Open the conversation, expand the complete
 
 Supported changes can be rolled back for seven days, provided later edits do not conflict. Restoring a page leaves generated images in Media Library. Plugin uninstall and sent emails cannot be undone this way. Form notification destination changes and visibility changes that would expose pages need a new request and approval instead of Roll back. See [Approvals and Undo](/docs/permissions-and-undo/) for the full limits.
 
+## The browser preview check could not finish
+
+Keep the same conversation open and open the saved page through WordPress’s **Preview** while signed in. If the preview itself fails to load, resolve that page or sign-in problem first. Then ask Bhranti to check the saved page again and keep the sidebar open while it works.
+
+Earlier saved changes remain in place. Treat the rendered check as unfinished until it returns a result; review the page before publishing. See [Review the rendered page](/docs/content-workflows/#review-the-rendered-page) for what these checks cover.
+
 ## My attachment was rejected
 
 Use a valid PNG, JPEG or WebP file within the size and pixel limits. If the image is incomplete, export a fresh copy. You can attach one reference image or screenshot at a time; document files are not supported.

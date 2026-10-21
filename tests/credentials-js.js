@@ -81,9 +81,9 @@ assert.equal(sandbox.window.bhrantiCredentials.contains(fakeKey), true, 'Global 
 
 function session(id = 17) { return { id, agent_id: 'bhranti', messages: [{ role: 'assistant', content: 'Earlier response' }], events: [], run: { id: 'old-run-' + id, status: 'complete', step: 1, phase: '' } }; }
 const workspace = { sessions: [{ id: 17, title: 'First chat' }, { id: 18, title: 'Second chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
-const marker = 'syncTrigger(); if (settings.autoOpen) openPanel();';
-assert.equal(admin.split(marker).length, 2);
-const instrumented = admin.replace(marker, 'window.review = { state, render, sendMessage, newChat, openSession, restoreDraft, rememberDraft, draftKey }; ' + marker);
+const marker = /syncTrigger\(\s*\);\s*if\s*\(\s*settings\.autoOpen\s*\)\s*openPanel\(\s*\);/g;
+assert.equal((admin.match(marker) || []).length, 1);
+const instrumented = admin.replace(marker, (initializer) => 'window.review = { state, render, sendMessage, newChat, openSession, restoreDraft, rememberDraft, draftKey }; ' + initializer);
 function fixture(options = {}) {
   const dom = new JSDOM('<main id="wpbody-content"><p id="native-content">Ordinary native content</p></main><div id="bhranti-app"></div>', { url: 'https://fixture.test/wp-admin/edit.php', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, requests = [];
@@ -180,8 +180,8 @@ async function uiChecks() {
   } finally { page.close(); }
 }
 async function settingsChecks() {
-  const validateSource = settings.slice(settings.indexOf('\tfunction validate(config) {'), settings.indexOf('\tfunction validMemory(result) {'));
-  const saveSource = settings.slice(settings.indexOf('\t\tasync function save() {'), settings.indexOf('\t\tfunction changeAgent('));
+  const validateSource = settings.match(/\tfunction validate\(\s*config\s*\)\s*\{[\s\S]*?(?=\n\tfunction validMemory\()/)[0];
+  const saveSource = settings.match(/\t\tasync function save\(\s*\)\s*\{[\s\S]*?(?=\n\t\tfunction changeAgent\()/)[0];
   const config = { max_steps: 128, permissions: {}, system_prompt: fakeKey, guardrails: '', agents: [{ id: 'bhranti', name: 'Bhranti', agent_md: '', skills: [] }] };
   const notices = [], posts = [];
   const context = { window: sandbox.window, config, docLimit: 16000, __: (text) => text, validPermissions: () => true, saving: false, loading: false, setNotice: (notice) => notices.push(notice), setSaving() {}, wp: { apiFetch: (request) => posts.push(request) } };

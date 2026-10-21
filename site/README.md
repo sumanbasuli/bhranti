@@ -2,6 +2,8 @@
 
 The public product site and documentation for **bhranti.org**, built with Astro. The site is static: it needs no WordPress installation, database, server adapter, or connector credentials.
 
+The plugin and website source are maintained in the [public Bhranti repository](https://github.com/sumanbasuli/bhranti). Plugin release metadata lives in `src/data/release.ts`; keep its version and WordPress/PHP requirements aligned with `../VERSION`, `../bhranti.php` and `../readme.txt` before deploying.
+
 ## Work locally
 
 Use Node.js 22.12 or newer (Node 24 is recommended).

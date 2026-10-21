@@ -4,6 +4,9 @@ define('ABSPATH', rtrim(getenv('BHRANTI_TEST_WP_ROOT') ?: '/Users/txsadhu/Docume
 define('WPINC','wp-includes'); define('WP_DEBUG',true); define('BHRANTI_VERSION','fixture');
 define('WP_CONTENT_DIR',getenv('BHRANTI_MEMORY_TEST_SHARED_ROOT') ?: sys_get_temp_dir().'/bhranti-memory-offline-'.getmypid().'-'.bin2hex(random_bytes(4)));
 define('DAY_IN_SECONDS',86400);
+if ( in_array( '--ignored-umask-probe', $argv, true ) && ! function_exists( 'umask' ) ) {
+	function umask( $mask = null ) { return 0; }
+}
 foreach(array('KB','MB','GB','TB','PB','EB','ZB','YB')as$i=>$unit){define($unit.'_IN_BYTES',pow(1024,$i+1));}
 if(!is_dir(WP_CONTENT_DIR)){mkdir(WP_CONTENT_DIR,0700);}
 require ABSPATH.WPINC.'/load.php'; require ABSPATH.WPINC.'/compat.php'; require ABSPATH.WPINC.'/utf8.php'; require ABSPATH.WPINC.'/plugin.php'; require ABSPATH.WPINC.'/functions.php'; require ABSPATH.WPINC.'/formatting.php'; require ABSPATH.WPINC.'/class-wp-error.php'; require ABSPATH.WPINC.'/class-wp-http-response.php'; require ABSPATH.WPINC.'/class-wp-list-util.php'; require ABSPATH.WPINC.'/rest-api/class-wp-rest-response.php'; require ABSPATH.WPINC.'/rest-api/class-wp-rest-request.php'; require ABSPATH.WPINC.'/rest-api/class-wp-rest-server.php'; require ABSPATH.WPINC.'/rest-api.php';
@@ -29,10 +32,31 @@ function mm_end_uninstall_request(){$property=new ReflectionProperty(Bhranti_Mem
 function mm_wait_for($path){$deadline=microtime(true)+8;while(!file_exists($path)&&microtime(true)<$deadline){usleep(20000);}return file_exists($path);}
 function mm_encrypt($state,$extra=array()){$nonce=random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);$key=hash_hmac('sha256','bhranti-memory-v1|1|7',wp_salt('auth'),true);return Bhranti_Memory::GUARD.base64_encode($nonce.sodium_crypto_secretbox(wp_json_encode(array_merge(array('version'=>1,'site'=>1,'owner'=>7,'data'=>$state),$extra)),$nonce,$key));}
 try {
+ if ( in_array( '--ignored-umask-probe', $argv, true ) ) {
+	$probe = WP_CONTENT_DIR . '/umask-probe';
+	$previous_mask = umask( 0177 );
+	$handle = fopen( $probe, 'x+' );
+	mm_check( is_resource( $handle ) && 0 !== ( fstat( $handle )['mode'] & 0077 ), 'The isolated runtime ignores the requested private creation mask.' );
+	fclose( $handle ); unlink( $probe ); umask( $previous_mask );
+	ob_start(); $activated = Bhranti_Memory::activate( false ); $output = ob_get_clean();
+	$gate = WP_CONTENT_DIR . '/.bhranti-memory-site-1.php';
+	mm_check( true === $activated && '' === $output && 0600 === ( fileperms( $gate ) & 0777 ) && Bhranti_Memory::GATE_ACTIVE === file_get_contents( $gate ), 'A newly created gate is secured explicitly and activates silently when umask is ignored.' );
+	chmod( $gate, 0644 );
+	add_filter( 'wp_die_handler', static function () { return static function ( $message ) { throw new RuntimeException( $message ); }; } );
+	try { Bhranti_Memory::activate( false ); throw new RuntimeException( 'Invalid existing gate was repaired.' ); }
+	catch ( RuntimeException $error ) { mm_check( false !== strpos( $error->getMessage(), 'Bhranti could not safely enable private memory' ) && 0644 === ( fileperms( $gate ) & 0777 ) && Bhranti_Memory::GATE_ACTIVE === file_get_contents( $gate ), 'Existing public gates still fail closed without permission or state changes.' ); }
+	echo 'PASS ' . $GLOBALS['mm_checks'] . " ignored-umask activation checks.\n";
+	return;
+ }
  if(in_array('--no-crypto',$argv,true)){mm_check(!function_exists('sodium_crypto_secretbox'),'Unsupported crypto simulated in isolated process.');mm_check(false===Bhranti_Memory::get()['available'],'Absent memory is unavailable when encryption is unsupported.');mm_check(!file_exists(WP_CONTENT_DIR.'/bhranti-memory'),'Unsupported read never initializes storage.');echo 'PASS '.$GLOBALS['mm_checks']." unavailable-crypto checks.\n";return;}
  if(in_array('--network-activate-probe',$argv,true)){define('MULTISITE',true);add_filter('wp_die_handler',static function(){return static function($message){throw new RuntimeException($message);};});try{Bhranti_Memory::activate(false);throw new RuntimeException('Activation unexpectedly succeeded during network uninstall.');}catch(RuntimeException $error){mm_check(false!==strpos($error->getMessage(),'Bhranti could not safely enable private memory'),'Network gate blocks activation in a separate PHP process.');}echo 'PASS '.$GLOBALS['mm_checks']." network activation probe.\n";return;}
  if(in_array('--network-write-probe',$argv,true)){define('MULTISITE',true);$GLOBALS['blog_id']=9999;$text='I prefer cool blue colors';$evidence='Please remember: '.$text.'.';$GLOBALS['mm_messages']=array(array('role'=>'user','content'=>$evidence));$write=mm_tool(array('method'=>'POST','category'=>'design','text'=>$text,'evidence'=>$evidence,'revision'=>'initial'));mm_check(is_wp_error($write)&&'bhranti_memory_busy'===$write->get_error_code()&&!file_exists(mm_path(7,9999)),'An unswept site cannot write private memory during network uninstall.');echo 'PASS '.$GLOBALS['mm_checks']." unswept network write probe.\n";return;}
  if(in_array('--race-writer',$argv,true)){$GLOBALS['blog_id']=2;$text='I prefer warm earth colors';$evidence='Please remember: '.$text.'.';$GLOBALS['mm_messages']=array(array('role'=>'user','content'=>$evidence));$args=array('method'=>'POST','category'=>'design','text'=>$text,'evidence'=>$evidence,'revision'=>'initial');file_put_contents(WP_CONTENT_DIR.'/.race-ready','1');mm_check(mm_wait_for(WP_CONTENT_DIR.'/.race-go-held'),'Writer waited for successful uninstall.');$held=mm_tool($args);mm_check(is_wp_error($held)&&'bhranti_memory_busy'===$held->get_error_code(),'A loaded writer cannot enter while successful uninstall retains the gate.');file_put_contents(WP_CONTENT_DIR.'/.race-held-done','1');mm_check(mm_wait_for(WP_CONTENT_DIR.'/.race-go-after'),'Writer waited for uninstall request end.');$after=mm_tool($args);mm_check(is_wp_error($after)&&'bhranti_memory_storage'===$after->get_error_code()&&!file_exists(mm_path(7,2)),'Durable tombstone rejects a prestarted writer after uninstall request ends.');echo 'PASS '.$GLOBALS['mm_checks']." two-process writer checks.\n";return;}
+ $probe_env = array_merge( getenv(), array( 'BHRANTI_MEMORY_TEST_SHARED_ROOT' => '', 'BHRANTI_TEST_WP_ROOT' => rtrim( ABSPATH, '/' ) ) );
+ $probe_process = proc_open( array( PHP_BINARY, '-d', 'disable_functions=umask', __FILE__, '--ignored-umask-probe' ), array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $probe_pipes, dirname( __DIR__ ), $probe_env );
+ mm_check( is_resource( $probe_process ), 'Ignored-umask activation probe starts in a separate private fixture.' );
+ $probe_output = stream_get_contents( $probe_pipes[1] ); $probe_error = stream_get_contents( $probe_pipes[2] ); fclose( $probe_pipes[1] ); fclose( $probe_pipes[2] );
+ mm_check( 0 === proc_close( $probe_process ) && false !== strpos( $probe_output, 'ignored-umask activation checks' ) && '' === $probe_error, 'Ignored-umask activation secures new gates and preserves invalid existing gates. ' . $probe_error );
  $gate1=WP_CONTENT_DIR.'/.bhranti-memory-site-1.php';
  mm_check(true===Bhranti_Memory::uninstall_site()&&!file_exists(WP_CONTENT_DIR.'/bhranti-memory'),'Uninstall succeeds with no private memory directory.');
  mm_check(Bhranti_Memory::GATE_UNINSTALLED===file_get_contents($gate1)&&0600===(fileperms($gate1)&0777),'Even empty uninstall leaves a private PHP-guarded tombstone.');

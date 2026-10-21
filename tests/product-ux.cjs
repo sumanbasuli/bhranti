@@ -10,12 +10,12 @@ catch { ({ JSDOM } = require(process.env.BHRANTI_TEST_JSDOM_PATH || '/Users/txsa
 const scriptPath = path.join(process.env.BHRANTI_TEST_PLUGIN_ROOT || path.dirname(__dirname), 'assets/admin.js');
 const source = fs.readFileSync(scriptPath, 'utf8');
 const exposedNames = [...source.matchAll(/^\t(?:async )?function (\w+)\(/gm)].map((match) => match[1]);
-const marker = 'syncTrigger(); if (settings.autoOpen) openPanel();';
-assert.equal(source.split(marker).length, 2, 'Instrument only the known final initializer');
+const marker = /syncTrigger\(\s*\);\s*if\s*\(\s*settings\.autoOpen\s*\)\s*openPanel\(\s*\);/g;
+assert.equal((source.match(marker) || []).length, 1, 'Instrument only the known final initializer');
 const instrumented = source
   .replace(/window\.location\.assign\(([^;]+)\);/g, 'window.review.navigation.push({ kind: "assign", url: $1 });')
   .replace(/window\.location\.reload\([^;]*\);/g, 'window.review.navigation.push({ kind: "reload", url: window.location.href });')
-  .replace(marker, 'window.review = { state, ' + exposedNames.join(', ') + ', navigation: [] }; ' + marker);
+  .replace(marker, (initializer) => 'window.review = { state, ' + exposedNames.join(', ') + ', navigation: [] }; ' + initializer);
 const runId = '90000000-1000-4000-8000-100000000017';
 const historical = { id: 'old-action', type: 'action', action_id: 'old-snapshot', summary: 'Earlier draft updated.', target: { id: 99, type: 'page', title: 'Fixture page', url: '/wp-admin/post.php?post=99&action=edit' }, created: '2026-10-09T00:00:01Z' };
 const message = { role: 'user', content: 'The local test task.', created: '2026-10-09T00:00:00Z' };
