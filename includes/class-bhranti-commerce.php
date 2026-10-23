@@ -39,7 +39,7 @@ final class Bhranti_Commerce {
 	 *
 	 * @param array $command Pending command.
 	 * @param int   $requester_id Human administrator.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array
 	 */
 	public static function progress( $command, $requester_id, $actor_id ) {
@@ -109,7 +109,7 @@ final class Bhranti_Commerce {
 			return $actor_id;
 		}
 		if ( ! user_can( $requester_id, 'manage_options' ) || ! user_can( $actor_id, 'manage_options' ) ) {
-			return self::error( 'bhranti_commerce_permission', __( 'Both your account and Bhranti need permission to manage this workspace.', 'bhranti' ), 403 );
+			return self::error( 'bhranti_commerce_permission', __( 'Your account needs permission to manage this workspace.', 'bhranti' ), 403 );
 		}
 		if ( self::discovery_command( $command ) ) {
 			$logged = self::audit(
@@ -470,7 +470,7 @@ final class Bhranti_Commerce {
 	 *
 	 * @param array $command Parsed tool command.
 	 * @param int   $requester_id Human administrator.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @param bool  $recovery Internal Undo, never supplied by the model.
 	 * @return array|WP_Error
 	 */
@@ -729,66 +729,39 @@ final class Bhranti_Commerce {
 	 * Run the unchanged native permission callback with the requested identity.
 	 *
 	 * @param array $review Reviewed request.
-	 * @param int   $user_id Human or managed actor.
+	 * @param int   $user_id Requesting WordPress user.
 	 * @return true|WP_Error
 	 */
 	private static function permission( $review, $user_id ) {
-		$original = get_current_user_id();
-		try {
-			wp_set_current_user( $user_id );
-			$allowed = call_user_func( $review['endpoint']['permission_callback'], $review['request'] );
-			return true === $allowed ? true : self::error( 'bhranti_commerce_permission', __( 'Both your account and Bhranti need permission for this store action.', 'bhranti' ), 403 );
-		} finally {
-			wp_set_current_user( $original );
+		$identity = Bhranti_Identity::requester( $user_id );
+		if ( is_wp_error( $identity ) ) {
+			return $identity;
 		}
+		$allowed = call_user_func( $review['endpoint']['permission_callback'], $review['request'] );
+		return true === $allowed ? true : self::error( 'bhranti_commerce_permission', __( 'Your account needs permission for this store action.', 'bhranti' ), 403 );
 	}
 
 	/**
-	 * Grant only native Woo capabilities during this one human-permitted operation.
+	 * Use the requesting user's existing native WooCommerce capabilities.
 	 *
 	 * @param array    $review Reviewed request.
-	 * @param int      $actor_id Managed actor.
+	 * @param int      $actor_id Requesting WordPress user.
 	 * @param callable $callback Native permission, dispatch or restoration.
 	 * @return mixed
 	 */
 	private static function acting( $review, $actor_id, $callback ) {
-		if ( 'setting' === $review['kind'] || Bhranti_Commerce_Setup::handles( $review['kind'] ) ) {
-			$capabilities = array( 'manage_woocommerce' );
-		} elseif ( 'category' === $review['kind'] ) {
-			$capabilities = 'GET' === $review['method'] ? array( 'manage_product_terms' ) : ( 'DELETE' === $review['method'] ? array( 'delete_product_terms', 'manage_product_terms' ) : array( 'edit_product_terms', 'manage_product_terms' ) );
-		} else {
-			$capabilities = array( 'read_private_products' );
-			if ( 'DELETE' === $review['method'] ) {
-				$capabilities = array_merge( $capabilities, array( 'delete_products', 'delete_others_products', 'delete_published_products', 'delete_private_products' ) );
-			} elseif ( 'POST' === $review['method'] ) {
-				$capabilities = array_merge( $capabilities, array( 'edit_products', 'edit_others_products', 'edit_published_products', 'edit_private_products', 'publish_products' ) );
-				if ( isset( $review['params']['categories'] ) || $review['recovery'] ) {
-					$capabilities[] = 'assign_product_terms'; }
-			}
+		if ( (int) $actor_id !== (int) $review['requester_id'] ) {
+			return self::error( 'bhranti_commerce_permission', __( 'This store action is not available to your account.', 'bhranti' ), 403 );
 		}
-		$grant    = static function ( $allcaps, $requested, $args, $user ) use ( $actor_id, $capabilities, $review ) {
-			if ( (int) $actor_id === $user->ID ) {
-				foreach ( $capabilities as $capability ) {
-					$allcaps[ $capability ] = user_can( $review['requester_id'], $capability ); }
-			}
-			return $allcaps;
-		};
-		$original = get_current_user_id();
-		add_filter( 'user_has_cap', $grant, PHP_INT_MAX, 4 );
-		try {
-			wp_set_current_user( $actor_id );
-			return $callback();
-		} finally {
-			remove_filter( 'user_has_cap', $grant, PHP_INT_MAX );
-			wp_set_current_user( $original );
-		}
+		$identity = Bhranti_Identity::requester( $actor_id );
+		return is_wp_error( $identity ) ? $identity : Bhranti_Identity::scope( $callback );
 	}
 
 	/**
 	 * Dispatch only the reviewed native endpoint through WordPress REST routing.
 	 *
 	 * @param array $review Reviewed request.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	private static function dispatch( $review, $actor_id ) {
@@ -910,7 +883,7 @@ final class Bhranti_Commerce {
 	 *
 	 * @param array $review Reviewed restoration and both permissions.
 	 * @param array $record Durable prior state.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	private static function restore( $review, $record, $actor_id ) {
@@ -1143,7 +1116,7 @@ final class Bhranti_Commerce {
 	 * @param mixed  $value Proposed scalar value.
 	 * @param array  $setting Actual native setting definition.
 	 * @param int    $requester_id Human administrator.
-	 * @param int    $actor_id Managed actor.
+	 * @param int    $actor_id Requesting WordPress user.
 	 * @return true|WP_Error
 	 */
 	private static function setting_value( $id, $value, $setting, $requester_id, $actor_id ) {
@@ -1494,7 +1467,7 @@ final class Bhranti_Commerce {
 	 * @param string $summary Fixed description.
 	 * @param int    $session_id Private conversation.
 	 * @param int    $requester_id Human administrator.
-	 * @param int    $actor_id Managed actor.
+	 * @param int    $actor_id Requesting WordPress user.
 	 * @param array  $details Safe references.
 	 * @return int|WP_Error
 	 */
@@ -1517,7 +1490,7 @@ final class Bhranti_Commerce {
 	 * @param WP_Error $error Original safe preflight error.
 	 * @param int      $session_id Private conversation.
 	 * @param int      $requester_id Human administrator.
-	 * @param int      $actor_id Managed actor.
+	 * @param int      $actor_id Requesting WordPress user.
 	 * @param array    $details Reviewed operation references.
 	 * @return WP_Error
 	 */

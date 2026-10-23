@@ -74,7 +74,7 @@ final class Bhranti_Forms {
 	 *
 	 * @param array $command Parsed command.
 	 * @param int   $requester_id Human account.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	public static function progress( $command, $requester_id, $actor_id ) {
@@ -124,13 +124,7 @@ final class Bhranti_Forms {
 			if ( is_wp_error( $logged ) ) {
 				return $logged;
 			}
-			$previous_user = get_current_user_id();
-			try {
-				wp_set_current_user( $actor_id );
-				$data = self::read( $review, $requester_id, $actor_id );
-			} finally {
-				wp_set_current_user( $previous_user );
-			}
+			$data = self::read( $review, $requester_id, $actor_id );
 			if ( is_wp_error( $data ) ) {
 				return self::refused( $data, $session_id, $requester_id, $actor_id, $details );
 			}
@@ -375,7 +369,7 @@ final class Bhranti_Forms {
 	 *
 	 * @param array $command Tool envelope.
 	 * @param int   $requester_id Human account.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	private static function review( $command, $requester_id, $actor_id ) {
@@ -610,46 +604,40 @@ final class Bhranti_Forms {
 	}
 
 	/**
-	 * Save through the actual CF7 class while acting as Bhranti, then verify storage.
+	 * Save through the actual CF7 class as the requester, then verify storage.
 	 *
 	 * @param int   $id Existing form or zero.
 	 * @param array $definition Reviewed definition.
 	 * @param int   $requester_id Human owner.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @param array $restore Exact previous managed native properties, only during Undo.
 	 * @return int|WP_Error
 	 */
 	private static function save( $id, $definition, $requester_id, $actor_id, $restore = array() ) {
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $actor_id );
-			$form = $id ? WPCF7_ContactForm::get_instance( $id ) : WPCF7_ContactForm::get_template();
-			if ( ! $form ) {
-				return self::invalid();
-			}
-			$properties = $restore ? $restore['properties'] : self::properties( $definition, $form->get_properties() );
-			$form->set_title( $definition['title'] );
-			$form->set_properties( $properties );
-			$saved = $form->save();
-			if ( ! $saved || ( $id && (int) $saved !== $id ) ) {
-				return self::save_error();
-			}
-			$id    = (int) $saved;
-			$after = self::state( $id, $actor_id );
-			if ( is_wp_error( $after ) || $after['properties'] !== $properties || $after['title'] !== $definition['title'] || 'publish' !== $after['status'] ) {
-				return self::save_error();
-			}
-			$managed = array(
-				'requester_id' => (int) $requester_id,
-				'definition'   => $definition,
-				'fingerprint'  => self::native_fingerprint( $after ),
-			);
-			update_post_meta( $id, '_bhranti_form_definition', wp_slash( $managed ) );
-			wp_cache_delete( $id, 'post_meta' );
-			return get_post_meta( $id, '_bhranti_form_definition', true ) === $managed ? $id : self::save_error();
-		} finally {
-			wp_set_current_user( $previous_user );
+		$form = $id ? WPCF7_ContactForm::get_instance( $id ) : WPCF7_ContactForm::get_template();
+		if ( ! $form ) {
+			return self::invalid();
 		}
+		$properties = $restore ? $restore['properties'] : self::properties( $definition, $form->get_properties() );
+		$form->set_title( $definition['title'] );
+		$form->set_properties( $properties );
+		$saved = $form->save();
+		if ( ! $saved || ( $id && (int) $saved !== $id ) ) {
+			return self::save_error();
+		}
+		$id    = (int) $saved;
+		$after = self::state( $id, $actor_id );
+		if ( is_wp_error( $after ) || $after['properties'] !== $properties || $after['title'] !== $definition['title'] || 'publish' !== $after['status'] ) {
+			return self::save_error();
+		}
+		$managed = array(
+			'requester_id' => (int) $requester_id,
+			'definition'   => $definition,
+			'fingerprint'  => self::native_fingerprint( $after ),
+		);
+		update_post_meta( $id, '_bhranti_form_definition', wp_slash( $managed ) );
+		wp_cache_delete( $id, 'post_meta' );
+		return get_post_meta( $id, '_bhranti_form_definition', true ) === $managed ? $id : self::save_error();
 	}
 
 	/**
@@ -657,7 +645,7 @@ final class Bhranti_Forms {
 	 *
 	 * @param array $review Validated request.
 	 * @param int   $requester_id Human account.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	private static function read( $review, $requester_id, $actor_id ) {
@@ -698,89 +686,81 @@ final class Bhranti_Forms {
 	 *
 	 * @param int  $id Native ID.
 	 * @param int  $requester_id Human account.
-	 * @param int  $actor_id Managed actor.
+	 * @param int  $actor_id Requesting WordPress user.
 	 * @param bool $detail Include the bounded field schema.
 	 * @return array|WP_Error
 	 */
 	private static function project( $id, $requester_id, $actor_id, $detail = true ) {
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $actor_id );
-			$state = self::state( $id, $actor_id );
-			if ( is_wp_error( $state ) ) {
-				return $state;
-			}
-			$form      = WPCF7_ContactForm::get_instance( $id );
-			$shortcode = $form->shortcode();
-			// Preserve CF7's native hash shortcode, but never forward another tag or target from a filter.
-			if ( ! is_string( $shortcode ) || strlen( $shortcode ) > 600 || ! preg_match( '/^\[contact-form-7 id="([a-zA-Z0-9]+)" title="[^"<>\r\n\[\]]*"\]$/D', $shortcode, $match ) || $match[1] !== $form->hash() ) {
-				$shortcode = '[contact-form-7 id="' . (int) $id . '"]';
-			}
-			$data = array(
-				'id'                => (int) $id,
-				'title'             => mb_substr( sanitize_text_field( $state['title'] ), 0, 160 ),
-				'shortcode'         => $shortcode,
-				'editable'          => self::managed( $state, $requester_id ),
-				'dashboard_storage' => self::availability()['dashboard_storage'] && ! $form->is_true( 'do_not_store' ),
-			);
-			if ( $detail ) {
-				$fields = array();
-				foreach ( array_slice( $form->scan_form_tags(), 0, 20 ) as $tag ) {
-					if ( ! empty( $tag->name ) ) {
-						$fields[] = array(
-							'name'     => mb_substr( sanitize_key( $tag->name ), 0, 80 ),
-							'type'     => mb_substr( sanitize_key( $tag->basetype ), 0, 30 ),
-							'required' => $tag->is_required(),
-						);
-					}
-				}
-				$data['fields'] = $fields;
-				if ( $data['editable'] ) {
-					$data['definition'] = $state['managed']['definition'];
-				}
-			}
-			return $data;
-		} finally {
-			wp_set_current_user( $previous_user );
+		$state = self::state( $id, $actor_id );
+		if ( is_wp_error( $state ) ) {
+			return $state;
 		}
+		$form      = WPCF7_ContactForm::get_instance( $id );
+		$shortcode = $form->shortcode();
+		// Preserve CF7's native hash shortcode, but never forward another tag or target from a filter.
+		if ( ! is_string( $shortcode ) || strlen( $shortcode ) > 600 || ! preg_match( '/^\[contact-form-7 id="([a-zA-Z0-9]+)" title="[^"<>\r\n\[\]]*"\]$/D', $shortcode, $match ) || $match[1] !== $form->hash() ) {
+			$shortcode = '[contact-form-7 id="' . (int) $id . '"]';
+		}
+		$data = array(
+			'id'                => (int) $id,
+			'title'             => mb_substr( sanitize_text_field( $state['title'] ), 0, 160 ),
+			'shortcode'         => $shortcode,
+			'editable'          => self::managed( $state, $requester_id ),
+			'dashboard_storage' => self::availability()['dashboard_storage'] && ! $form->is_true( 'do_not_store' ),
+		);
+		if ( $detail ) {
+			$fields = array();
+			foreach ( array_slice( $form->scan_form_tags(), 0, 20 ) as $tag ) {
+				if ( ! empty( $tag->name ) ) {
+					$fields[] = array(
+						'name'     => mb_substr( sanitize_key( $tag->name ), 0, 80 ),
+						'type'     => mb_substr( sanitize_key( $tag->basetype ), 0, 30 ),
+						'required' => $tag->is_required(),
+					);
+				}
+			}
+			$data['fields'] = $fields;
+			if ( $data['editable'] ) {
+				$data['definition'] = $state['managed']['definition'];
+			}
+		}
+		return $data;
 	}
 
 	/**
 	 * Snapshot native form configuration, excluding unrelated metadata/submissions.
 	 *
 	 * @param int $id Native form ID or zero before creation.
-	 * @param int $actor_id Managed actor.
+	 * @param int $actor_id Requesting WordPress user.
 	 * @return array|WP_Error
 	 */
 	private static function state( $id, $actor_id ) {
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $actor_id );
-			if ( ! $id ) {
-				return array();
-			}
-			clean_post_cache( $id );
-			$post = get_post( $id );
-			if ( ! $post || 'wpcf7_contact_form' !== $post->post_type || 'publish' !== $post->post_status ) {
-				return self::error( 'bhranti_forms_missing_item', __( 'This saved contact form is not available.', 'bhranti' ), 404 );
-			}
-			$form       = WPCF7_ContactForm::get_instance( $id );
-			$properties = $form ? $form->get_properties() : array();
-			if ( count( $properties ) !== 5 || array_diff( array_keys( $properties ), array( 'form', 'mail', 'mail_2', 'messages', 'additional_settings' ) ) || strlen( wp_json_encode( $properties ) ) > 60000 ) {
-				return self::error( 'bhranti_forms_preservation', __( 'This form uses additional configuration. Reuse it through its native form editor.', 'bhranti' ), 409 );
-			}
-			return array(
-				'title'        => $post->post_title,
-				'status'       => $post->post_status,
-				'author'       => (int) $post->post_author,
-				'content_hash' => hash( 'sha256', $post->post_content ),
-				'locale'       => $form->locale(),
-				'properties'   => $properties,
-				'managed'      => get_post_meta( $id, '_bhranti_form_definition', true ),
-			);
-		} finally {
-			wp_set_current_user( $previous_user );
+		$identity = Bhranti_Identity::requester( $actor_id );
+		if ( is_wp_error( $identity ) ) {
+			return $identity;
 		}
+		if ( ! $id ) {
+			return array();
+		}
+		clean_post_cache( $id );
+		$post = get_post( $id );
+		if ( ! $post || 'wpcf7_contact_form' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return self::error( 'bhranti_forms_missing_item', __( 'This saved contact form is not available.', 'bhranti' ), 404 );
+		}
+		$form       = WPCF7_ContactForm::get_instance( $id );
+		$properties = $form ? $form->get_properties() : array();
+		if ( count( $properties ) !== 5 || array_diff( array_keys( $properties ), array( 'form', 'mail', 'mail_2', 'messages', 'additional_settings' ) ) || strlen( wp_json_encode( $properties ) ) > 60000 ) {
+			return self::error( 'bhranti_forms_preservation', __( 'This form uses additional configuration. Reuse it through its native form editor.', 'bhranti' ), 409 );
+		}
+		return array(
+			'title'        => $post->post_title,
+			'status'       => $post->post_status,
+			'author'       => (int) $post->post_author,
+			'content_hash' => hash( 'sha256', $post->post_content ),
+			'locale'       => $form->locale(),
+			'properties'   => $properties,
+			'managed'      => get_post_meta( $id, '_bhranti_form_definition', true ),
+		);
 	}
 
 	/**
@@ -935,7 +915,7 @@ final class Bhranti_Forms {
 	 * @param string $event Event kind.
 	 * @param int    $session_id Owned conversation.
 	 * @param int    $requester_id Human account.
-	 * @param int    $actor_id Managed actor.
+	 * @param int    $actor_id Requesting WordPress user.
 	 * @param array  $details Safe operation references.
 	 * @return int|WP_Error
 	 */
@@ -950,7 +930,7 @@ final class Bhranti_Forms {
 	 * @param WP_Error $error Safe error.
 	 * @param int      $session_id Owned conversation.
 	 * @param int      $requester_id Human account.
-	 * @param int      $actor_id Managed actor.
+	 * @param int      $actor_id Requesting WordPress user.
 	 * @param array    $details Safe references.
 	 * @return WP_Error
 	 */
@@ -998,7 +978,7 @@ final class Bhranti_Forms {
 
 	/** Return a fixed native permission refusal. */
 	private static function permission() {
-		return self::error( 'bhranti_forms_permission', __( 'Both your account and Bhranti need native permission to manage this form.', 'bhranti' ), 403 );
+		return self::error( 'bhranti_forms_permission', __( 'Your account needs native permission to manage this form.', 'bhranti' ), 403 );
 	}
 
 	/** Return a truthful dependency instruction without claiming local delivery. */

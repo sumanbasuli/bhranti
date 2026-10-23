@@ -490,7 +490,7 @@ final class Bhranti_Agent {
 					return $post;
 				}
 				$run = self::run( $post->ID );
-				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() ) {
+				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['actor_id'] ?? 0 ) !== get_current_user_id() ) {
 					return self::error( 'bhranti_run_missing', __( 'This request is no longer active.', 'bhranti' ), 409 );
 				}
 				if ( 'running' !== $run['status'] ) {
@@ -631,7 +631,7 @@ final class Bhranti_Agent {
 					return $post;
 				}
 				$run = self::run( $post->ID );
-				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['step'] ?? 0 ) !== $request['prepared_step'] ) {
+				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['actor_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['step'] ?? 0 ) !== $request['prepared_step'] ) {
 					return self::error( 'bhranti_run_missing', __( 'This request is no longer active.', 'bhranti' ), 409 );
 				}
 				if ( 'running' !== $run['status'] || 'prepared' !== ( $run['phase'] ?? '' ) ) {
@@ -738,7 +738,7 @@ final class Bhranti_Agent {
 				$run  = self::run( $post->ID );
 				$step = $request['prepared_step'];
 				$id   = $request['job_id'];
-				if ( ! class_exists( 'Bhranti_Render' ) || ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || ! is_int( $step ) || ! is_string( $id ) ) {
+				if ( ! class_exists( 'Bhranti_Render' ) || ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['actor_id'] ?? 0 ) !== get_current_user_id() || ! is_int( $step ) || ! is_string( $id ) ) {
 					return self::error( 'bhranti_render_missing', __( 'This browser check is no longer active.', 'bhranti' ), 409 );
 				}
 				$last = $run['last_render_result'] ?? array();
@@ -849,7 +849,7 @@ final class Bhranti_Agent {
 	 * @return bool
 	 */
 	private static function can_resume( $id, $run ) {
-		if ( 'failed' !== ( $run['status'] ?? '' ) || ! empty( $run['phase'] ) || ! empty( $run['pending_plan'] ) || ! empty( $run['confirmation'] ) || (int) ( $run['step'] ?? 0 ) >= ( $run['configuration']['max_steps'] ?? 128 ) ) {
+		if ( (int) ( $run['actor_id'] ?? 0 ) !== (int) ( $run['requester_id'] ?? 0 ) || 'failed' !== ( $run['status'] ?? '' ) || ! empty( $run['phase'] ) || ! empty( $run['pending_plan'] ) || ! empty( $run['confirmation'] ) || (int) ( $run['step'] ?? 0 ) >= ( $run['configuration']['max_steps'] ?? 128 ) ) {
 			return false;
 		}
 		if ( isset( $run['resume_checkpoint'] ) && ( 'model_request' !== ( $run['resume_checkpoint']['kind'] ?? '' ) || (int) ( $run['resume_checkpoint']['step'] ?? -1 ) !== (int) ( $run['step'] ?? 0 ) ) ) {
@@ -894,12 +894,12 @@ final class Bhranti_Agent {
 					return $post;
 				}
 				$run = self::run( $post->ID );
-				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || ! self::can_resume( $post->ID, $run ) ) {
+				if ( ( $run['id'] ?? '' ) !== $request['run_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['actor_id'] ?? 0 ) !== get_current_user_id() || ! self::can_resume( $post->ID, $run ) ) {
 					return self::error( 'bhranti_resume_unavailable', __( 'This task cannot safely resume. Check its last action in Logs before sending a new request.', 'bhranti' ), 409 );
 				}
-				$actor = get_userdata( $run['actor_id'] );
-				if ( ! $actor || (int) get_option( 'bhranti_actor_id' ) !== (int) $actor->ID || (int) get_user_meta( $actor->ID, 'bhranti_managed_actor', true ) !== get_current_blog_id() || array( 'bhranti_agent' ) !== $actor->roles || array( 'bhranti_agent' => true ) !== $actor->caps ) {
-					return self::error( 'bhranti_actor_invalid', __( 'The managed Bhranti account needs administrator review.', 'bhranti' ), 409 );
+				$actor = Bhranti_Actions::ensure_actor();
+				if ( is_wp_error( $actor ) ) {
+					return self::error( 'bhranti_requester_permission', __( 'This task requires its submitting administrator and current permissions. Start a new request if its execution identity has changed.', 'bhranti' ), 403 );
 				}
 				$logged = Bhranti_Audit::record( 'ai_resumed', __( 'The administrator resumed the saved task after a native AI request failure. Completed actions remain recorded.', 'bhranti' ), $post->ID, array( 'run_id' => $run['id'] ), 0, $run['actor_id'] );
 				if ( is_wp_error( $logged ) ) {
@@ -2030,7 +2030,7 @@ final class Bhranti_Agent {
 			return false;
 		}
 		$run = self::run( $session_id );
-		return $approval['command'] === $command && $approval['requester_id'] === (int) $requester_id && $approval['session_id'] === (int) $session_id && hash_equals( $approval['fingerprint'], $fingerprint ) && time() < $approval['expires'] && (int) ( $run['requester_id'] ?? 0 ) === (int) $requester_id && ( $run['id'] ?? '' ) === $approval['run_id'] && (int) ( $run['step'] ?? 0 ) === $approval['step'] && 'running' === ( $run['status'] ?? '' ) && 'action' === ( $run['phase'] ?? '' ) && empty( $run['confirmation'] );
+		return $approval['command'] === $command && $approval['requester_id'] === (int) $requester_id && $approval['session_id'] === (int) $session_id && hash_equals( $approval['fingerprint'], $fingerprint ) && time() < $approval['expires'] && (int) ( $run['requester_id'] ?? 0 ) === (int) $requester_id && (int) ( $run['actor_id'] ?? 0 ) === (int) $requester_id && ( $run['id'] ?? '' ) === $approval['run_id'] && (int) ( $run['step'] ?? 0 ) === $approval['step'] && 'running' === ( $run['status'] ?? '' ) && 'action' === ( $run['phase'] ?? '' ) && empty( $run['confirmation'] );
 	}
 
 
@@ -2051,7 +2051,7 @@ final class Bhranti_Agent {
 			return false;
 		}
 		$run = self::run( $session_id );
-		return $approval['tool'] === $tool && $approval['command'] === $command && $approval['requester_id'] === (int) $requester_id && $approval['session_id'] === (int) $session_id && hash_equals( $approval['fingerprint'], $fingerprint ) && time() < $approval['expires'] && (int) ( $run['requester_id'] ?? 0 ) === (int) $requester_id && ( $run['id'] ?? '' ) === $approval['run_id'] && (int) ( $run['step'] ?? 0 ) === $approval['step'] && 'running' === ( $run['status'] ?? '' ) && 'action' === ( $run['phase'] ?? '' ) && empty( $run['confirmation'] );
+		return $approval['tool'] === $tool && $approval['command'] === $command && $approval['requester_id'] === (int) $requester_id && $approval['session_id'] === (int) $session_id && hash_equals( $approval['fingerprint'], $fingerprint ) && time() < $approval['expires'] && (int) ( $run['requester_id'] ?? 0 ) === (int) $requester_id && (int) ( $run['actor_id'] ?? 0 ) === (int) $requester_id && ( $run['id'] ?? '' ) === $approval['run_id'] && (int) ( $run['step'] ?? 0 ) === $approval['step'] && 'running' === ( $run['status'] ?? '' ) && 'action' === ( $run['phase'] ?? '' ) && empty( $run['confirmation'] );
 	}
 
 	/**
@@ -2098,7 +2098,7 @@ final class Bhranti_Agent {
 				}
 				$run          = self::run( $post->ID );
 				$confirmation = $run['confirmation'] ?? array();
-				if ( 'awaiting_confirmation' !== ( $run['status'] ?? '' ) || ( $confirmation['id'] ?? '' ) !== $request['confirmation_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() ) {
+				if ( 'awaiting_confirmation' !== ( $run['status'] ?? '' ) || ( $confirmation['id'] ?? '' ) !== $request['confirmation_id'] || (int) ( $run['requester_id'] ?? 0 ) !== get_current_user_id() || (int) ( $run['actor_id'] ?? 0 ) !== get_current_user_id() ) {
 					return self::error( 'bhranti_confirmation_missing', __( 'This confirmation is no longer pending.', 'bhranti' ), 409 );
 				}
 				if ( $request['approved'] && Bhranti_Runner::editor_dirty( $run['requester_id'] ) ) {

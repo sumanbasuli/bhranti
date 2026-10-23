@@ -76,7 +76,7 @@ function rb_request( $run, $report = null ) {
 /** Native metadata-only checkpoint tool; never content actions. */
 function rb_notes( $status, $evidence ) {
 	$state = Bhranti_Task::state( 1 );
-	return Bhranti_Task::execute( array( 'tool' => 'bhranti_task', 'args' => array( 'method' => 'POST', 'params' => array( 'revision' => $state['revision'], 'objective' => 'Finish the supported automated browser checks.', 'decisions' => array( 'Full human accessibility conformance review is outside this automated profile.' ), 'outcomes' => array(), 'checks' => array( array( 'id' => 'rendered-profile', 'title' => 'Automated rendered layout/accessibility checks', 'status' => $status, 'evidence' => $evidence ) ) ) ) ), 7, 11, 1 );
+	return Bhranti_Task::execute( array( 'tool' => 'bhranti_task', 'args' => array( 'method' => 'POST', 'params' => array( 'revision' => $state['revision'], 'objective' => 'Finish the supported automated browser checks.', 'decisions' => array( 'Full human accessibility conformance review is outside this automated profile.' ), 'outcomes' => array(), 'checks' => array( array( 'id' => 'rendered-profile', 'title' => 'Automated rendered layout/accessibility checks', 'status' => $status, 'evidence' => $evidence ) ) ) ) ), 7, 7, 1 );
 }
 function rb_error( $result, $label ) { ac_check( is_wp_error( $result ), $label ); }
 

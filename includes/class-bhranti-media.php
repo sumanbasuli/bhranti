@@ -71,7 +71,7 @@ final class Bhranti_Media {
 	}
 
 	/**
-	 * Generate as the human connector identity and save as the managed actor.
+	 * Generate and save as the requesting human’s native account.
 	 *
 	 * @param array $command Reviewed tool envelope.
 	 * @param int   $requester_id Human requester.
@@ -185,14 +185,10 @@ final class Bhranti_Media {
 			self::audit( 'media_blocked', __( 'Media permission changed before the generated image was saved.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
 			return $permission;
 		}
-		$previous_user = get_current_user_id();
 		try {
-			wp_set_current_user( $actor_id );
 			$result = self::save_image( $validated, $args, $action_id, $requester_id, $actor_id, $session_id );
 		} catch ( Throwable $error ) {
 			$result = self::error( 'bhranti_media_storage', __( 'The image save was interrupted. Review Media Library and the logs before retrying.', 'bhranti' ), 500 );
-		} finally {
-			wp_set_current_user( $previous_user );
 		}
 		if ( is_wp_error( $result ) ) {
 			$details['code'] = $result->get_error_code();
@@ -224,7 +220,7 @@ final class Bhranti_Media {
 	 * is supplied, and neither credentials nor provider/model names are returned.
 	 *
 	 * @param int         $requester_id Human connector identity.
-	 * @param int         $actor_id Managed actor supplied by the owned tool dispatcher.
+	 * @param int         $actor_id Requesting user supplied by the owned tool dispatcher.
 	 * @param int         $session_id Private conversation.
 	 * @param string|null $aspect_ratio Optional requested output ratio, never a provider preference.
 	 * @return array|WP_Error Nonsecret current capability, or permission failure.
@@ -300,7 +296,7 @@ final class Bhranti_Media {
 	 * Read current native media limits; earlier runs never override this runtime.
 	 *
 	 * @param int $requester_id Human requester.
-	 * @param int $actor_id Managed uploader.
+	 * @param int $actor_id Requesting uploader.
 	 * @return array Nonsecret, freshly verified site capabilities.
 	 */
 	public static function capabilities( $requester_id, $actor_id ) {
@@ -852,14 +848,13 @@ final class Bhranti_Media {
 	 * Recheck current policy, identity and native upload capability before saving.
 	 *
 	 * @param int $requester_id Human requester.
-	 * @param int $actor_id Managed actor.
+	 * @param int $actor_id Requesting user.
 	 * @param int $session_id Conversation.
 	 * @return true|WP_Error
 	 */
 	private static function permission( $requester_id, $actor_id, $session_id ) {
 		clean_user_cache( $requester_id );
 		clean_user_cache( $actor_id );
-		wp_cache_delete( 'bhranti_actor_id', 'options' );
 		wp_cache_delete( 'alloptions', 'options' );
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
@@ -869,8 +864,8 @@ final class Bhranti_Media {
 		if ( is_wp_error( $allowed ) ) {
 			return $allowed;
 		}
-		if ( (int) get_option( 'bhranti_actor_id' ) !== (int) $actor_id || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() || ! user_can( $requester_id, 'manage_options' ) || ! user_can( $requester_id, 'upload_files' ) || ! user_can( $actor_id, 'upload_files' ) ) {
-			return self::error( 'bhranti_media_permission', __( 'Both your account and Bhranti must have native WordPress upload permission.', 'bhranti' ), 403 );
+		if ( (int) $requester_id !== (int) $actor_id || is_wp_error( Bhranti_Identity::requester( $requester_id ) ) || ! user_can( $requester_id, 'manage_options' ) || ! user_can( $requester_id, 'upload_files' ) || ! user_can( $actor_id, 'upload_files' ) ) {
+			return self::error( 'bhranti_media_permission', __( 'Your account must have native WordPress upload permission.', 'bhranti' ), 403 );
 		}
 		return true;
 	}

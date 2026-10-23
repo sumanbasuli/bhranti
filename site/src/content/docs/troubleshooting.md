@@ -11,7 +11,7 @@ Start with the message Bhranti is showing and its last recorded action. Check wh
 
 Confirm the plugin is active and you are using an administrator account with permission to manage site settings. Open **Bhranti** from the WordPress admin bar. If that button is unavailable in a post or page editor, look in the editor header.
 
-The first request also needs an administrator who can create users. Bhranti creates a dedicated account for ordinary site actions. Approved plugin changes run as your account; Logs records the actual acting user.
+Requests run as your signed-in administrator account. Bhranti does not create another user or require permission to create users. Check your current WordPress permissions and the action switches in Bhranti Settings. Logs identifies the account that requested each action.
 
 ## No AI provider is configured
 

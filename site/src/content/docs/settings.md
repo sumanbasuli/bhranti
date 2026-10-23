@@ -23,7 +23,7 @@ Switch changes take effect when you save. If saving fails, your local edits rema
 
 ## Action permissions: every switch
 
-Routine switches are enabled by default. **Delete plugins** is disabled by default. WordPress permissions still apply when a switch is enabled. Most actions require both your account’s and Bhranti’s account’s permissions. Approved plugin operations run as your account. Some operations require more than one switch.
+Routine switches are enabled by default. **Delete plugins** is disabled by default. WordPress permissions still apply when a switch is enabled. Actions run as your account and require your current native WordPress permissions. Some operations require more than one switch.
 
 | Switch | What it allows |
 | --- | --- |

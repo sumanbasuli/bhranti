@@ -36,14 +36,14 @@ final class Bhranti_Task {
 	 *
 	 * @param array $command Canonical tool command.
 	 * @param int   $requester_id Human.
-	 * @param int   $actor_id Managed actor, supplied by the dispatcher.
+	 * @param int   $actor_id Requesting user, supplied by the dispatcher.
 	 * @param int   $session_id Private conversation.
 	 * @return array|WP_Error
 	 */
 	public static function execute( $command, $requester_id, $actor_id, $session_id ) {
 		$owner = self::owner( $session_id );
 		if ( is_wp_error( $owner ) || get_current_user_id() !== (int) $requester_id || ! user_can( $requester_id, 'manage_options' ) || ! user_can( $actor_id, 'manage_options' ) ) {
-			return is_wp_error( $owner ) ? $owner : self::error( 'permission', __( 'Both accounts need permission to maintain this task.', 'bhranti' ), 403 );
+			return is_wp_error( $owner ) ? $owner : self::error( 'permission', __( 'Your account needs permission to maintain this task.', 'bhranti' ), 403 );
 		}
 		$run = get_post_meta( $session_id, 'bhranti_run', true );
 		if ( (int) ( $run['requester_id'] ?? 0 ) !== (int) $requester_id || (int) ( $run['actor_id'] ?? 0 ) !== (int) $actor_id ) {

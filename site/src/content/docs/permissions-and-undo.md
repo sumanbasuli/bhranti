@@ -27,7 +27,7 @@ Background work pauses for your approval before these changes. Permanent content
 
 Each plugin installation or later status change or uninstall needs an approval card, even when its switches are enabled. An installation card can list **install and activate** together: one approval performs both, with no second prompt. If activation is not listed, the current WordPress.org directory package installs inactive. Later activation or deactivation needs a new card.
 
-Approved plugin operations run directly as your signed-in WordPress account. Plugin status Roll back also runs as your account after its explicit confirmation. Logs retain the actual acting user.
+Approved plugin operations run directly as your signed-in WordPress account. Plugin status Roll back also runs as your account after its explicit confirmation. Logs show your account as the requester and retain execution identity in the raw record.
 
 ## Approve form delivery and store visibility
 
@@ -79,4 +79,4 @@ An agent document, skill, page instruction or chat message cannot turn a disable
 
 If Bhranti does not support an action, you may need to use the relevant WordPress screen or plugin directly.
 
-Use [Logs](/docs/logs-and-recovery/) to see who requested a change, which account made it, what it affected and how it finished.
+Use [Logs](/docs/logs-and-recovery/) to see who requested a change, what it affected and how it finished. Raw records also retain the account that performed it.

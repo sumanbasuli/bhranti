@@ -4,7 +4,7 @@ Tags: ai, assistant, content, productivity, automation
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.1
+Stable tag: 1.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,11 +34,11 @@ Small edits can happen directly. For larger projects, Bhranti asks about your au
 
 Choose which actions Bhranti may take in Bhranti > Settings. Review an Approve/Cancel card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Creating a Contact Form 7 form, changing its notification destination, moving supported content to Trash, or making a WooCommerce store or other site pages visible requires an exact Approve/Deny card. Declining approval stops the current task. Deleting a plugin is disabled by default.
 
-Approved plugin changes and explicit plugin Undo run as your authenticated WordPress account. Other site actions use a dedicated Bhranti account and require both accounts’ permissions. Logs identify the account that performed each action. Bhranti does not edit WordPress core, theme or plugin source files, or change accounts, roles, credentials or security settings.
+Actions and Undo run as your authenticated WordPress account, subject to your current permissions and Bhranti's action switches. Bhranti does not create another user account. Logs identify who requested each action; raw records retain the account that performed it. Bhranti does not edit WordPress core, theme or plugin source files, or change accounts, roles, credentials or security settings.
 
 While it works on a supported clean editor, saved updates can appear in front of you. A control overlay helps prevent accidental edits; existing unsaved work remains protected. You can stop a task between steps.
 
-Bhranti > Logs records the requested actions, outcomes, affected items and the requesting and acting users. Search, filter, view or download activity, or ask Bhranti to explain it.
+Bhranti > Logs records requested actions, outcomes, affected items and the requesting user. Search, filter, view or download activity, or ask Bhranti to explain it. Raw records also retain the account that performed each action, including older activity where it differs.
 
 = Make it work your way =
 
@@ -53,7 +53,7 @@ Ask Bhranti to remember preferences about language, tone, design or workflow. Re
 3. Open Bhranti > Settings to review the allowed actions and optional instructions.
 4. Open Bhranti from the admin bar or block editor toolbar and send your first request. Add only the page context or images you want to share.
 
-Bhranti is for administrators. An administrator who can create users must initialize its dedicated account on first use. WooCommerce, Contact Form 7 and image generation are optional features with their own requirements.
+Bhranti is for administrators and works through your existing WordPress account. It does not require permission to create users. WooCommerce, Contact Form 7 and image generation are optional features with their own requirements.
 
 == Frequently Asked Questions ==
 
@@ -105,11 +105,11 @@ Plugin searches and installations use native WordPress.org services (https://wor
 
 Bhranti has no telemetry or separate connector credentials. Its interface assets load locally. Logs exclude chat message bodies and raw provider errors.
 
-Conversations, context, action results, plans, rollback records and activity logs are stored on your WordPress site. Conversations are not encrypted in the database. Optional preference memory uses separate encrypted files. Unsent ordinary drafts use this browser tab's session storage; unsent image attachments stay in browser memory.
+Conversations, context, action results, plans, rollback records and activity logs are stored on your WordPress site. Conversations are not encrypted in the database. Optional preference memory is encrypted separately in the WordPress database for each user and site. Unsent ordinary drafts use this browser tab's session storage; unsent image attachments stay in browser memory.
 
 Chats are owned by the administrator who created them. Other administrators can view site activity in Logs, while database or server administrators can access stored data. WordPress personal-data export and erasure include Bhranti's data. You can delete individual chats and reset memory in Settings. Deleting a chat removes its rollback records, but does not reverse site changes or remove their audit entries.
 
-Uninstall removes Bhranti's workspace data and revokes its managed account's elevated access. It preserves created site content and authorship; you can remove or reassign that account later through WordPress.
+Uninstall removes Bhranti's private workspace data and preferences. Created site content, authorship and existing user accounts stay in place.
 
 == Screenshots ==
 
@@ -134,6 +134,11 @@ Bundled third-party code keeps its own notices. Bootstrap Icons SVG paths in ass
 The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). Its original module source and build instructions are available at https://github.com/dequelabs/axe-core/tree/v4.14.0. The axe-core folder includes the readable upstream distribution, package metadata, source hashes and additional third-party notices.
 
 == Changelog ==
+
+= 1.2 =
+* Run reviewed actions as the requesting administrator without creating another WordPress user or granting extra capabilities.
+* Store private preferences as encrypted, nonautoloaded WordPress database records, with export, erasure and reset controls.
+* Show one requesting user in Logs while retaining execution identity in raw audit records.
 
 = 1.1 =
 * Add screenshots of editing, live actions and Bhranti on the website.

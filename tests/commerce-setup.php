@@ -3,6 +3,7 @@
  * Offline setup boundary checks using installed native Woo controllers and REST schemas.
  * No wp-load, database, HTTP, AI, order creation or native mutation callbacks.
  */
+require_once __DIR__ . '/offline-requester-identity.php';
 define( 'ABSPATH', rtrim( getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Documents/WordPress/Plugins', '/' ) . '/' );
 define( 'WC_ABSPATH', ABSPATH . 'wp-content/plugins/woocommerce/' );
 require ABSPATH . 'wp-includes/class-wp-error.php';
@@ -114,12 +115,12 @@ setup_check( is_wp_error( setup_prepare( 'GET', '/wc/v3/shipping/zones' ) ), 'Re
 $GLOBALS['wp_rest_server'] = $original;
 $setting = new ReflectionMethod( 'Bhranti_Commerce', 'setting_value' );
 foreach ( array( 'woocommerce_default_country' => 'IN:MH', 'woocommerce_allowed_countries' => 'specific', 'woocommerce_ship_to_countries' => 'specific', 'woocommerce_weight_unit' => 'kg', 'woocommerce_dimension_unit' => 'cm' ) as $key => $value ) {
-    setup_check( true === $setting->invoke( null, $key, $value, array( 'options' => array( $value => $value ) ), 1, 11 ), 'Native enum value accepted: ' . $key );
-    setup_check( is_wp_error( $setting->invoke( null, $key, 'not-native', array( 'options' => array( $value => $value ) ), 1, 11 ) ), 'Non-native enum rejected: ' . $key );
+    setup_check( true === $setting->invoke( null, $key, $value, array( 'options' => array( $value => $value ) ), 1, 1 ), 'Native enum value accepted: ' . $key );
+    setup_check( is_wp_error( $setting->invoke( null, $key, 'not-native', array( 'options' => array( $value => $value ) ), 1, 1 ) ), 'Non-native enum rejected: ' . $key );
 }
-setup_check( true === $setting->invoke( null, 'woocommerce_specific_allowed_countries', array( 'IN' ), array( 'options' => WC()->countries->get_countries() ), 1, 11 ), 'Country list preserves native arrays' );
-setup_check( is_wp_error( $setting->invoke( null, 'woocommerce_specific_allowed_countries', array( 'ZZ' ), array( 'options' => WC()->countries->get_countries() ), 1, 11 ) ), 'Unknown country rejected' );
-setup_check( is_wp_error( $setting->invoke( null, 'woocommerce_specific_allowed_countries', '', array( 'options' => WC()->countries->get_countries() ), 1, 11 ) ), 'Public country list requires an array so native normalization cannot become an uncertain write' );
+setup_check( true === $setting->invoke( null, 'woocommerce_specific_allowed_countries', array( 'IN' ), array( 'options' => WC()->countries->get_countries() ), 1, 1 ), 'Country list preserves native arrays' );
+setup_check( is_wp_error( $setting->invoke( null, 'woocommerce_specific_allowed_countries', array( 'ZZ' ), array( 'options' => WC()->countries->get_countries() ), 1, 1 ) ), 'Unknown country rejected' );
+setup_check( is_wp_error( $setting->invoke( null, 'woocommerce_specific_allowed_countries', '', array( 'options' => WC()->countries->get_countries() ), 1, 1 ) ), 'Public country list requires an array so native normalization cannot become an uncertain write' );
 $input = new ReflectionMethod( 'Bhranti_Commerce', 'setting_input' );
 setup_check( array() === $input->invoke( null, '', 'woocommerce_specific_allowed_countries' ), 'Legacy empty country default normalized for native REST restoration' );
 $zone_state = array( 'zone' => array( 'name' => 'Delivery', 'order' => 2, 'locations' => array() ), 'methods' => array() );
@@ -174,7 +175,7 @@ setup_check( is_array( setup_prepare( 'GET', '/wc/v3/payment_gateways/cod' ) ), 
 function get_post( $id ) { return $GLOBALS['setup_cart'] ?? null; }
 function user_can( $id, $cap, ...$args ) { return array( $id, $cap ) !== ( $GLOBALS['setup_denied_cap'] ?? null ); }
 final class Bhranti_Settings { public static function allows( $permission ) { return $permission === ( $GLOBALS['setup_denied_policy'] ?? '' ) ? new WP_Error( 'bhranti_action_disabled', 'Disabled.' ) : true; } public static function can_manage() { return true; } }
-$visibility_review = array( 'kind' => 'visibility', 'method' => 'POST', 'requester_id' => 1, 'actor_id' => 11 );
+$visibility_review = array( 'kind' => 'visibility', 'method' => 'POST', 'requester_id' => 1, 'actor_id' => 1 );
 foreach ( array( '00', '-1', 'bad-id', true ) as $bad_cart ) {
     $GLOBALS['setup_options']['woocommerce_cart_page_id'] = $bad_cart;
     setup_check( is_wp_error( Bhranti_Commerce_Setup::policy( $visibility_review ) ), 'Truthy invalid Cart assignment cannot reach native implicit post insertion' );
@@ -183,11 +184,11 @@ $GLOBALS['setup_options']['woocommerce_cart_page_id'] = 77;
 $GLOBALS['setup_cart'] = (object) array( 'post_type' => 'page', 'post_status' => 'draft' );
 setup_check( is_wp_error( Bhranti_Commerce_Setup::policy( $visibility_review ) ), 'Native visibility hook may not implicitly publish a draft Cart' );
 $GLOBALS['setup_cart']->post_status = 'publish';
-setup_check( true === Bhranti_Commerce_Setup::policy( $visibility_review ), 'Published Cart permits reviewed visibility after dual capability checks' );
-foreach ( array( 1, 11 ) as $identity ) {
+setup_check( true === Bhranti_Commerce_Setup::policy( $visibility_review ), 'Published Cart permits reviewed visibility after native human capability checks' );
+foreach ( array( 1 ) as $identity ) {
     foreach ( array( 'edit_post', 'publish_pages' ) as $capability ) {
         $GLOBALS['setup_denied_cap'] = array( $identity, $capability );
-        setup_check( is_wp_error( Bhranti_Commerce_Setup::policy( $visibility_review ) ), 'Native Cart side-effect independently requires both identities and capabilities' );
+        setup_check( is_wp_error( Bhranti_Commerce_Setup::policy( $visibility_review ) ), 'Native Cart side-effect requires the current human’s native capabilities' );
     }
 }
 unset( $GLOBALS['setup_denied_cap'] );
@@ -258,7 +259,7 @@ if ( ! class_exists( 'WC_REST_Setting_Options_Controller' ) ) { class WC_REST_Se
 if ( ! class_exists( 'WC_Product_Simple' ) ) { class WC_Product_Simple {} }
 class Setup_Homescreen { public static function is_admin_user() { return true; } }
 class_alias( 'Setup_Homescreen', 'Automattic\\WooCommerce\\Internal\\Admin\\Homescreen' );
-final class Bhranti_Actions { public static function ensure_actor() { return 11; } }
+final class Bhranti_Actions { public static function ensure_actor() { return Bhranti_Identity::requester(); } }
 final class Bhranti_Audit { public static function record( ...$args ) { return 1; } }
 final class Bhranti_Agent { public static function consume_commerce_approval( ...$args ) { ++$GLOBALS['setup_grant_checks']; return false; } }
 $GLOBALS['setup_grant_checks'] = 0;
@@ -333,4 +334,10 @@ setup_check( is_array( $restrict_scope ) && false === $restrict_scope['rollback_
 $unsafe_scope_undo = Bhranti_Commerce::rollback( $restrict_scope['action_id'], 1, 77 );
 setup_check( is_wp_error( $unsafe_scope_undo ) && 'bhranti_commerce_confirmation' === $unsafe_scope_undo->get_error_code() && 2 === $GLOBALS['setup_dispatches'], 'Direct rollback cannot restore the public site-page value without approval' );
 $GLOBALS['wp_rest_server'] = $original_server;
+
+$acting = new ReflectionMethod( Bhranti_Commerce::class, 'acting' );
+$before_dispatches = $GLOBALS['setup_dispatches'];
+$wrong = $acting->invoke( null, array( 'requester_id' => 1 ), 11, static function () { throw new RuntimeException( 'An unrelated identity must not run a callback.' ); } );
+setup_check( is_wp_error( $wrong ) && 'bhranti_commerce_permission' === $wrong->get_error_code() && $before_dispatches === $GLOBALS['setup_dispatches'] && 1 === get_current_user_id(), 'A different claimed executor cannot borrow native commerce permissions or change the current human.' );
+
 echo 'PASS: ' . $checks . " offline native setup boundary checks. No bootstrap, database, network or AI.\n";

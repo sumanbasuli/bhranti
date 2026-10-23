@@ -38,7 +38,7 @@ final class Bhranti_Log_Screen {
 			'page'     => 1,
 			'per_page' => 50,
 		);
-		foreach ( array( 'search', 'status', 'category', 'from', 'to', 'run_id', 'requester_id', 'actor_id', 'session_id', 'per_page', 'log_page' ) as $key ) {
+		foreach ( array( 'search', 'status', 'category', 'from', 'to', 'run_id', 'requester_id', 'session_id', 'per_page', 'log_page' ) as $key ) {
 			if ( ! isset( $source[ $key ] ) || '' === $source[ $key ] ) {
 				continue;
 			}
@@ -46,7 +46,7 @@ final class Bhranti_Log_Screen {
 				return new WP_Error( 'bhranti_log_filter', __( 'Check the activity filters and try again.', 'bhranti' ) );
 			}
 			$value = sanitize_text_field( (string) $source[ $key ] );
-			if ( in_array( $key, array( 'requester_id', 'actor_id', 'session_id', 'per_page', 'log_page' ), true ) ) {
+			if ( in_array( $key, array( 'requester_id', 'session_id', 'per_page', 'log_page' ), true ) ) {
 				if ( ! preg_match( '/^\d{1,9}$/D', $value ) ) {
 					return new WP_Error( 'bhranti_log_filter', __( 'User, conversation and page numbers must be whole numbers.', 'bhranti' ) );
 				}
@@ -109,7 +109,7 @@ final class Bhranti_Log_Screen {
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only presentation choice.
 		$raw      = isset( $_GET['view'] ) && 'raw' === $_GET['view'];
-		$advanced = array_intersect_key( array_filter( $filters ), array_flip( array( 'from', 'to', 'requester_id', 'actor_id', 'session_id', 'run_id' ) ) );
+		$advanced = array_intersect_key( array_filter( $filters ), array_flip( array( 'from', 'to', 'requester_id', 'session_id', 'run_id' ) ) );
 		if ( $raw ) {
 			unset( $advanced['session_id'], $advanced['run_id'] );
 		}
@@ -166,7 +166,6 @@ final class Bhranti_Log_Screen {
 						<label><?php esc_html_e( 'From date', 'bhranti' ); ?><input type="date" name="from" value="<?php echo esc_attr( $filters['from'] ?? '' ); ?>"></label>
 						<label><?php esc_html_e( 'To date', 'bhranti' ); ?><input type="date" name="to" value="<?php echo esc_attr( $filters['to'] ?? '' ); ?>"></label>
 						<label><?php esc_html_e( 'Requested by (user ID)', 'bhranti' ); ?><input type="number" min="1" name="requester_id" value="<?php echo esc_attr( $filters['requester_id'] ?? '' ); ?>"></label>
-						<label><?php esc_html_e( 'Acting user ID', 'bhranti' ); ?><input type="number" min="1" name="actor_id" value="<?php echo esc_attr( $filters['actor_id'] ?? '' ); ?>"></label>
 						<label><?php esc_html_e( 'Conversation ID', 'bhranti' ); ?><input type="number" min="1" name="session_id" value="<?php echo esc_attr( $filters['session_id'] ?? '' ); ?>"></label>
 						<label><?php esc_html_e( 'Task ID', 'bhranti' ); ?><input type="text" name="run_id" maxlength="64" value="<?php echo esc_attr( $filters['run_id'] ?? '' ); ?>"></label>
 					</div>
@@ -217,7 +216,7 @@ final class Bhranti_Log_Screen {
 			<?php else : ?>
 			<table class="widefat bhranti-log-table">
 				<caption class="screen-reader-text"><?php esc_html_e( 'Bhranti activity, newest events first', 'bhranti' ); ?></caption>
-				<thead><tr><th scope="col" class="bhranti-log-time"><?php esc_html_e( 'When', 'bhranti' ); ?></th><th scope="col" class="bhranti-log-outcome"><?php esc_html_e( 'Outcome', 'bhranti' ); ?></th><th scope="col"><?php esc_html_e( 'Activity and details', 'bhranti' ); ?></th><th scope="col" class="bhranti-log-people"><?php esc_html_e( 'People', 'bhranti' ); ?></th></tr></thead>
+				<thead><tr><th scope="col" class="bhranti-log-time"><?php esc_html_e( 'When', 'bhranti' ); ?></th><th scope="col" class="bhranti-log-outcome"><?php esc_html_e( 'Outcome', 'bhranti' ); ?></th><th scope="col"><?php esc_html_e( 'Activity and details', 'bhranti' ); ?></th><th scope="col" class="bhranti-log-people"><?php esc_html_e( 'User', 'bhranti' ); ?></th></tr></thead>
 				<tbody>
 				<?php foreach ( $result['events'] as $event ) : ?>
 					<?php self::row( $event ); ?>
@@ -313,7 +312,7 @@ else :
 					<a href="<?php echo esc_url( self::url( array( 'run_id' => $event['details']['run_id'] ), 1, true ) ); ?>"><?php esc_html_e( 'Task activity', 'bhranti' ); ?></a><?php endif; ?>
 				</div>
 			</td>
-			<td data-label="<?php esc_attr_e( 'People', 'bhranti' ); ?>" class="bhranti-log-people"><span><?php esc_html_e( 'Requested by', 'bhranti' ); ?></span><strong><?php echo esc_html( ( $event['requester'] ? $event['requester'] : __( 'Unknown user', 'bhranti' ) ) . ' (#' . $event['requester_id'] . ')' ); ?></strong><span><?php esc_html_e( 'Acting user', 'bhranti' ); ?></span><strong><?php echo esc_html( ( $event['actor'] ? $event['actor'] : __( 'Unknown user', 'bhranti' ) ) . ' (#' . $event['actor_id'] . ')' ); ?></strong></td>
+			<td data-label="<?php esc_attr_e( 'User', 'bhranti' ); ?>" class="bhranti-log-people"><span><?php esc_html_e( 'Requested by', 'bhranti' ); ?></span><strong><?php echo esc_html( ( $event['requester'] ? $event['requester'] : __( 'Unknown user', 'bhranti' ) ) . ' (#' . $event['requester_id'] . ')' ); ?></strong></td>
 		</tr>
 		<?php
 	}

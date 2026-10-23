@@ -482,13 +482,24 @@ final class Bhranti_Lock {
 	}
 
 	/**
-	 * Restrict direct option-table writes to the six owned lock families.
+	 * Restrict direct option-table writes to the owned lock families.
 	 *
 	 * @param string $name Option name to inspect.
 	 * @return bool Whether Bhranti owns this lock option family.
 	 */
 	private static function valid_name( $name ) {
-		return is_string( $name ) && ( in_array( $name, array( 'bhranti_actor_setup_lock', 'bhranti_plugins_lock', 'bhranti_forms_lock', 'bhranti_commerce_lock', 'bhranti_settings_lock' ), true ) || (bool) preg_match( '/\Abhranti_lock_[1-9][0-9]*\z/D', $name ) );
+		return is_string( $name ) && ( in_array(
+			$name,
+			array(
+				'bhranti_memory_lock',
+				'bhranti_memory_network_lock',
+				'bhranti_plugins_lock',
+				'bhranti_forms_lock',
+				'bhranti_commerce_lock',
+				'bhranti_settings_lock',
+			),
+			true
+		) || (bool) preg_match( '/\Abhranti_lock_[1-9][0-9]*\z/D', $name ) );
 	}
 
 	/**

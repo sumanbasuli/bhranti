@@ -7,6 +7,7 @@
  * schema validation and response filtering are the installed WordPress code.
  * Run: BHRANTI_TEST_WP_ROOT=/path/to/wordpress php tests/read-fields.php
  */
+require_once __DIR__ . '/offline-requester-identity.php';
 $core_root = getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Documents/WordPress/Plugins';
 define( 'ABSPATH', rtrim( $core_root, '/' ) . '/' );
 define( 'WPINC', 'wp-includes' );
@@ -108,15 +109,13 @@ foreach ( array( '/wp/v2/pages' => 'get_items', '/wp/v2/pages/(?P<id>[\d]+)' => 
 function rf_check( $condition, $label ) { if ( ! $condition ) { throw new RuntimeException( $label ); } ++$GLOBALS['rf_checks']; }
 function rf_command( $params, $method = 'GET', $path = '/wp/v2/pages' ) { return array( 'tool' => 'wp_request', 'args' => array( 'method' => $method, 'path' => $path, 'params' => $params ) ); }
 function rf_run( $params, $method = 'GET', $path = '/wp/v2/pages' ) { return Bhranti_Actions::execute( rf_command( $params, $method, $path ), 7, 1 ); }
-function rf_review( $params, $method = 'GET' ) { return (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( $params, $method, '/wp/v2/pages/9033' ), 7, 11 ); }
+function rf_review( $params, $method = 'GET' ) { return (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( $params, $method, '/wp/v2/pages/9033' ), 7, 7 ); }
 
-// The in-memory lock seam must retain the same refusal and ownership boundary.
-$actor_lock = Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 );
-rf_check( is_string( $actor_lock ) && false === Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 ), 'An occupied fixture lock cannot be acquired twice.' );
-$blocked = rf_run( array() );
-rf_check( is_wp_error( $blocked ) && 'bhranti_actor_busy' === $blocked->get_error_code() && 0 === $GLOBALS['rf_dispatches'], 'A busy actor lock blocks the actual Actions path before native dispatch.' );
-rf_check( false === Bhranti_Lock::release( 'bhranti_actor_setup_lock', 'different-owner' ) && $actor_lock === $GLOBALS['rf_options']['bhranti_actor_setup_lock'], 'A different owner cannot release the fixture lock.' );
-rf_check( true === Bhranti_Lock::release( 'bhranti_actor_setup_lock', $actor_lock ) && ! isset( $GLOBALS['rf_options']['bhranti_actor_setup_lock'] ), 'The fixture lock owner releases it without changing other options.' );
+// Retired actor setup state must not provision an account or block native reads.
+$before_options = $GLOBALS['rf_options'];
+rf_check( 7 === Bhranti_Actions::ensure_actor() && $before_options === $GLOBALS['rf_options'], 'Requester identity resolves without provisioning or modifying options.' );
+$wrong_identity = (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( array() ), 7, 11 );
+rf_check( is_wp_error( $wrong_identity ) && 'bhranti_action_permission' === $wrong_identity->get_error_code() && 0 === $GLOBALS['rf_dispatches'], 'A different claimed executor cannot borrow the human requester identity.' );
 
 // Exact request observed in the real store flow must be accepted unchanged.
 $params = array( 'context' => 'edit', 'include' => array( 9033, 9034, 9035, 9036, 9037 ), 'status' => 'any', 'per_page' => 20, '_fields' => 'id,title,status' );
@@ -125,7 +124,7 @@ if ( is_wp_error( $result ) ) { echo $result->get_error_code() . ': ' . $result-
 rf_check( is_array( $result ), 'Observed sparse collection GET must succeed.' );
 rf_check( array( 'id' => 9033, 'title' => $GLOBALS['rf_record']['title'], 'status' => 'draft' ) === $result['data'][0], 'Only requested reviewed fields returned.' );
 rf_check( '' === $result['action_id'] && false === $result['rollback_available'], 'GET has no mutation or rollback identifier.' );
-rf_check( array( 7, 11, 11 ) === array_column( $GLOBALS['rf_permissions'], 0 ), 'Human and actor checks plus native actor dispatch remain intact.' );
+rf_check( array( 7, 7 ) === array_column( $GLOBALS['rf_permissions'], 0 ), 'Native review and dispatch both run as the actual human.' );
 foreach ( $GLOBALS['rf_permissions'] as $permission ) { rf_check( ! isset( $permission[1]['_fields'] ) && 'edit' === $permission[1]['context'], 'Sparse fields cannot change native read permission inputs.' ); }
 rf_check( 7 === get_current_user_id(), 'Dispatch restores requesting identity.' );
 $full = rf_run( array( 'context' => 'edit' ), 'GET', '/wp/v2/pages/9033' );
@@ -145,10 +144,10 @@ foreach ( array( null, true, 7, array(), '', ' ', array( array( 'id' ) ), array(
 }
 foreach ( array( 'POST', 'PUT', 'PATCH', 'DELETE' ) as $method ) { $result = rf_review( array( '_fields' => 'id', 'title' => 'No write' ), $method ); rf_check( is_wp_error( $result ) && 'bhranti_action_blocked' === $result->get_error_code(), 'Writes cannot use _fields: ' . $method ); }
 foreach ( array( array( '_embed' => true, '_fields' => 'id' ), array( 'meta' => array(), '_fields' => 'id' ), array( 'unknown' => 'x', '_fields' => 'id' ), array( 'per_page' => 21, '_fields' => 'id' ) ) as $invalid ) { $before = $GLOBALS['rf_dispatches']; $result = rf_run( $invalid ); rf_check( is_wp_error( $result ) && $before === $GLOBALS['rf_dispatches'], 'Other field and collection restrictions remain authoritative.' ); }
-foreach ( array( 7, 11 ) as $denied ) { $GLOBALS['rf_deny'] = $denied; $before = $GLOBALS['rf_dispatches']; $result = rf_review( array( 'context' => 'edit', '_fields' => 'id' ) ); rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['rf_dispatches'], 'Sparse GET cannot bypass either identity permission.' ); rf_check( 7 === get_current_user_id(), 'Permission refusal restores identity.' ); }
+foreach ( array( 7 ) as $denied ) { $GLOBALS['rf_deny'] = $denied; $before = $GLOBALS['rf_dispatches']; $result = rf_review( array( 'context' => 'edit', '_fields' => 'id' ) ); rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['rf_dispatches'], 'Sparse GET cannot bypass current human permission.' ); rf_check( 7 === get_current_user_id(), 'Permission refusal restores identity.' ); }
 $GLOBALS['rf_deny'] = 0;
 rf_check( $full['data'] === rf_run( array( 'context' => 'edit' ), 'GET', '/wp/v2/pages/9033' )['data'], 'Ordinary full reads remain unchanged.' );
-$recovery_read = (new ReflectionMethod( Bhranti_Actions::class, 'read_item' ))->invoke( null, '/wp/v2/pages/9033', 7, 11 );
+$recovery_read = (new ReflectionMethod( Bhranti_Actions::class, 'read_item' ))->invoke( null, '/wp/v2/pages/9033', 7, 7 );
 rf_check( $GLOBALS['rf_record'] === $recovery_read, 'Internal before-write and recovery reads retain complete native records.' );
 rf_check( ! isset( $GLOBALS['rf_options']['bhranti_actor_setup_lock'] ), 'Fixture actor lock released.' );
 echo 'PASS ' . $GLOBALS['rf_checks'] . " offline native REST sparse-read checks; no DB, HTTP or AI.\n";

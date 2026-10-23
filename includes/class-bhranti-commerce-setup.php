@@ -47,7 +47,7 @@ final class Bhranti_Commerce_Setup {
 		}
 		foreach ( array( $review['requester_id'], $review['actor_id'] ) as $user_id ) {
 			if ( ! user_can( $user_id, 'edit_post', $cart_id ) || ! user_can( $user_id, 'publish_pages' ) ) {
-				return self::error( 'bhranti_commerce_permission', __( 'Both accounts need permission to edit and publish the assigned Cart page.', 'bhranti' ), 403 );
+				return self::error( 'bhranti_commerce_permission', __( 'Your account needs permission to edit and publish the assigned Cart page.', 'bhranti' ), 403 );
 			}
 		}
 		foreach ( array( 'edit_content', 'publish_content' ) as $permission ) {

@@ -5,6 +5,7 @@
  * and identity. No wp-load.php, DB, HTTP, provider calls or site mutations.
  * Run: BHRANTI_TEST_WP_ROOT=/path/to/wordpress php tests/agent-clarification.php
  */
+require_once __DIR__ . '/offline-requester-identity.php';
 $core_root = getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Documents/WordPress/Plugins';
 define( 'ABSPATH', rtrim( $core_root, '/' ) . '/' );
 require ABSPATH . 'wp-includes/class-wp-error.php';
@@ -25,7 +26,7 @@ function get_current_user_id() { return $GLOBALS['ac']['user']; }
 function get_current_blog_id() { return 1; }
 function wp_timezone_string() { return 'UTC'; }
 function get_user_meta( $id, $key, $single = false ) { return $single ? '' : array(); }
-function user_can( $id, $cap, ...$args ) { return in_array( (int) $id, array( 7, 11 ), true ); }
+function user_can( $id, $cap, ...$args ) { return in_array( (int) $id, array( 7 ), true ); }
 function wp_cache_delete( ...$args ) {}
 function clean_post_cache( ...$args ) {}
 function get_post( $id ) { return $GLOBALS['ac']['posts'][ $id ] ?? null; }
@@ -90,7 +91,7 @@ final class BhrantiClarificationPrompt {
     public function generate_text() { ++$GLOBALS['ac']['calls']; return $GLOBALS['ac']['reply']; }
 }
 final class Bhranti_Settings { public static function profile( $id ) { return array( 'id' => $id, 'max_steps' => 128 ); } public static function all() { return array( 'permissions' => array() ); } }
-final class Bhranti_Actions { public static function ensure_actor() { return 11; } public static function catalog() { return array(); } public static function execute( ...$args ) { throw new RuntimeException( 'Unexpected tool execution.' ); } }
+final class Bhranti_Actions { public static function ensure_actor() { return Bhranti_Identity::requester(); } public static function catalog() { return array(); } public static function execute( ...$args ) { throw new RuntimeException( 'Unexpected tool execution.' ); } }
 final class Bhranti_Plugins { public static function catalog() { return array(); } }
 final class Bhranti_Media { public static function catalog() { return array(); } }
 final class Bhranti_Chat { public static function render( $text ) { return '<p>' . htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' ) . '</p>'; } }
@@ -124,8 +125,8 @@ $parsed = ac_private( 'parse', ac_envelope( 'tool', $description, 'wp_request', 
 ac_check( $args === $parsed['args'] && 'wp_request' === $parsed['tool'], 'Public intent does not modify canonical tool arguments.' );
 ac_check( mb_strlen( $parsed['intent'] ) === 240 && 0 === strpos( $parsed['intent'], 'Prepare this page ' ) && false === strpos( $parsed['intent'], '<' ) && false === strpos( $parsed['intent'], 'private-script-marker' ), 'Native sanitation strips markup, script text and whitespace then bounds Unicode characters.' );
 $command = array( 'tool' => 'wp_request', 'args' => $args );
-$base = Bhranti_Progress::describe( $command, 7, 11 );
-$progress = Bhranti_Progress::describe( $command, 7, 11, $description );
+$base = Bhranti_Progress::describe( $command, 7, 7 );
+$progress = Bhranti_Progress::describe( $command, 7, 7, $description );
 ac_check( $parsed['intent'] === $progress['intent'], 'Public progress applies the same bounded native sanitation.' );
 unset( $progress['intent'] );
 ac_check( $base === $progress && $base['write'] && $base['navigation'] && 20 === $base['target']['id'], 'Intent cannot replace derived summary, operation, target or write/navigation state.' );
@@ -146,7 +147,7 @@ ac_check( 'assistant' === $waiting['messages'][1]['role'] && 2 === count( $waiti
 ac_check( ! isset( $saved['pending_plan'], $saved['next_action'], $saved['confirmation'], $saved['retry_at'], $saved['resume_checkpoint'] ), 'Waiting has no tool, approval, retry deadline or recovery checkpoint.' );
 ac_check( ! wp_next_scheduled( 'bhranti_run_tick', array( 1, $run, 7 ) ) && wp_next_scheduled( 'bhranti_run_tick', $unrelated ), 'Only the waiting run scheduled event is cleared.' );
 $event = end( $GLOBALS['ac']['events'] );
-ac_check( 'run_awaiting_input' === $event['type'] && 'awaiting_input' === $event['details']['status'] && 7 === $event['requester'] && 11 === $event['actor'], 'Waiting is separately audited with both identities.' );
+ac_check( 'run_awaiting_input' === $event['type'] && 'awaiting_input' === $event['details']['status'] && 7 === $event['requester'] && 7 === $event['actor'], 'Waiting is separately audited with the real requesting and acting human.' );
 $calls = $GLOBALS['ac']['calls'];
 ac_step( $run, ac_envelope( 'reply', 'Must not run.' ) );
 ac_check( false === Bhranti_Runner::tick( 1, $run, 7 ) && $calls === $GLOBALS['ac']['calls'], 'Stale browser steps and Cron ticks cannot continue a waiting question.' );

@@ -83,7 +83,7 @@ function forms_decide( $proposal, $approved = true, $expires = null ) {
 		'phase'         => '',
 		'step'          => 1,
 		'requester_id'  => $GLOBALS['forms_user'],
-		'actor_id'      => (int) get_option( 'bhranti_actor_id' ),
+		'actor_id'      => (int) $GLOBALS['forms_user'],
 		'context'       => array(),
 		'history'       => array(),
 		'receipts'      => array(),
@@ -125,7 +125,7 @@ function forms_actor_operation( $operation, $label ) {
 	$observed = array();
 	$watch = static function () use ( &$observed ) { $observed[] = get_current_user_id(); };
 	$human = get_current_user_id();
-	$actor = (int) get_option( 'bhranti_actor_id' );
+	$actor = (int) $GLOBALS['forms_user'];
 	add_action( 'wpcf7_contact_form', $watch );
 	add_action( 'wpcf7_after_save', $watch );
 	try {
@@ -134,7 +134,7 @@ function forms_actor_operation( $operation, $label ) {
 		remove_action( 'wpcf7_contact_form', $watch );
 		remove_action( 'wpcf7_after_save', $watch );
 	}
-	forms_check( count( $observed ) >= 3 && array( $actor ) === array_values( array_unique( $observed ) ), $label . ': every native lookup/save uses the actor' );
+	forms_check( count( $observed ) >= 3 && array( $actor ) === array_values( array_unique( $observed ) ), $label . ': every native lookup/save uses the requesting human' );
 	forms_check( get_current_user_id() === $human, $label . ': restores the human after native work' );
 	return $result;
 }
@@ -196,8 +196,9 @@ try {
 	update_post_meta( $GLOBALS['forms_session'], 'bhranti_messages', array( array( 'role' => 'user', 'content' => 'Build a contact form. Do not use old@example.invalid for notifications.' ) ) );
 	$discovery = forms_request( 'GET', '/contact-form-7/v1' );
 	forms_check( ! is_wp_error( $discovery ) && $discovery['data']['available'] && $discovery['data']['dashboard_storage'], 'official native APIs and Flamingo hook discovered' );
-	$actor_id = (int) get_option( 'bhranti_actor_id' );
-	forms_check( ! user_can( $actor_id, 'unfiltered_html' ), 'managed actor never receives unfiltered HTML' );
+	$actor_id = (int) $GLOBALS['forms_user'];
+	forms_check( user_can( $actor_id, 'unfiltered_html' ) && Bhranti_Identity::scope( static function () { return ! current_user_can( 'unfiltered_html' ); } ), 'normal human authoring bypass is denied only inside the bounded tool scope' );
+	forms_check( false === get_option( 'bhranti_actor_id', false ) && ! get_role( 'bhranti_agent' ), 'forms discovery does not provision service identity or role' );
 	// The public action entry point must veto new defects before native storage.
 	$quality_pages = get_posts( array( 'post_type' => 'page', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) );
 	foreach ( array( '<img src="/qa.jpg">', '<h2 id="qa-repeat">Heading</h2><p id="qa-repeat">Text</p>', '<p style="color:#fff;background-color:#fff">Invisible text</p>' ) as $content ) {
@@ -254,7 +255,7 @@ try {
 	$deny_actor = static function ( $caps, $requested, $args, $user ) use ( $actor_id ) { if ( $user->ID === $actor_id ) { $caps['publish_pages'] = false; } return $caps; };
 	add_filter( 'user_has_cap', $deny_actor, PHP_INT_MAX, 4 );
 	$result = forms_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition );
-	forms_check( is_wp_error( $result ) && 'bhranti_forms_permission' === $result->get_error_code(), 'actor native capability required' );
+	forms_check( is_wp_error( $result ) && 'bhranti_forms_permission' === $result->get_error_code(), 'requesting human native capability required' );
 	remove_filter( 'user_has_cap', $deny_actor, PHP_INT_MAX );
 	$policy = get_option( 'bhranti_settings', false );
 	// Use the actual settings storage envelope, then restore its exact original value.
@@ -282,7 +283,7 @@ try {
 	$created = forms_actor_operation( static function () use ( $forms_definition ) { return forms_approved_request( 'POST', '/contact-form-7/v1/contact-forms', $forms_definition ); }, 'Create' );
 	forms_check( ! is_wp_error( $created ), 'native CF7 creation: ' . ( is_wp_error( $created ) ? $created->get_error_code() : 'saved' ) );
 	$form_id = $created['data']['id'];
-	forms_check( ! $created['rollback_available'] && (int) get_post( $form_id )->post_author === $actor_id, 'truthful creation Undo and native actor attribution' );
+	forms_check( ! $created['rollback_available'] && (int) get_post( $form_id )->post_author === $actor_id, 'truthful creation Undo and native requesting-human attribution' );
 	forms_check( get_current_user_id() === $GLOBALS['forms_user'], 'human identity restored after native save' );
 	$native = WPCF7_ContactForm::get_instance( $form_id );
 	forms_check( $created['data']['shortcode'] === $native->shortcode(), 'returns the native CF7 hash shortcode' );
@@ -291,7 +292,7 @@ try {
 	add_action( 'wpcf7_contact_form', $watch_read );
 	forms_request( 'GET', '/contact-form-7/v1/contact-forms/' . $form_id );
 	remove_action( 'wpcf7_contact_form', $watch_read );
-	forms_check( $read_actor === $actor_id && get_current_user_id() === $GLOBALS['forms_user'], 'native form reads run as actor and restore human' );
+	forms_check( $read_actor === $actor_id && get_current_user_id() === $GLOBALS['forms_user'], 'native form reads keep the requesting human' );
 	forms_check( $native->is_true( 'skip_mail' ) && ! $native->prop( 'mail_2' )['active'], 'native dashboard mode and no autoresponder' );
 	$config = new WPCF7_ConfigValidator( $native );
 	$config->validate();

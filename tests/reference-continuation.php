@@ -97,7 +97,11 @@ foreach ( array( null, 0, 1, 'true', array() ) as $bad_choice ) {
     $before = $GLOBALS['ac'];
     $bad = rc_start( 102, 'Reject this flag.', array( 'discard_reference_image' => $bad_choice ) );
     rc_check( is_wp_error( $bad ) && 'bhranti_context_invalid' === $bad->get_error_code(), 'Only an exact boolean may remove a reference.' );
-    rc_check( $before === $GLOBALS['ac'], 'Invalid discard input has no storage, audit, scheduling or provider side effect.' );
+    $after = $GLOBALS['ac'];
+    // Acquiring/releasing the request lock consumes a process-local random UUID,
+    // but never persists run state, messages, audit, scheduling or provider calls.
+    unset( $before['uuid'], $after['uuid'] );
+    rc_check( $before === $after, 'Invalid discard input has no storage, audit, scheduling or provider side effect.' );
 }
 
 // Owned-session identity is mandatory; cancellation and unrelated sessions never inherit.
@@ -105,7 +109,8 @@ $before = $GLOBALS['ac']; $GLOBALS['ac']['user'] = 8;
 $foreign = rc_start( 102, 'An unrelated user must not use this image.' );
 rc_check( is_wp_error( $foreign ) && 'bhranti_session_missing' === $foreign->get_error_code(), 'Other users cannot inherit or expose the conversation reference.' );
 $GLOBALS['ac']['user'] = 7;
-rc_check( $before === $GLOBALS['ac'], 'Rejected foreign Send cannot change the owned reference or messages.' );
+$after = $GLOBALS['ac']; unset( $before['uuid'], $after['uuid'] );
+rc_check( $before === $after, 'Rejected foreign Send cannot change the owned reference or messages.' );
 rc_session( 103 ); $separate = rc_start( 103, 'A separate task with no image.' ); rc_step( 103, $separate['run']['id'], 'reply' );
 rc_check( array() === rc_files(), 'An unrelated conversation never receives another conversation image.' );
 rc_session( 104 ); $cancelled_start = rc_start( 104, 'Start then stop this referenced task.', array( 'screenshot' => $image ) );

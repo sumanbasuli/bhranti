@@ -7,6 +7,7 @@
  * and audit seams are in-memory fixtures: no DB, HTTP, AI or live-site writes.
  */
 
+require_once __DIR__ . '/offline-requester-identity.php';
 $core_root = getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Documents/WordPress/Plugins';
 define( 'ABSPATH', rtrim( $core_root, '/' ) . '/' );
 require_once ABSPATH . 'wp-includes/class-wp-error.php';
@@ -86,7 +87,7 @@ final class Bhranti_Settings {
     public static function all() { return array( 'permissions' => array() ); }
 }
 final class Bhranti_Actions {
-    public static function ensure_actor() { return 11; }
+    public static function ensure_actor() { return Bhranti_Identity::requester(); }
     public static function catalog() { return array(); }
 }
 final class BhrantiUXClient {
@@ -125,10 +126,10 @@ function ux_session( $id ) {
     return get_post( $id );
 }
 function ux_run( $id ) {
-    return array( 'id' => $id, 'status' => 'running', 'phase' => '', 'step' => 4, 'requester_id' => 7, 'actor_id' => 11, 'history' => array( array( 'role' => 'user', 'content' => 'Existing successful image attachment 123 and write feedback.' ) ), 'configuration' => array( 'max_steps' => 128 ) );
+    return array( 'id' => $id, 'status' => 'running', 'phase' => '', 'step' => 4, 'requester_id' => 7, 'actor_id' => 7, 'history' => array( array( 'role' => 'user', 'content' => 'Existing successful image attachment 123 and write feedback.' ) ), 'configuration' => array( 'max_steps' => 128 ) );
 }
 function ux_transport_failure( $post, $run, $legacy = false ) {
-    Bhranti_Audit::record( 'ai_failed', 'Native connection failed.', $post->ID, array( 'run_id' => $run['id'], 'reason' => 'network', 'code' => 'prompt_builder_error', 'status' => 500 ), 7, 11 );
+    Bhranti_Audit::record( 'ai_failed', 'Native connection failed.', $post->ID, array( 'run_id' => $run['id'], 'reason' => 'network', 'code' => 'prompt_builder_error', 'status' => 500 ), 7, 7 );
     $run['resume_checkpoint'] = array( 'kind' => 'model_request', 'step' => $run['step'] );
     $result = ux_private( 'finish', $post, $run, 'The AI connection failed after three retries. Completed actions and images are saved. Use Resume task to continue.', 'failed' );
     ux_check( ! is_wp_error( $result ), 'Terminal fixture did not save.' );

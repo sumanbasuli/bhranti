@@ -17,7 +17,7 @@ Use **Bhranti → Logs** to understand what happened on your site, who asked for
 
 Events appear newest first. The count above and below the results shows the visible range and the total matching events. Use the numbered pages, **Previous** or **Next** to read more results while keeping your filters.
 
-[![Bhranti Logs with search and filters, readable activity summaries, outcomes and the requesting and acting accounts.](/images/docs/activity-logs.jpg)](/images/docs/activity-logs.jpg)
+[![Bhranti Logs with search and filters, readable activity summaries, outcomes and user identities.](/images/docs/activity-logs.jpg)](/images/docs/activity-logs.jpg)
 
 *Find the action, read its outcome and explanation, then follow related activity when you need the wider sequence. Select the screenshot to view it at full size.*
 
@@ -27,7 +27,6 @@ Open **More filters** for:
 
 - **From date** and **To date** — include activity on and between those dates, using your site's timezone.
 - **Requested by (user ID)** — match the person who requested the work.
-- **Acting user ID** — match the WordPress account that performed it.
 - **Conversation ID** — match the activity belonging to one chat.
 - **Task ID** — match one submitted task within a conversation.
 
@@ -51,9 +50,9 @@ Each row is one event, rather than the final status of an entire conversation. A
 
 Earlier records remain as they happened. A later recovery adds its own event; it does not turn the original failure into a success. Older records may have fewer details than newer ones.
 
-### See who requested and performed the work
+### See who requested the work
 
-Under **People**, **Requested by** identifies the person who asked for the action. **Acting user** identifies the WordPress account that performed it. Approved plugin operations and explicit plugin Undo run as your account. Other site actions use Bhranti’s dedicated account. When you approve a plugin change or save settings yourself, your account can appear in both places.
+The **User** column identifies the person who requested an action. Current Bhranti actions and explicit Undo run through that person's signed-in WordPress account. Older events can have a different acting account; the raw record retains that identity. Task and action details show which work Bhranti performed on your behalf.
 
 **Conversation activity** shows the related audit records. **Task activity** narrows them to a particular task when its ID is available. **View chat** reopens the messages only for your own conversations that still exist. Seeing another person's site activity does not give you access to their private chat.
 
@@ -86,7 +85,7 @@ A log cannot establish an unrecorded cause or prove that every part of a page or
 
 The download includes **all matching events**, across every results page. Events per page affects the screen, not the number of downloaded records. Reset the filters first if you want all site activity.
 
-NDJSON stores one JSON record per line. The file includes the recorded event, the requesting and acting accounts, outcome, activity category and available technical details. Exported timestamps use **UTC**, even when the screen displays your site's timezone. This is an activity-log download, separate from WordPress's personal-data export.
+NDJSON stores one JSON record per line. The file includes the recorded event, requester and acting-account identifiers, outcome, activity category and available technical details. For current actions, those identifiers normally match; older events can differ. Exported timestamps use **UTC**, even when the screen displays your site's timezone. This is an activity-log download, separate from WordPress's personal-data export.
 
 Logs exclude prompts, full page content and credentials. They still contain usernames, actions and site information, so check the file before sharing it.
 

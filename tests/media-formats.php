@@ -264,7 +264,7 @@ Bhranti_Memory::$fail = true;
 media_format_check( null === $observe->invoke( null, 1, Bhranti_Media::capabilities( 1, 11 ), 'checked' ), 'Advisory memory failure cannot throw or replay a completed native image action' );
 
 // Explicit capability inspection uses native metadata only, through live policy
-// and both identities. The isolated provider cannot make an HTTP request.
+// and the requesting identity. The isolated provider cannot make an HTTP request.
 require dirname( __DIR__ ) . '/includes/class-bhranti-workspace.php';
 function clean_user_cache( $id ) {}
 function clean_post_cache( $id ) {}
@@ -277,48 +277,55 @@ final class Bhranti_Settings {
     public static function can_manage() { return self::$manage; }
     public static function allows( $name ) { return self::$media_allowed ? true : new WP_Error( 'bhranti_action_disabled', 'Media is disabled.' ); }
 }
+// Execution identity is tested with real WP_User and live caps in requester-identity.php.
+// This no-DB format suite keeps only that independent native permission boundary as a seam.
+final class Bhranti_Identity {
+    public static function requester( $id = 0 ) {
+        return Bhranti_Settings::can_manage() && ( ! $id || (int) $id === get_current_user_id() ) ? get_current_user_id() : new WP_Error( 'bhranti_requester_permission' );
+    }
+}
 Media_Format_Provider::$formats=array('image/png','image/jpeg','image/webp');
 $count=count(Media_Format_Model::$calls);$observations=count(Bhranti_Memory::$observations);
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check(!is_wp_error($inspection) && 'available'===$inspection['data']['status'] && 'native_supported'===$inspection['data']['reason'] && array('image/webp')===$inspection['data']['generation_formats'], 'Explicit native inspection finds one actually supported MIME type without claiming all formats');
 media_format_check($count===count(Media_Format_Model::$calls) && $observations===count(Bhranti_Memory::$observations) && 1===get_current_user_id() && true===$inspection['metadata_only'] && false===$inspection['rollback_available'], 'Inspection never generates, saves a capability memory, changes identity or implies an undoable site action');
-media_format_check(array('image/png','image/webp','image/jpeg')===$inspection['data']['upload_formats'] && $limit===$inspection['data']['max_generated_image_bytes'], 'Inspection exposes only native human/actor MIME intersection and bounded generation storage limit');
+media_format_check(array('image/png','image/webp','image/jpeg')===$inspection['data']['upload_formats'] && $limit===$inspection['data']['max_generated_image_bytes'], 'Inspection exposes only native requester MIME permissions and bounded generation storage limit');
 media_format_check(false===strpos(wp_json_encode($inspection),'media-format-offline') && false===strpos(wp_json_encode($inspection),'offline-image') && false===strpos(wp_json_encode($inspection),PHP_SAPI), 'Public inspection contains no provider/model identifiers or runtime details');
 Media_Format_Provider::$ratios = array( '3:2', '2:3', '1:1' );
-$inspection = Bhranti_Media::inspect_images( 1, 11, 91, '16:9' );
+$inspection = Bhranti_Media::inspect_images( 1, 1, 91, '16:9' );
 media_format_check( 'available' === $inspection['data']['status'] && '16:9' === $inspection['data']['requested_aspect_ratio'] && '3:2' === $inspection['data']['selected_aspect_ratio'] && $inspection['data']['aspect_ratio_fallback'] && $count === count( Media_Format_Model::$calls ), 'Metadata-only helper reports a supported same-orientation ratio fallback without generating.' );
 Media_Format_Provider::$ratios = array();
-$inspection = Bhranti_Media::inspect_images( 1, 11, 91, '2:3' );
+$inspection = Bhranti_Media::inspect_images( 1, 1, 91, '2:3' );
 media_format_check( 'available' === $inspection['data']['status'] && '2:3' === $inspection['data']['requested_aspect_ratio'] && null === $inspection['data']['selected_aspect_ratio'] && $inspection['data']['aspect_ratio_fallback'] && $count === count( Media_Format_Model::$calls ), 'A legacy provider lacking ratio metadata remains image-capable and clearly selects native default.' );
 $metadata_before = Media_Format_Provider::$metadata_calls;
-media_format_check( is_wp_error( Bhranti_Media::inspect_images( 1, 11, 91, '0:2' ) ) && $metadata_before === Media_Format_Provider::$metadata_calls, 'Explicit ratio inspection rejects zero dimensions before native metadata.' );
+media_format_check( is_wp_error( Bhranti_Media::inspect_images( 1, 1, 91, '0:2' ) ) && $metadata_before === Media_Format_Provider::$metadata_calls, 'Explicit ratio inspection rejects zero dimensions before native metadata.' );
 Media_Format_Provider::$images=false;
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check('unavailable'===$inspection['data']['status'] && 'native_unavailable'===$inspection['data']['reason'] && array()===$inspection['data']['generation_formats'] && $count===count(Media_Format_Model::$calls), 'A confirmed text-only native connector is reported before any generation attempt');
 Media_Format_Provider::$images=true;Media_Format_Provider::$discovery_failure=true;
-$inspection=Bhranti_Media::inspect_images(1,11,91,'16:9');
+$inspection=Bhranti_Media::inspect_images(1,1,91,'16:9');
 media_format_check('unknown'===$inspection['data']['status'] && 'discovery_unavailable'===$inspection['data']['reason'] && '16:9'===$inspection['data']['requested_aspect_ratio'] && null===$inspection['data']['selected_aspect_ratio'] && false===$inspection['data']['aspect_ratio_fallback'] && $count===count(Media_Format_Model::$calls), 'Native ratio metadata failure stays unknown, records no selected/default fallback and cannot trigger generation');
 Media_Format_Provider::$discovery_failure=false;Media_Format_Provider::$empty_metadata=true;
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check('unknown'===$inspection['data']['status'] && 'discovery_unavailable'===$inspection['data']['reason'] && $count===count(Media_Format_Model::$calls), 'An empty native model directory is unknown rather than evidence of a text-only connector');
 Media_Format_Provider::$empty_metadata=false;Media_Format_Provider::$formats=array();
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check('available'===$inspection['data']['status'] && array()===$inspection['data']['generation_formats'] && $count===count(Media_Format_Model::$calls), 'Legacy formatless image metadata remains supported without inventing MIME support');
 add_filter('wp_ai_client_prevent_prompt',$blocked);
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check('unknown'===$inspection['data']['status'] && 'discovery_unavailable'===$inspection['data']['reason'] && $count===count(Media_Format_Model::$calls), 'Native prevention blocks every probe without an unsupported-provider claim or generation');
 remove_filter('wp_ai_client_prevent_prompt',$blocked);
 $metadata_calls=Media_Format_Provider::$metadata_calls;$limit=0;
-$inspection=Bhranti_Media::inspect_images(1,11,91);
+$inspection=Bhranti_Media::inspect_images(1,1,91);
 media_format_check('site_media_limits'===$inspection['data']['reason'] && 'unavailable'===$inspection['data']['status'] && $metadata_calls===Media_Format_Provider::$metadata_calls, 'A site upload limit stops before native metadata and is not blamed on connector image support');
 $limit=1048576;Bhranti_Settings::$media_allowed=false;
-media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,11,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'Disabled live media policy prevents capability discovery');
+media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,1,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'Disabled live media policy prevents capability discovery');
 Bhranti_Settings::$media_allowed=true;
-foreach(array('1:upload_files','11:upload_files','1:manage_options') as $denial){$GLOBALS['media_denied_caps']=array($denial);media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,11,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'Both current account permissions are enforced before metadata discovery');}
+foreach(array('1:upload_files','1:manage_options') as $denial){$GLOBALS['media_denied_caps']=array($denial);media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,1,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'Current requester permissions are enforced before metadata discovery');}
 $GLOBALS['media_denied_caps']=array();
 media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,12,91)) && is_wp_error(Bhranti_Media::inspect_images(1,11,92)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'A different actor or unowned conversation cannot inspect connector capability');
 $GLOBALS['media_current_user']=2;
-media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,11,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'A different current user cannot borrow the owner connector identity');
+media_format_check(is_wp_error(Bhranti_Media::inspect_images(1,1,91)) && $metadata_calls===Media_Format_Provider::$metadata_calls,'A different current user cannot borrow the owner connector identity');
 $GLOBALS['media_current_user']=1;
 media_format_check($count===count(Media_Format_Model::$calls) && $observations===count(Bhranti_Memory::$observations) && $before===glob(sys_get_temp_dir().'/bhranti-image-*'),'Every explicit inspection branch leaves model generation, capability memory and raster files untouched');
 echo 'PASS: ' . $checks . " native offline media-format checks; no WordPress bootstrap, database, network or AI.\n";

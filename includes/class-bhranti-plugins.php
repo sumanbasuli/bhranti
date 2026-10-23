@@ -122,7 +122,7 @@ final class Bhranti_Plugins {
 	 *
 	 * @param array $command Directory search command.
 	 * @param int   $requester_id Requester.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting user.
 	 * @param int   $session_id Conversation.
 	 * @return array|WP_Error
 	 */
@@ -212,7 +212,7 @@ final class Bhranti_Plugins {
 	 *
 	 * @param array  $review Reviewed request.
 	 * @param int    $requester_id Requester.
-	 * @param int    $actor_id Managed actor.
+	 * @param int    $actor_id Requesting user.
 	 * @param int    $session_id Conversation.
 	 * @param bool   $confirmed Confirmation.
 	 * @param string $expected_fingerprint Approved fingerprint.
@@ -489,7 +489,7 @@ final class Bhranti_Plugins {
 	 *
 	 * @param array $command Tool command.
 	 * @param int   $requester_id Requester.
-	 * @param int   $actor_id Managed actor.
+	 * @param int   $actor_id Requesting user.
 	 * @param bool  $recovery Allow policy-disabled activation recovery.
 	 * @return array|WP_Error
 	 */
@@ -630,72 +630,54 @@ final class Bhranti_Plugins {
 	}
 
 	/**
-	 * Check the human's native permission before temporarily checking the actor.
+	 * Check the requesting user's unchanged native permission.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @param callable        $callback Native permission callback.
 	 * @param int             $requester_id Human requester.
-	 * @param int             $actor_id Managed actor.
+	 * @param int             $actor_id Requesting user.
 	 * @param array           $caps Reviewed primitive capabilities.
 	 * @return true|WP_Error
 	 */
 	private static function permission( $request, $callback, $requester_id, $actor_id, $caps ) {
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $requester_id );
-			$allowed = call_user_func( $callback, $request );
-			if ( is_wp_error( $allowed ) || ! $allowed ) {
+		if ( (int) $requester_id !== (int) $actor_id || is_wp_error( Bhranti_Identity::requester( $requester_id ) ) ) {
+			return self::error( 'bhranti_plugin_permission', __( 'This plugin action is not available to your account.', 'bhranti' ), 403 );
+		}
+		foreach ( $caps as $cap ) {
+			if ( ! current_user_can( $cap ) ) {
 				return self::error( 'bhranti_plugin_permission', __( 'Your account must have WordPress permission for this exact plugin action.', 'bhranti' ), 403 );
 			}
-			$allowed = self::as_actor(
-				$actor_id,
-				$caps,
-				static function () use ( $callback, $request ) {
-					return call_user_func( $callback, $request );
-				}
-			);
-			return is_wp_error( $allowed ) || ! $allowed ? self::error( 'bhranti_plugin_permission', __( 'WordPress did not allow Bhranti to perform this exact plugin action.', 'bhranti' ), 403 ) : true;
-		} finally {
-			wp_set_current_user( $previous_user );
 		}
+		$allowed = call_user_func( $callback, $request );
+		return is_wp_error( $allowed ) || ! $allowed ? self::error( 'bhranti_plugin_permission', __( 'Your account must have WordPress permission for this exact plugin action.', 'bhranti' ), 403 ) : true;
 	}
 
 	/**
-	 * Scope plugin-only capabilities to the managed actor and this callback.
+	 * Require native capabilities without granting or borrowing privileges.
 	 *
-	 * @param int      $actor_id Managed actor.
+	 * @param int      $actor_id Requesting user.
 	 * @param array    $caps Native primitive capabilities.
 	 * @param callable $callback Reviewed callback.
 	 * @return mixed
 	 */
 	private static function as_actor( $actor_id, $caps, $callback ) {
-		if ( (int) get_option( 'bhranti_actor_id' ) !== (int) $actor_id || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() ) {
-			return self::error( 'bhranti_plugin_actor', __( 'The managed Bhranti identity could not be verified.', 'bhranti' ), 403 );
+		$identity = Bhranti_Identity::requester( $actor_id );
+		if ( is_wp_error( $identity ) ) {
+			return $identity;
 		}
-		$grant         = static function ( $allcaps, $requested, $args, $user ) use ( $actor_id, $caps ) {
-			if ( (int) $user->ID === (int) $actor_id ) {
-				foreach ( $caps as $cap ) {
-					$allcaps[ $cap ] = true;
-				}
+		foreach ( $caps as $cap ) {
+			if ( ! current_user_can( $cap ) ) {
+				return self::error( 'bhranti_plugin_permission', __( 'Your account must have WordPress permission for this exact plugin action.', 'bhranti' ), 403 );
 			}
-			return $allcaps;
-		};
-		$previous_user = get_current_user_id();
-		add_filter( 'user_has_cap', $grant, 10, 4 );
-		try {
-			wp_set_current_user( $actor_id );
-			return $callback();
-		} finally {
-			remove_filter( 'user_has_cap', $grant, 10 );
-			wp_set_current_user( $previous_user );
 		}
+		return $callback();
 	}
 
 	/**
 	 * Invoke core REST, enforcing directory package metadata only during installation.
 	 *
 	 * @param array $review Reviewed request.
-	 * @param int   $actor_id Managed actor for reads.
+	 * @param int   $actor_id Requesting user for reads.
 	 * @param int   $requester_id Approving user for native mutations.
 	 * @return array|WP_Error
 	 */
@@ -1011,7 +993,7 @@ final class Bhranti_Plugins {
 	 * @param int    $session_id Conversation.
 	 * @param array  $details Nonsecret details.
 	 * @param int    $requester_id Requester.
-	 * @param int    $actor_id Managed actor.
+	 * @param int    $actor_id Requesting user.
 	 * @return int|WP_Error
 	 */
 	private static function audit( $type, $summary, $session_id, $details, $requester_id, $actor_id ) {

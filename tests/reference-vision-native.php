@@ -49,7 +49,7 @@ final class Bhranti_Actions { public static function catalog() { return array();
 final class Bhranti_Plugins { public static function catalog() { return array(); } }
 final class Bhranti_Media { public static function catalog() { return array(); } }
 final class Bhranti_Audit { public static $events = array(); public static function record( ...$event ) { self::$events[] = $event; return count( self::$events ); } }
-foreach ( array( 'skills', 'knowledge', 'context', 'agent', 'diagnostics' ) as $class ) { require dirname( __DIR__ ) . '/includes/class-bhranti-' . $class . '.php'; }
+foreach ( array( 'credentials', 'skills', 'knowledge', 'context', 'agent', 'diagnostics' ) as $class ) { require dirname( __DIR__ ) . '/includes/class-bhranti-' . $class . '.php'; }
 
 final class Reference_Vision_Provider extends AbstractProvider {
     public static $vision = true; public static $json = true; public static $empty = false; public static $failure = false; public static $metadata_calls = 0;
@@ -96,7 +96,7 @@ $image = Bhranti_Context::screenshot( array( 'data' => $png, 'mime_type' => 'ima
 $reference_id = wp_generate_uuid4();
 Bhranti_Workspace::$messages = array( array( 'id' => $reference_id, 'role' => 'user', 'content' => 'The original human visual reference.' ), array( 'id' => wp_generate_uuid4(), 'role' => 'assistant', 'content' => 'Which audience?' ), array( 'id' => wp_generate_uuid4(), 'role' => 'user', 'content' => 'A later answer without reattaching.' ) );
 $post = (object) array( 'ID' => 91, 'post_author' => 7 );
-$run = array( 'id' => wp_generate_uuid4(), 'requester_id' => 7, 'actor_id' => 11, 'context' => array( 'screen' => 'post' ), 'history' => array(), 'configuration' => array( 'name' => 'Offline configured agent', 'system_prompt' => 'private-configured-prompt-marker', 'max_steps' => 128 ), 'reference_image' => array( 'message_id' => $reference_id, 'image' => $image ) );
+$run = array( 'id' => wp_generate_uuid4(), 'requester_id' => 7, 'actor_id' => 7, 'context' => array( 'screen' => 'post' ), 'history' => array(), 'configuration' => array( 'name' => 'Offline configured agent', 'system_prompt' => 'private-configured-prompt-marker', 'max_steps' => 128 ), 'reference_image' => array( 'message_id' => $reference_id, 'image' => $image ) );
 $ask = new ReflectionMethod( Bhranti_Agent::class, 'ask' );
 function vn_files( $messages ) { $files = array(); foreach ( $messages as $message ) { foreach ( $message->getParts() as $part ) { if ( $part->getType()->isFile() ) { $files[] = array( $message, $part->getFile() ); } } } return $files; }
 

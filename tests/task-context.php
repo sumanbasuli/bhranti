@@ -21,7 +21,7 @@ function tc_reset() {
     ac_check( ! is_wp_error( $started ), 'Fresh isolated run starts.' );
     return get_post_meta( 1, 'bhranti_run', true );
 }
-function tc_tool( $method, $params = array(), $actor = 11, $session = 1 ) {
+function tc_tool( $method, $params = array(), $actor = 7, $session = 1 ) {
     return Bhranti_Task::execute( array( 'tool' => 'bhranti_task', 'args' => array( 'method' => $method, 'params' => $params ) ), 7, $actor, $session );
 }
 function tc_notes( $revision = 'initial' ) {
@@ -46,12 +46,12 @@ foreach ( array( 'bhranti_task', 'bhranti_inspect', 'bhranti_skill' ) as $name )
     ac_check( in_array( $name, ac_private( 'plan_schema' )['properties']['tool']['enum'], true ), 'Structured model schema advertises the reviewed tool.' );
 }
 ac_check( 'initial' === tc_tool( 'GET' )['task']['revision'], 'Owned task starts empty without fake completion.' );
-ac_check( is_wp_error( tc_tool( 'GET', array(), 13 ) ), 'Revoked managed actor cannot read task data.' );
+ac_check( is_wp_error( tc_tool( 'GET', array(), 13 ) ), 'A different claimed executor cannot read task data.' );
 $GLOBALS['ac']['user'] = 8;
 ac_check( is_wp_error( tc_tool( 'GET' ) ), 'Another account cannot read owned notes or receipts.' );
 $GLOBALS['ac']['user'] = 7;
 $GLOBALS['ac']['posts'][2] = (object) array( 'ID' => 2, 'post_type' => 'bhranti_session', 'post_status' => 'private', 'post_author' => 8, 'post_title' => 'Other owner' );
-ac_check( is_wp_error( tc_tool( 'GET', array(), 11, 2 ) ), 'Changing conversation ID cannot cross owners.' );
+ac_check( is_wp_error( tc_tool( 'GET', array(), 7, 2 ) ), 'Changing conversation ID cannot cross owners.' );
 foreach ( array( array( 'page' => 0 ), array( 'page' => '1' ), array( 'per_page' => 21 ), array( 'run_id' => '../other' ), array( 'owner' => 8 ) ) as $params ) {
     ac_check( is_wp_error( tc_tool( 'GET', $params ) ), 'Receipt pagination rejects unknown or unbounded input.' );
 }

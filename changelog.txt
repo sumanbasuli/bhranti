@@ -1,5 +1,10 @@
 === Bhranti release history ===
 
+= 1.2 =
+* Run reviewed actions as the requesting administrator without creating another WordPress user or granting extra capabilities.
+* Store private preferences as encrypted, nonautoloaded WordPress database records, with export, erasure and reset controls.
+* Show one requesting user in Logs while retaining execution identity in raw audit records.
+
 = 1.1 =
 * Add screenshots of editing, live actions and Bhranti on the website.
 * Keep agent and skill instruction panels open while you edit.

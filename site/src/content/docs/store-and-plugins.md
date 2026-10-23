@@ -63,7 +63,7 @@ State whether visitors should see the store while you work and which products ma
 4. Select **Approve** to perform exactly the listed changes, or **Cancel** to stop. Installation with activation uses one approval, with no second prompt. Installation alone leaves the current directory package inactive.
 5. Review the recorded results, then complete any account connections or other setup.
 
-Later activation or deactivation needs its own approval card. **Cancel stops the current task**. Resolved decisions fold into the task history in order and remain expandable. Approved plugin changes run as your signed-in WordPress account; Logs records the actual acting user.
+Later activation or deactivation needs its own approval card. **Cancel stops the current task**. Resolved decisions fold into the task history in order and remain expandable. Approved plugin changes run as your signed-in WordPress account; Logs identifies you as the requester and retains execution identity in the raw record.
 
 Bhranti supports plugin changes on single-site WordPress installations. **Install plugins** allows installation from WordPress.org; use WordPress directly for ZIP uploads and plugin updates. **Activate or deactivate plugins** controls activation changes separately. Bhranti cannot deactivate or delete itself or the AI plugins it depends on.
 

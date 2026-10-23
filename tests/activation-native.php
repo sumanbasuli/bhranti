@@ -1,6 +1,6 @@
 <?php
 /**
- * Clean activation, private memory and settings guards in disposable Playground.
+ * Clean activation, encrypted database memory and settings guards in disposable Playground.
  *
  * Requires an explicit BHRANTI_ACTIVATION_TEST constant and the Playground VFS.
  * Uses only fixture data; no network, AI, real site or provider connection.
@@ -59,34 +59,16 @@ try {
 	bhranti_activation_check( '' === $output && empty( $diagnostics ), 'Debug activation emits no output, warnings or notices.' );
 	bhranti_activation_check( empty( $requests ), 'Activation makes no HTTP requests.' );
 	bhranti_activation_check( get_users( array( 'fields' => 'ID' ) ) === $users, 'Activation does not create a managed user before first use.' );
-	$gate = WP_CONTENT_DIR . '/.bhranti-memory-site-' . get_current_blog_id() . '.php';
-	clearstatcache( true, $gate );
-	bhranti_activation_check( 0600 === ( fileperms( $gate ) & 0777 ), 'The new private-memory gate has exact owner-only permissions.' );
-	$state = file_get_contents( $gate );
-	bhranti_activation_check( Bhranti_Memory::GATE_ACTIVE === $state, 'The new gate contains only the expected guarded state.' );
-
-	// A new-file permission fix must never repair or trust a preexisting unsafe gate.
+	$state = get_option( 'bhranti_memory_state', null );
+	bhranti_activation_check( 'active' === $state, 'Activation establishes native database memory state.' );
+	$memory = Bhranti_Memory::get();
+	bhranti_activation_check( true === $memory['available'] && array() === $memory['preferences'], 'Fresh encrypted database memory is available without content-directory storage.' );
+	bhranti_activation_check( ! file_exists( WP_CONTENT_DIR . '/bhranti-memory' ) && ! file_exists( WP_CONTENT_DIR . '/.bhranti-memory-site-' . get_current_blog_id() . '.php' ), 'Activation creates no memory payload, gate or directory under wp-content.' );
 	deactivate_plugins( 'bhranti/bhranti.php' );
-	chmod( $gate, 0666 );
-	$rejected = false;
-	ob_start();
-	try {
-		activate_plugin( 'bhranti/bhranti.php' );
-	} catch ( RuntimeException $failure ) {
-		$rejected = true;
-	} finally {
-		while ( ob_get_level() > $level ) {
-			ob_end_clean();
-		}
-	}
-	clearstatcache( true, $gate );
-	bhranti_activation_check( $rejected && ! is_plugin_active( 'bhranti/bhranti.php' ), 'Reactivation refuses a preexisting unsafe gate.' );
-	bhranti_activation_check( 0666 === ( fileperms( $gate ) & 0777 ) && $state === file_get_contents( $gate ), 'Rejection preserves the preexisting gate permissions and state.' );
-	chmod( $gate, 0600 );
 	ob_start();
 	$result = activate_plugin( 'bhranti/bhranti.php' );
 	$output = ob_get_clean();
-	bhranti_activation_check( ! is_wp_error( $result ) && is_plugin_active( 'bhranti/bhranti.php' ) && '' === $output, 'Reactivation succeeds after the fixture restores its gate.' );
+	bhranti_activation_check( ! is_wp_error( $result ) && is_plugin_active( 'bhranti/bhranti.php' ) && '' === $output, 'Reactivation succeeds through native database state.' );
 	bhranti_activation_check( empty( $diagnostics ) && empty( $requests ), 'All lifecycle checks remain free of diagnostics and network requests.' );
 
 	// Exercise new and existing SQLite guard files through the native settings handler.

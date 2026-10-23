@@ -5,6 +5,7 @@
  * post persistence are memory seams. No wp-load.php, DB, HTTP or AI is used.
  * Run: BHRANTI_TEST_WP_ROOT=/path/to/wordpress php tests/theme-metadata.php
  */
+require_once __DIR__ . '/offline-requester-identity.php';
 $core_root = getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: '/Users/txsadhu/Documents/WordPress/Plugins';
 define( 'ABSPATH', rtrim( $core_root, '/' ) . '/' );
 define( 'WPINC', 'wp-includes' );
@@ -173,7 +174,7 @@ tm_check( 0 === $GLOBALS['tm_inserts'] && array() === $GLOBALS['tm_posts'], 'Nat
 tm_check( 0 === $GLOBALS['tm_additional'] && false === strpos( wp_json_encode( $empty ), 'private-marker' ), 'Native field allowlist omits unreviewed additional callbacks/data.' );
 tm_check( 7 === get_current_user_id(), 'Requester identity is restored after native dispatch.' );
 wp_set_current_user( 11 );
-tm_check( ! current_user_can( 'switch_themes' ), 'Temporary theme-read capability does not survive dispatch.' );
+tm_check( ! current_user_can( 'switch_themes' ), 'An unrelated former actor receives no theme permission grant.' );
 wp_set_current_user( 7 );
 tm_check( false === $empty['rollback_available'] && '' === $empty['action_id'], 'Discovery remains a read, with no mutation/rollback identifier.' );
 
@@ -183,7 +184,7 @@ $GLOBALS['tm_permissions'] = array();
 $item = tm_run( array(), '/wp/v2/themes/active-theme' );
 tm_check( 7001 === $item['data']['global_styles_id'], 'Existing native global-style record is discoverable by exact theme read.' );
 $style_permissions = array_values( array_filter( $GLOBALS['tm_permissions'], static fn( $entry ) => 'read_post' === $entry[1] ) );
-tm_check( array( 7, 11 ) === array_column( $style_permissions, 0 ), 'Both identities pass the actual native global-style item read permission callback.' );
+tm_check( array( 7 ) === array_column( $style_permissions, 0 ), 'The actual human passes the native global-style item read permission callback.' );
 tm_check( false === strpos( wp_json_encode( $item ), 'private-global-style-content' ), 'Discovery exposes an ID, not private style content or full post data.' );
 $projected = tm_run( array( '_fields' => 'stylesheet,global_styles_id,_links,private_extra' ), '/wp/v2/themes/active-theme' );
 tm_check( array( 'stylesheet' => 'active-theme', 'global_styles_id' => 7001 ) === $projected['data'], 'Tool projection includes the new field while excluding links and unreviewed fields.' );
@@ -206,18 +207,18 @@ $GLOBALS['tm_posts'][7001]->post_status = 'draft';
 tm_check( null === tm_run( array(), '/wp/v2/themes/active-theme' )['data']['global_styles_id'], 'Unpublished records are not substituted for Core’s active published styles.' );
 $GLOBALS['tm_posts'][7001]->post_status = 'publish';
 
-foreach ( array( 7, 11 ) as $denied ) {
+foreach ( array( 7 ) as $denied ) {
     $GLOBALS['tm_deny_style'] = $denied;
     $result = tm_run( array(), '/wp/v2/themes/active-theme' );
     tm_check( is_array( $result ) && null === $result['data']['global_styles_id'], 'Denied global-style permission hides the ID without losing permitted theme metadata.' );
     tm_check( 7 === get_current_user_id(), 'Denied style lookup restores identity.' );
 }
 $GLOBALS['tm_deny_style'] = 0;
-foreach ( array( 7, 11 ) as $denied ) {
+foreach ( array( 7 ) as $denied ) {
     $GLOBALS['rf_deny'] = $denied;
     $queries = count( $GLOBALS['tm_queries'] ); $dispatches = $GLOBALS['tm_dispatched'];
     $result = tm_run( array(), '/wp/v2/themes/active-theme' );
-    tm_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code(), 'Native theme permission for either identity remains authoritative.' );
+    tm_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code(), 'Native theme permission for the current human remains authoritative.' );
     tm_check( $queries === count( $GLOBALS['tm_queries'] ) && $dispatches === $GLOBALS['tm_dispatched'], 'Denied theme reads never dispatch or discover style IDs.' );
     tm_check( 7 === get_current_user_id(), 'Denied theme read restores identity.' );
 }

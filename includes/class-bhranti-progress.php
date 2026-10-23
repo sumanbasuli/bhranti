@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 final class Bhranti_Progress {
 	/**
 	 * Classify site mutations independently of display text or private task notes.
-	 * Execution still validates ownership, schema, policy and both accounts.
+	 * Execution still validates ownership, schema, policy and current requester permissions.
 	 *
 	 * @param mixed $command Parsed tool command.
 	 * @return bool Unknown or malformed commands fail closed.
@@ -32,7 +32,7 @@ final class Bhranti_Progress {
 	 *
 	 * @param array  $command Parsed tool command. Execution still validates its complete schema.
 	 * @param int    $requester_id Requesting administrator.
-	 * @param int    $actor_id Managed user.
+	 * @param int    $actor_id Requesting user.
 	 * @param string $intent Optional public description of the intended outcome.
 	 * @return array
 	 */

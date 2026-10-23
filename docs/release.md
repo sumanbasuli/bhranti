@@ -10,15 +10,15 @@ Requirements: Bash, Python 3.9 or newer, PHP CLI, and Node.js. No npm or Compose
 ./build.sh
 ```
 
-For version `1.1`, the outputs are:
+For version `1.2`, the outputs are:
 
 | Output | Purpose |
 | --- | --- |
 | `build/bhranti/` | Clean installable plugin directory |
 | `build/bhranti.zip` | ZIP to upload through WordPress Plugins → Add New Plugin → Upload Plugin |
-| `build/bhranti-1.1.zip` | Identical versioned ZIP for a release |
+| `build/bhranti-1.2.zip` | Identical versioned ZIP for a release |
 | `build/bhranti.zip.sha256` | Unversioned ZIP checksum |
-| `build/bhranti-1.1.zip.sha256` | Versioned ZIP checksum |
+| `build/bhranti-1.2.zip.sha256` | Versioned ZIP checksum |
 | `build/wordpress-org-assets.zip` | Screenshots for the WordPress.org listing |
 | `build/wordpress-org-assets.zip.sha256` | Listing screenshots checksum |
 | `build/SHA256SUMS` | Checksums for all three ZIPs |
@@ -85,8 +85,8 @@ The workflow is `.github/workflows/release.yml`. Configure a GitHub remote and p
 A first push with no available previous `main` commit only creates an artifact. For the initial release, push `main`, then create and push the matching tag, for example:
 
 ```sh
-git tag v1.1
-git push origin v1.1
+git tag v1.2
+git push origin v1.2
 ```
 
 Create the tag only from the intended release commit after it is on `main`. Future changes to `VERSION` on `main` create their tags automatically. Versions starting with `0.` are marked as GitHub prereleases.

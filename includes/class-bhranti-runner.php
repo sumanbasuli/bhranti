@@ -138,7 +138,7 @@ final class Bhranti_Runner {
 			self::$background = true;
 			clean_user_cache( $requester_id );
 			wp_set_current_user( $requester_id );
-			if ( ! current_user_can( 'manage_options' ) || ! Bhranti_Workspace::can_access() || get_user_meta( $requester_id, 'bhranti_managed_actor', true ) ) {
+			if ( is_wp_error( Bhranti_Identity::requester( $requester_id ) ) || ! Bhranti_Workspace::can_access() ) {
 				Bhranti_Audit::record(
 					'background_blocked',
 					__( 'Background continuation stopped because the requesting administrator no longer has permission.', 'bhranti' ),

@@ -29,6 +29,12 @@ use WordPress\AiClient\Results\DTO\GenerativeAiResult;
 use WordPress\AiClient\Results\DTO\TokenUsage;
 use WordPress\AiClient\Results\Enums\FinishReasonEnum;
 
+// Historical service-account fixtures must never run against requester execution.
+if ( is_file( dirname( __DIR__ ) . '/includes/class-bhranti-identity.php' ) ) {
+	fwrite( STDERR, "This dedicated-account fixture is retired. Use tests/review-e2e.mjs or tests/review-multisite.mjs on a disposable site.\n" );
+	exit( 1 );
+}
+
 $test_root = realpath( getenv( 'BHRANTI_TEST_WP_ROOT' ) ?: ( defined( 'ABSPATH' ) ? ABSPATH : '' ) );
 if ( 'cli' !== PHP_SAPI || '1' !== getenv( 'BHRANTI_TEST_ALLOW_MUTATION' ) || ! $test_root || ( defined( 'ABSPATH' ) && realpath( ABSPATH ) !== $test_root ) ) {
 	fwrite( STDERR, "Set BHRANTI_TEST_WP_ROOT and BHRANTI_TEST_ALLOW_MUTATION=1 to test only https://bhranti.wp.local/.\n" );

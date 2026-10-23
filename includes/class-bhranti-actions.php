@@ -1,6 +1,6 @@
 <?php
 /**
- * Reviewed core WordPress actions with a managed actor and durable rollback.
+ * Reviewed core WordPress actions with native human permissions and durable rollback.
  *
  * @package Bhranti
  * @license GPL-2.0-or-later
@@ -9,12 +9,12 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Intersect the requesting administrator's permissions with a dedicated actor.
+ * Apply reviewed actions using the requesting administrator's native permissions.
  */
 final class Bhranti_Actions {
 
 	/**
-	 * Block interactive authentication for managed service accounts.
+	 * Block authentication for legacy Bhranti-managed accounts created by older releases.
 	 */
 	public static function register() {
 		add_filter( 'authenticate', array( __CLASS__, 'block_login' ), 100, 1 );
@@ -24,20 +24,20 @@ final class Bhranti_Actions {
 	}
 
 	/**
-	 * Reject managed actors after normal WordPress authentication.
+	 * Reject legacy managed actors after normal WordPress authentication.
 	 *
 	 * @param WP_User|WP_Error|null $user Authentication result.
 	 * @return WP_User|WP_Error|null
 	 */
 	public static function block_login( $user ) {
 		if ( $user instanceof WP_User && get_user_meta( $user->ID, 'bhranti_managed_actor', true ) ) {
-			return new WP_Error( 'bhranti_actor_login', __( 'Bhranti is a managed service account and cannot sign in.', 'bhranti' ) );
+			return new WP_Error( 'bhranti_actor_login', __( 'This legacy Bhranti account cannot sign in.', 'bhranti' ) );
 		}
 		return $user;
 	}
 
 	/**
-	 * Reject existing cookies and alternative authentication for managed actors.
+	 * Reject existing cookies and alternative authentication for legacy managed actors.
 	 *
 	 * @param int|false $user_id Authenticated user ID.
 	 * @return int|false
@@ -47,7 +47,7 @@ final class Bhranti_Actions {
 	}
 
 	/**
-	 * Disable application passwords for managed actors.
+	 * Disable application passwords for legacy managed actors.
 	 *
 	 * @param bool    $available Current availability.
 	 * @param WP_User $user      Account.
@@ -58,7 +58,7 @@ final class Bhranti_Actions {
 	}
 
 	/**
-	 * Disable password resets for managed actors.
+	 * Disable password resets for legacy managed actors.
 	 *
 	 * @param bool|WP_Error $allowed Current permission.
 	 * @param int           $user_id Account ID.
@@ -69,114 +69,15 @@ final class Bhranti_Actions {
 	}
 
 	/**
-	 * Create or validate a site-specific actor without claiming an existing account.
+	 * Return the authenticated requester; never provision or impersonate a user.
 	 *
-	 * @return int|WP_Error Managed actor ID.
+	 * Kept as an internal adapter compatibility name. New writes and their audit
+	 * records use the submitting human's actual identity and live capabilities.
+	 *
+	 * @return int|WP_Error Current human user ID.
 	 */
 	public static function ensure_actor() {
-		$lock = Bhranti_Lock::acquire( 'bhranti_actor_setup_lock', 600 );
-		if ( ! $lock ) {
-			return self::error( 'bhranti_actor_busy', __( 'Another request is preparing Bhranti. Try again shortly.', 'bhranti' ), 409 );
-		}
-		try {
-			return self::prepare_actor();
-		} finally {
-			Bhranti_Lock::release( 'bhranti_actor_setup_lock', $lock );
-		}
-	}
-
-	/**
-	 * Provision while holding the site-wide actor setup lock.
-	 *
-	 * @return int|WP_Error Managed actor ID.
-	 */
-	private static function prepare_actor() {
-		$capabilities  = array_fill_keys(
-			array( 'read', 'edit_posts', 'edit_others_posts', 'edit_published_posts', 'edit_private_posts', 'publish_posts', 'read_private_posts', 'delete_posts', 'delete_others_posts', 'delete_published_posts', 'delete_private_posts', 'edit_pages', 'edit_others_pages', 'edit_published_pages', 'edit_private_pages', 'publish_pages', 'read_private_pages', 'delete_pages', 'delete_others_pages', 'delete_published_pages', 'delete_private_pages', 'manage_categories', 'moderate_comments', 'upload_files', 'edit_theme_options', 'manage_options', 'list_users' ),
-			true
-		);
-		$service_email = 'bhranti+' . get_current_blog_id() . '@example.invalid';
-		$actor_id      = absint( get_option( 'bhranti_actor_id' ) );
-		$actor         = $actor_id ? get_userdata( $actor_id ) : false;
-		$email_owner   = ( ! $actor || ! $actor->user_email ) ? email_exists( $service_email ) : false;
-		if ( $email_owner && (int) $email_owner !== $actor_id ) {
-			// A retained author account from an earlier install may own the first address.
-			$service_email = 'bhranti+' . get_current_blog_id() . '-' . str_replace( '-', '', wp_generate_uuid4() ) . '@example.invalid';
-		}
-		if ( $actor_id && ( ! $actor || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() || array( 'bhranti_agent' ) !== $actor->roles || array( 'bhranti_agent' => true ) !== $actor->caps ) ) {
-			return self::error( 'bhranti_actor_invalid', __( 'The managed Bhranti account needs administrator review.', 'bhranti' ), 409 );
-		}
-		$role = get_role( 'bhranti_agent' );
-		if ( $role && ! get_option( 'bhranti_role_owned' ) ) {
-			return self::error( 'bhranti_actor_role', __( 'An existing role uses the Bhranti role name. It has not been changed.', 'bhranti' ), 409 );
-		}
-		if ( $actor && $role && $role->capabilities === $capabilities && $actor->user_email ) {
-			return $actor_id;
-		}
-		if ( ! current_user_can( 'create_users' ) || ! current_user_can( 'manage_options' ) ) {
-			return self::error( 'bhranti_actor_permission', __( 'An administrator who can create users must initialize Bhranti.', 'bhranti' ), 403 );
-		}
-		$logged = self::audit( 'actor_started', __( 'Preparing the managed Bhranti account.', 'bhranti' ), 0, array(), get_current_user_id(), $actor_id );
-		if ( is_wp_error( $logged ) ) {
-			return $logged;
-		}
-		if ( ! $role ) {
-			if ( ! add_option( 'bhranti_role_owned', true, '', false ) ) {
-				return self::error( 'bhranti_actor_storage', __( 'WordPress could not reserve the Bhranti role.', 'bhranti' ), 500 );
-			}
-			$role = add_role( 'bhranti_agent', __( 'Bhranti agent', 'bhranti' ), $capabilities );
-		}
-		if ( ! $role ) {
-			return self::error( 'bhranti_actor_role', __( 'WordPress could not create the Bhranti role.', 'bhranti' ), 500 );
-		}
-		foreach ( array_keys( $role->capabilities ) as $capability ) {
-			if ( ! isset( $capabilities[ $capability ] ) ) {
-				$role->remove_cap( $capability );
-			}
-		}
-		foreach ( $capabilities as $capability => $granted ) {
-			$role->add_cap( $capability, $granted );
-		}
-		if ( $actor && ! $actor->user_email ) {
-			$updated = wp_update_user(
-				array(
-					'ID'         => $actor_id,
-					'user_email' => $service_email,
-				)
-			);
-			if ( is_wp_error( $updated ) || get_userdata( $actor_id )->user_email !== $service_email ) {
-				return self::error( 'bhranti_actor_storage', __( 'WordPress could not save the managed comment-author identity.', 'bhranti' ), 500 );
-			}
-		}
-		if ( ! $actor ) {
-			$login = 'bhranti';
-			if ( username_exists( $login ) ) {
-				$login = 'bhranti_agent_' . get_current_blog_id();
-			}
-			if ( username_exists( $login ) ) {
-				$login .= '_' . substr( str_replace( '-', '', wp_generate_uuid4() ), 0, 12 );
-			}
-			$actor_id = wp_insert_user(
-				array(
-					'user_login'   => $login,
-					'user_pass'    => wp_generate_password( 64, true, true ),
-					'user_email'   => $service_email,
-					'display_name' => 'Bhranti',
-					'role'         => 'bhranti_agent',
-					'meta_input'   => array( 'bhranti_managed_actor' => get_current_blog_id() ),
-				)
-			);
-			if ( is_wp_error( $actor_id ) ) {
-				self::audit( 'actor_failed', __( 'The managed Bhranti account could not be created.', 'bhranti' ), 0, array( 'code' => $actor_id->get_error_code() ), get_current_user_id(), 0 );
-				return self::error( 'bhranti_actor_create', __( 'WordPress could not create the managed Bhranti account.', 'bhranti' ), 500 );
-			}
-			update_option( 'bhranti_actor_id', $actor_id, false );
-			if ( (int) get_option( 'bhranti_actor_id' ) !== $actor_id || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() ) {
-				return self::error( 'bhranti_actor_storage', __( 'WordPress could not save the managed account identity.', 'bhranti' ), 500 );
-			}
-		}
-		self::audit( 'actor_completed', __( 'Managed Bhranti account ready.', 'bhranti' ), 0, array(), get_current_user_id(), $actor_id );
-		return $actor_id;
+		return Bhranti_Identity::requester();
 	}
 
 	/**
@@ -260,6 +161,24 @@ final class Bhranti_Actions {
 	 * @return array|WP_Error Result or confirmation proposal.
 	 */
 	public static function execute( $command, $requester_id, $session_id, $confirmed = false, $expected_fingerprint = '' ) {
+		return Bhranti_Identity::scope(
+			static function () use ( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint ) {
+				return self::execute_reviewed( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint );
+			}
+		);
+	}
+
+	/**
+	 * Dispatch a tool inside the scoped native authoring guard.
+	 *
+	 * @param array  $command Reviewed tool request.
+	 * @param int    $requester_id Signed-in human.
+	 * @param int    $session_id Owned conversation.
+	 * @param bool   $confirmed Explicit foreground approval.
+	 * @param string $expected_fingerprint Reviewed state.
+	 * @return array|WP_Error
+	 */
+	private static function execute_reviewed( $command, $requester_id, $session_id, $confirmed, $expected_fingerprint ) {
 		if ( Bhranti_Credentials::contains( $command ) ) {
 			return Bhranti_Credentials::error( 'response' );
 		}
@@ -441,11 +360,11 @@ final class Bhranti_Actions {
 				}
 			}
 		}
-		$preserved = self::preserves_existing_content( $review, $before, $actor_id );
+		$preserved = self::preserves_existing_content( $review, $before );
 		if ( is_wp_error( $preserved ) ) {
 			self::audit(
 				'action_blocked',
-				__( 'The actor cannot preserve this item’s existing markup.', 'bhranti' ),
+				__( 'Bhranti cannot preserve this item’s existing markup safely.', 'bhranti' ),
 				$session_id,
 				$details + array(
 					'code'   => $preserved->get_error_code(),
@@ -660,6 +579,22 @@ final class Bhranti_Actions {
 	 * @return array|WP_Error
 	 */
 	public static function rollback( $action_id, $requester_id, $session_id ) {
+		return Bhranti_Identity::scope(
+			static function () use ( $action_id, $requester_id, $session_id ) {
+				return self::rollback_reviewed( $action_id, $requester_id, $session_id );
+			}
+		);
+	}
+
+	/**
+	 * Restore an owned snapshot with current human permissions and sanitization.
+	 *
+	 * @param string $action_id Existing rollback receipt.
+	 * @param int    $requester_id Signed-in human.
+	 * @param int    $session_id Owned conversation.
+	 * @return array|WP_Error
+	 */
+	private static function rollback_reviewed( $action_id, $requester_id, $session_id ) {
 		$owner = self::owner( $requester_id, $session_id );
 		if ( is_wp_error( $owner ) ) {
 			return $owner;
@@ -706,11 +641,11 @@ final class Bhranti_Actions {
 		}
 		$current = self::read_item( $path, $requester_id, $actor_id );
 		if ( ! is_wp_error( $current ) ) {
-			$preserved = self::preserves_existing_content( $review, $current, $actor_id );
+			$preserved = self::preserves_existing_content( $review, $current );
 			if ( is_wp_error( $preserved ) ) {
 				self::audit(
 					'rollback_blocked',
-					__( 'The actor cannot preserve this item’s existing markup.', 'bhranti' ),
+					__( 'Bhranti cannot preserve this item’s existing markup safely.', 'bhranti' ),
 					$session_id,
 					array(
 						'path'      => $path,
@@ -790,88 +725,83 @@ final class Bhranti_Actions {
 			self::audit( 'rollback_blocked', __( 'The item changed before rollback could run.', 'bhranti' ), $session_id, $details, $requester_id, $actor_id );
 			return self::error( 'bhranti_rollback_conflict', __( 'The item changed before rollback could run. Review its current state.', 'bhranti' ), 409 );
 		}
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $actor_id );
-			if ( 'create' === $snapshot['kind'] && 'WP_REST_Menu_Items_Controller' === $snapshot['class'] ) {
-				$data = wp_trash_post( $snapshot['object_id'] ) ? array(
-					'id'     => $snapshot['target']['id'],
-					'status' => 'trash',
-					'title'  => $snapshot['target']['title'],
-				) : self::error( 'bhranti_rollback_failed', __( 'WordPress could not move the created menu item to Trash.', 'bhranti' ), 500 );
-			} else {
-				if ( 'trash' === $snapshot['kind'] ) {
-					$untrashed = 'WP_REST_Comments_Controller' === $snapshot['class'] ? wp_untrash_comment( $snapshot['object_id'] ) : wp_untrash_post( $snapshot['object_id'] );
-					if ( ! $untrashed ) {
-						$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the item from Trash.', 'bhranti' ), 500 );
-					}
-				}
-				if ( ! isset( $data ) || ! is_wp_error( $data ) ) {
-					$data = self::dispatch( $write['request'], $actor_id );
+		if ( 'create' === $snapshot['kind'] && 'WP_REST_Menu_Items_Controller' === $snapshot['class'] ) {
+			$data = wp_trash_post( $snapshot['object_id'] ) ? array(
+				'id'     => $snapshot['target']['id'],
+				'status' => 'trash',
+				'title'  => $snapshot['target']['title'],
+			) : self::error( 'bhranti_rollback_failed', __( 'WordPress could not move the created menu item to Trash.', 'bhranti' ), 500 );
+		} else {
+			if ( 'trash' === $snapshot['kind'] ) {
+				$untrashed = 'WP_REST_Comments_Controller' === $snapshot['class'] ? wp_untrash_comment( $snapshot['object_id'] ) : wp_untrash_post( $snapshot['object_id'] );
+				if ( ! $untrashed ) {
+					$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the item from Trash.', 'bhranti' ), 500 );
 				}
 			}
-			if ( ! is_wp_error( $data ) && ! empty( $snapshot['aux'] ) ) {
-				$native_fields = $snapshot['aux']['trash_post'] ?? ( $snapshot['aux']['post_dates'] ?? array() );
-				if ( $native_fields ) {
-					$restored = wp_update_post(
-						wp_slash(
-							array(
-								'ID'        => $snapshot['object_id'],
-								'edit_date' => true,
-							) + $native_fields
-						),
-						true
-					);
-					if ( is_wp_error( $restored ) || ! $restored ) {
-						$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous slug or publication dates.', 'bhranti' ), 500 );
-					}
-					if ( ! is_wp_error( $data ) ) {
-						$post = get_post( $snapshot['object_id'] );
-						foreach ( $native_fields as $field => $value ) {
-							if ( ! $post || $post->$field !== $value ) {
-								$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous slug or publication dates.', 'bhranti' ), 500 );
-								break;
-							}
-						}
-					}
-				}
-				if ( ! is_wp_error( $data ) && isset( $snapshot['aux']['trash_meta'] ) ) {
-					foreach ( $snapshot['aux']['trash_meta'] as $key => $values ) {
-						delete_post_meta( $snapshot['object_id'], $key );
-						foreach ( $values as $value ) {
-							add_post_meta( $snapshot['object_id'], $key, wp_slash( $value ) );
-						}
-						if ( get_post_meta( $snapshot['object_id'], $key, false ) !== $values ) {
-							$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous Trash metadata.', 'bhranti' ), 500 );
-							break;
-						}
-					}
-				}
-				if ( ! is_wp_error( $data ) && ! empty( $snapshot['aux']['was_sticky'] ) ) {
-					stick_post( $snapshot['object_id'] );
-					if ( ! is_sticky( $snapshot['object_id'] ) ) {
-						$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous sticky setting.', 'bhranti' ), 500 );
-					}
-				}
-				if ( ! is_wp_error( $data ) && isset( $snapshot['aux']['front_page_options'] ) ) {
-					foreach ( $snapshot['aux']['front_page_options'] as $option_name => $value ) {
-						update_option( $option_name, $value );
-						if ( (string) get_option( $option_name ) !== (string) $value ) {
-							$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous front-page settings.', 'bhranti' ), 500 );
-							break;
-						}
-					}
-				}
-				if ( array_key_exists( 'nav_menu_locations', $snapshot['aux'] ) ) {
-					set_theme_mod( 'nav_menu_locations', $snapshot['aux']['nav_menu_locations'] );
-				}
-				if ( array_key_exists( 'nav_menu_options', $snapshot['aux'] ) ) {
-					update_option( 'nav_menu_options', $snapshot['aux']['nav_menu_options'] );
-				}
+			if ( ! isset( $data ) || ! is_wp_error( $data ) ) {
+				$data = self::dispatch( $write['request'], $actor_id );
 			}
-		} finally {
-			wp_set_current_user( $previous_user );
 		}
+		if ( ! is_wp_error( $data ) && ! empty( $snapshot['aux'] ) ) {
+			$native_fields = $snapshot['aux']['trash_post'] ?? ( $snapshot['aux']['post_dates'] ?? array() );
+			if ( $native_fields ) {
+				$restored = wp_update_post(
+					wp_slash(
+						array(
+							'ID'        => $snapshot['object_id'],
+							'edit_date' => true,
+						) + $native_fields
+					),
+					true
+				);
+				if ( is_wp_error( $restored ) || ! $restored ) {
+					$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous slug or publication dates.', 'bhranti' ), 500 );
+				}
+				if ( ! is_wp_error( $data ) ) {
+					$post = get_post( $snapshot['object_id'] );
+					foreach ( $native_fields as $field => $value ) {
+						if ( ! $post || $post->$field !== $value ) {
+							$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous slug or publication dates.', 'bhranti' ), 500 );
+							break;
+						}
+					}
+				}
+			}
+			if ( ! is_wp_error( $data ) && isset( $snapshot['aux']['trash_meta'] ) ) {
+				foreach ( $snapshot['aux']['trash_meta'] as $key => $values ) {
+					delete_post_meta( $snapshot['object_id'], $key );
+					foreach ( $values as $value ) {
+						add_post_meta( $snapshot['object_id'], $key, wp_slash( $value ) );
+					}
+					if ( get_post_meta( $snapshot['object_id'], $key, false ) !== $values ) {
+						$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous Trash metadata.', 'bhranti' ), 500 );
+						break;
+					}
+				}
+			}
+			if ( ! is_wp_error( $data ) && ! empty( $snapshot['aux']['was_sticky'] ) ) {
+				stick_post( $snapshot['object_id'] );
+				if ( ! is_sticky( $snapshot['object_id'] ) ) {
+					$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous sticky setting.', 'bhranti' ), 500 );
+				}
+			}
+			if ( ! is_wp_error( $data ) && isset( $snapshot['aux']['front_page_options'] ) ) {
+				foreach ( $snapshot['aux']['front_page_options'] as $option_name => $value ) {
+					update_option( $option_name, $value );
+					if ( (string) get_option( $option_name ) !== (string) $value ) {
+						$data = self::error( 'bhranti_rollback_failed', __( 'WordPress could not restore the previous front-page settings.', 'bhranti' ), 500 );
+						break;
+					}
+				}
+			}
+			if ( array_key_exists( 'nav_menu_locations', $snapshot['aux'] ) ) {
+				set_theme_mod( 'nav_menu_locations', $snapshot['aux']['nav_menu_locations'] );
+			}
+			if ( array_key_exists( 'nav_menu_options', $snapshot['aux'] ) ) {
+				update_option( 'nav_menu_options', $snapshot['aux']['nav_menu_options'] );
+			}
+		}
+
 		if ( ! is_wp_error( $data ) && 'create' !== $snapshot['kind'] ) {
 			$data = self::read_item( $path, $requester_id, $actor_id );
 		}
@@ -906,14 +836,14 @@ final class Bhranti_Actions {
 	 */
 	private static function owner( $requester_id, $session_id ) {
 		$post = get_post( $session_id );
-		if ( get_current_user_id() !== (int) $requester_id || ! user_can( $requester_id, 'manage_options' ) || ! $post || 'bhranti_session' !== $post->post_type || 'private' !== $post->post_status || (int) $post->post_author !== (int) $requester_id ) {
+		if ( is_wp_error( Bhranti_Identity::requester( $requester_id ) ) || ! $post || 'bhranti_session' !== $post->post_type || 'private' !== $post->post_status || (int) $post->post_author !== (int) $requester_id ) {
 			return self::error( 'bhranti_action_owner', __( 'This workspace action is not available to your account.', 'bhranti' ), 403 );
 		}
 		return true;
 	}
 
 	/**
-	 * Match only actual core controllers, validate schemas, and check both actors.
+	 * Match only actual core controllers and enforce current human permissions.
 	 *
 	 * @param array $command      Command.
 	 * @param int   $requester_id Requester.
@@ -1063,32 +993,19 @@ final class Bhranti_Actions {
 		if ( is_wp_error( $valid ) ) {
 			return self::error( 'bhranti_action_invalid', __( 'WordPress rejected these route parameters.', 'bhranti' ) );
 		}
-		$previous_user = get_current_user_id();
-		$missing_block = false;
-		try {
-			foreach ( array( $requester_id, $actor_id ) as $user_id ) {
-				wp_set_current_user( $user_id );
-				if ( 'WP_REST_Revisions_Controller' === $class && ! current_user_can( 'read_post', (int) $matched['url_params']['parent'] ) ) {
-					return self::error( 'bhranti_action_permission', __( 'Both accounts must be able to read the revision parent.', 'bhranti' ), 403 );
-				}
-				$check      = static function () use ( $endpoint, $request ) {
-					return call_user_func( $endpoint['permission_callback'], $request );
-				};
-				$permission = (int) $user_id === (int) $actor_id && Bhranti_Site::is_theme_request( $request ) ? Bhranti_Site::actor_read( $request, $actor_id, $check ) : $check();
-				// Some plugins register blocks only in the editor, not in scheduled requests.
-				if ( 'GET' === $method && 'WP_REST_Block_Types_Controller' === $class && is_wp_error( $permission ) && 'rest_block_type_invalid' === $permission->get_error_code() && 404 === ( $permission->get_error_data()['status'] ?? 0 ) ) {
-					$missing_block = true;
-					continue;
-				}
-				if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
-					return self::error( 'bhranti_action_permission', __( 'Both your account and Bhranti must have permission for this action.', 'bhranti' ), 403 );
-				}
-			}
-			if ( $missing_block ) {
-				return self::error( 'bhranti_block_metadata_unavailable', __( 'This block is not registered in the current WordPress request. Discover available block names before continuing.', 'bhranti' ), 404 );
-			}
-		} finally {
-			wp_set_current_user( $previous_user );
+		if ( (int) $actor_id !== (int) $requester_id || is_wp_error( Bhranti_Identity::requester( $requester_id ) ) ) {
+			return self::error( 'bhranti_action_permission', __( 'This action requires its signed-in administrator and current permissions.', 'bhranti' ), 403 );
+		}
+		if ( 'WP_REST_Revisions_Controller' === $class && ! current_user_can( 'read_post', (int) $matched['url_params']['parent'] ) ) {
+			return self::error( 'bhranti_action_permission', __( 'Your account must be able to read the revision parent.', 'bhranti' ), 403 );
+		}
+		$permission = call_user_func( $endpoint['permission_callback'], $request );
+		// Some plugins register blocks only in the editor, not in scheduled requests.
+		if ( 'GET' === $method && 'WP_REST_Block_Types_Controller' === $class && is_wp_error( $permission ) && 'rest_block_type_invalid' === $permission->get_error_code() && 404 === ( $permission->get_error_data()['status'] ?? 0 ) ) {
+			return self::error( 'bhranti_block_metadata_unavailable', __( 'This block is not registered in the current WordPress request. Discover available block names before continuing.', 'bhranti' ), 404 );
+		}
+		if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
+			return self::error( 'bhranti_action_permission', __( 'Your account must have current WordPress permission for this action.', 'bhranti' ), 403 );
 		}
 		if ( 'WP_REST_Revisions_Controller' === $class && isset( $matched['url_params']['id'] ) ) {
 			$revision = get_post( (int) $matched['url_params']['id'] );
@@ -1210,7 +1127,7 @@ final class Bhranti_Actions {
 				'path'         => $path,
 				'method'       => $method,
 				'parameters'   => $params,
-				'verification' => 'Bounded parameter schema and explicit input notes only; callbacks and large/nested schema details are omitted. Both account permissions, current switches, valid values, approvals and editor safety are checked again on execution.',
+				'verification' => 'Bounded parameter schema and explicit input notes only; callbacks and large/nested schema details are omitted. Current account permissions, current switches, valid values, approvals and editor safety are checked again on execution.',
 			),
 		);
 	}
@@ -1435,20 +1352,18 @@ final class Bhranti_Actions {
 	}
 
 	/**
-	 * Dispatch as the actor, restoring the caller even on exceptions.
+	 * Dispatch directly as the authenticated submitting human.
 	 *
 	 * @param WP_REST_Request $request  Validated request.
 	 * @param int             $actor_id Actor ID.
 	 * @return array|WP_Error
 	 */
 	private static function dispatch( $request, $actor_id ) {
-		$previous_user = get_current_user_id();
+		if ( is_wp_error( Bhranti_Identity::requester( $actor_id ) ) ) {
+			return self::error( 'bhranti_action_permission', __( 'The submitting administrator no longer has permission for this action.', 'bhranti' ), 403 );
+		}
 		try {
-			wp_set_current_user( $actor_id );
-			$dispatch = static function () use ( $request ) {
-				return rest_do_request( $request );
-			};
-			$response = Bhranti_Site::is_theme_request( $request ) ? Bhranti_Site::actor_read( $request, $actor_id, $dispatch ) : $dispatch();
+			$response = rest_do_request( $request );
 			if ( is_wp_error( $response ) ) {
 				return $response;
 			}
@@ -1459,13 +1374,11 @@ final class Bhranti_Actions {
 			return $response->get_data();
 		} catch ( Throwable $error ) {
 			return self::error( 'bhranti_action_failed', __( 'The reviewed WordPress request could not be completed.', 'bhranti' ), 500 );
-		} finally {
-			wp_set_current_user( $previous_user );
 		}
 	}
 
 	/**
-	 * Read restorable edit values with both actors' permission checks.
+	 * Read restorable edit values with current native permission checks.
 	 *
 	 * @param string $path         Item path.
 	 * @param int    $requester_id Requester.
@@ -1693,10 +1606,9 @@ final class Bhranti_Actions {
 	 *
 	 * @param array $review   Reviewed resource.
 	 * @param array $data     Existing REST item.
-	 * @param int   $actor_id Managed user.
 	 * @return true|WP_Error
 	 */
-	private static function preserves_existing_content( $review, $data, $actor_id ) {
+	private static function preserves_existing_content( $review, $data ) {
 		$id = self::object_id( $review, $data );
 		if ( ! $id || ! in_array( $review['class'], array( 'WP_REST_Posts_Controller', 'WP_REST_Attachments_Controller', 'WP_REST_Menu_Items_Controller', 'WP_REST_Templates_Controller', 'WP_REST_Global_Styles_Controller' ), true ) ) {
 			return true;
@@ -1706,23 +1618,17 @@ final class Bhranti_Actions {
 		if ( ! $post ) {
 			return self::error( 'bhranti_action_preservation', __( 'This item is no longer available for a safe write.', 'bhranti' ), 409 );
 		}
-		$previous_user = get_current_user_id();
-		try {
-			wp_set_current_user( $actor_id );
-			foreach ( array(
-				'post_content'          => 'post',
-				'post_excerpt'          => 'post',
-				'post_title'            => 'title_save_pre',
-				'post_content_filtered' => 'post',
-			) as $field => $context ) {
-				$content = $post->$field;
-				$allowed = wp_kses( $content, $context );
-				if ( $allowed !== $content && self::void_tag_spacing( $allowed ) !== self::void_tag_spacing( $content ) ) {
-					return self::error( 'bhranti_action_preservation', __( 'This item contains markup Bhranti cannot preserve with its allowed permissions. Edit it in WordPress first.', 'bhranti' ), 403 );
-				}
+		foreach ( array(
+			'post_content'          => 'post',
+			'post_excerpt'          => 'post',
+			'post_title'            => 'title_save_pre',
+			'post_content_filtered' => 'post',
+		) as $field => $context ) {
+			$content = $post->$field;
+			$allowed = wp_kses( $content, $context );
+			if ( $allowed !== $content && self::void_tag_spacing( $allowed ) !== self::void_tag_spacing( $content ) ) {
+				return self::error( 'bhranti_action_preservation', __( 'This item contains markup Bhranti cannot preserve with its allowed permissions. Edit it in WordPress first.', 'bhranti' ), 403 );
 			}
-		} finally {
-			wp_set_current_user( $previous_user );
 		}
 		return true;
 	}

@@ -7,20 +7,21 @@
  * @package Bhranti
  */
 
-$root = realpath( getenv( 'BHRANTI_HUMAN_ACCESS_WP_ROOT' ) ?: '' );
-if ( ! $root || 0 !== strpos( $root, '/private/tmp/' ) || ! is_file( $root . '/wp-load.php' ) ) {
+$playground = defined( 'BHRANTI_REVIEW_E2E_TEST' ) && true === BHRANTI_REVIEW_E2E_TEST && is_dir( '/internal' );
+$root = realpath( getenv( 'BHRANTI_HUMAN_ACCESS_WP_ROOT' ) ?: ( $playground ? '/wordpress' : '' ) );
+if ( ! $root || ( ! $playground && 0 !== strpos( $root, '/private/tmp/' ) ) || ! is_file( $root . '/wp-load.php' ) ) {
 	fwrite( STDERR, "An isolated /private/tmp WordPress fixture is required.\n" );
 	exit( 1 );
 }
-define( 'WP_USE_THEMES', false );
-define( 'WP_HTTP_BLOCK_EXTERNAL', true );
+if ( ! defined( 'WP_USE_THEMES' ) ) { define( 'WP_USE_THEMES', false ); }
+if ( ! defined( 'WP_HTTP_BLOCK_EXTERNAL' ) ) { define( 'WP_HTTP_BLOCK_EXTERNAL', true ); }
 require $root . '/wp-load.php';
-if ( realpath( ABSPATH ) !== $root || ! defined( 'DB_DIR' ) || realpath( DB_DIR ) !== realpath( $root . '/wp-content/database' ) || ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON || ! defined( 'BHRANTI_FILE' ) || realpath( BHRANTI_FILE ) !== realpath( $root . '/wp-content/plugins/bhranti/bhranti.php' ) ) {
+if ( realpath( ABSPATH ) !== $root || ( ! $playground && ( ! defined( 'DB_DIR' ) || realpath( DB_DIR ) !== realpath( $root . '/wp-content/database' ) ) ) || ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON || ! defined( 'BHRANTI_FILE' ) || realpath( BHRANTI_FILE ) !== realpath( $root . '/wp-content/plugins/bhranti/bhranti.php' ) ) {
 	fwrite( STDERR, "The offline plugin fixture was not loaded.\n" );
 	exit( 1 );
 }
 foreach ( array( 'class-bhranti-workspace.php', 'class-bhranti-panel.php', 'class-bhranti-log-screen.php' ) as $file ) {
-	if ( hash_file( 'sha256', dirname( __DIR__ ) . '/includes/' . $file ) !== hash_file( 'sha256', $root . '/wp-content/plugins/bhranti/includes/' . $file ) ) {
+	if ( ! $playground && hash_file( 'sha256', dirname( __DIR__ ) . '/includes/' . $file ) !== hash_file( 'sha256', $root . '/wp-content/plugins/bhranti/includes/' . $file ) ) {
 		fwrite( STDERR, "Copy the current human access classes into the disposable fixture first.\n" );
 		exit( 1 );
 	}
@@ -31,6 +32,7 @@ $checks        = 0;
 $requests      = array();
 $original_user = get_current_user_id();
 $human_id      = 0;
+$actor_id      = 0;
 $failure       = null;
 $marker        = 'bhranti-human-qa-' . substr( str_replace( '-', '', wp_generate_uuid4() ), 0, 14 );
 $http_guard    = static function ( $response, $args, $url ) use ( &$requests ) {
@@ -50,9 +52,14 @@ add_filter( 'pre_http_request', $http_guard, PHP_INT_MAX, 3 );
 add_filter( 'pre_wp_mail', '__return_true', PHP_INT_MAX );
 
 try {
-	$actor_id = (int) get_option( 'bhranti_actor_id' );
-	$actor    = get_userdata( $actor_id );
-	$check( $actor && in_array( 'bhranti_agent', $actor->roles, true ) && (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) === get_current_blog_id(), 'The disposable fixture has a real managed actor.' );
+	$actor_id = wp_insert_user( array(
+		'user_login' => $marker . '-legacy',
+		'user_pass' => wp_generate_password( 32, true, true ),
+		'user_email' => $marker . '-legacy@example.invalid',
+		'role' => 'administrator',
+	) );
+	$check( is_int( $actor_id ) && $actor_id > 0, 'An explicitly marked disposable legacy account exists only for this negative test.' );
+	update_user_meta( $actor_id, 'bhranti_managed_actor', get_current_blog_id() );
 	$human_id = wp_insert_user(
 		array(
 			'user_login' => $marker,
@@ -112,14 +119,14 @@ try {
 	$failure = $error;
 } finally {
 	wp_set_current_user( $original_user );
-	if ( $human_id && get_userdata( $human_id ) ) {
-		wp_delete_user( $human_id );
+	foreach ( array( $human_id, $actor_id ) as $user_id ) {
+		if ( is_int( $user_id ) && $user_id > 0 && get_userdata( $user_id ) ) { wp_delete_user( $user_id ); }
 	}
 	remove_filter( 'pre_http_request', $http_guard, PHP_INT_MAX );
 	remove_filter( 'pre_wp_mail', '__return_true', PHP_INT_MAX );
 }
 
-if ( $failure || ( $human_id && get_userdata( $human_id ) ) ) {
+if ( $failure || ( $human_id && get_userdata( $human_id ) ) || ( $actor_id && get_userdata( $actor_id ) ) ) {
 	fwrite( STDERR, ( $failure ? $failure->getMessage() : 'Disposable administrator cleanup failed.' ) . "\n" );
 	exit( 1 );
 }

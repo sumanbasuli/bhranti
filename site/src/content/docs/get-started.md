@@ -39,7 +39,7 @@ Manage your provider connection in Connectors. Available models and features dep
 
 Select **Bhranti** in the WordPress admin bar. In a post or page editor where the admin-bar opener is not available, look for the Bhranti button in the editor header.
 
-When you send your first request, Bhranti creates its own WordPress account so you can identify its actions in Logs. You do not need to sign into that account. Bhranti can only perform actions allowed by both your permissions and its own.
+Bhranti uses your existing WordPress account. It does not create another user. Your current WordPress permissions and the action switches in Settings determine what it can do. Logs identify the account that requested each action.
 
 The sidebar header includes **Chats**, **New chat**, **Bhranti Settings**, and **Close Bhranti**. Point at an icon, or focus it with the keyboard, to identify its control.
 

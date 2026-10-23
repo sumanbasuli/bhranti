@@ -170,7 +170,7 @@
 	width: 115px;
 }
 .bhranti-log-people {
-	width: 180px;
+	width: 150px;
 }
 .bhranti-log-people span {
 	display: block;
@@ -181,7 +181,7 @@
 .bhranti-log-people strong {
 	font-weight: 500;
 	display: block;
-	margin: 0 0 13px;
+	margin: 0;
 }
 .bhranti-log-title {
 	display: block;

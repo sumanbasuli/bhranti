@@ -87,10 +87,10 @@ $styles = rf_run( array(), 'GET', '/wp/v2/block-types/fixture/product-grid' )['d
 rf_check( 20 === count( $styles ) && false === strpos( wp_json_encode( $styles ), 'private-' ), 'Style discovery is bounded even when the native registry supplies more choices.' );
 rf_check( 0 === $GLOBALS['bm_rendered'] && 0 === $GLOBALS['bm_variations'] && 0 === $GLOBALS['bm_additional'], 'Repeated collection and item reads still never execute omitted callbacks.' );
 
-foreach ( array( 7, 11 ) as $denied ) {
+foreach ( array( 7 ) as $denied ) {
     $GLOBALS['rf_deny'] = $denied; $before = $GLOBALS['bm_dispatched'];
-    $result = (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( array(), 'GET', '/wp/v2/block-types/fixture/product-grid' ), 7, 11 );
-    rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['bm_dispatched'], 'Either human or actor native read refusal prevents dispatch.' );
+    $result = (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( array(), 'GET', '/wp/v2/block-types/fixture/product-grid' ), 7, 7 );
+    rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['bm_dispatched'], 'Native human read refusal prevents dispatch.' );
     rf_check( 7 === get_current_user_id(), 'Permission denial restores requesting identity.' );
 }
 $GLOBALS['rf_deny'] = 0;
@@ -102,10 +102,10 @@ $unknown = rf_run( array(), 'GET', '/wp/v2/block-types/fixture/not-registered' )
 rf_check( is_wp_error( $unknown ), 'Unknown native blocks return an error instead of invented metadata.' );
 rf_check( 'bhranti_block_metadata_unavailable' === $unknown->get_error_code() && 404 === $unknown->get_error_data()['status'], 'Missing native block metadata is distinguished from permission denial.' );
 rf_check( 7 === get_current_user_id(), 'Missing metadata restores the human identity.' );
-foreach ( array( 7, 11 ) as $denied ) {
+foreach ( array( 7 ) as $denied ) {
     $GLOBALS['rf_deny'] = $denied; $before = $GLOBALS['bm_dispatched'];
-    $result = (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( array(), 'GET', '/wp/v2/block-types/fixture/not-registered' ), 7, 11 );
-    rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['bm_dispatched'], 'A missing block still checks both native human/actor permissions before reporting availability.' );
+    $result = (new ReflectionMethod( Bhranti_Actions::class, 'review' ))->invoke( null, rf_command( array(), 'GET', '/wp/v2/block-types/fixture/not-registered' ), 7, 7 );
+    rf_check( is_wp_error( $result ) && 'bhranti_action_permission' === $result->get_error_code() && $before === $GLOBALS['bm_dispatched'], 'A missing block still checks native human permissions before reporting availability.' );
 }
 $GLOBALS['rf_deny'] = 0;
 $render = rf_run( array(), 'GET', '/wp/v2/block-renderer/fixture/product-grid' );

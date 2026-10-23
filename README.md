@@ -37,13 +37,13 @@ Preview the updated draft on your site while keeping the conversation open.
 3. Review the action switches in **Bhranti → Settings**.
 4. Open Bhranti from the admin bar or block editor toolbar and describe what you want to do.
 
-An administrator who can create users must initialize Bhranti's dedicated account on first use. Optional integrations need their respective plugins. For source checkouts, create the installable ZIP with `./build.sh`; GitHub's source archive is not the release package.
+Bhranti works through your existing administrator account; it does not create another WordPress user. Optional integrations need their respective plugins. For source checkouts, create the installable ZIP with `./build.sh`; GitHub's source archive is not the release package.
 
 ## Your site, your controls
 
 Choose the actions Bhranti may take. Review an **Approve/Cancel** card before a plugin installation, later status change or uninstall. One installation approval can include activation when the card lists it; otherwise the plugin stays inactive. Supported deletion also needs approval. Cancelling stops the current task. Permanent plugin uninstall is disabled by default.
 
-Approved plugin changes and explicit plugin Undo run as your WordPress account. Other site actions use Bhranti's dedicated account and require both accounts' permissions. Logs identify the account that performed each action.
+Actions and Undo run as your WordPress account, with your current permissions and Bhranti's action switches. Logs show who requested each action; raw records retain who performed it.
 
 Supported changes can be rolled back for seven days if no conflicting edits have happened. Some actions have no automatic Undo, including plugin installation/uninstall, generated media and newly created forms. Emails and other plugin side effects cannot always be reversed. Bhranti does not edit core, theme or plugin source code, or change accounts, roles or credentials.
 
@@ -53,7 +53,7 @@ Longer tasks use WordPress scheduling, which needs site traffic or a configured 
 
 Bhranti uses WordPress's built-in AI Client and native connectors. Configure your provider there; do not paste credentials into chat. Recognizable credentials are checked before storage and AI requests, but text checks cannot identify every secret or inspect screenshot pixels.
 
-Your request, relevant site content and conversation context, selected instructions, preferences, and attachments may be sent to your configured provider. Bhranti adds no telemetry. Conversations are stored on your site and are not encrypted in the database; optional preference memory uses encrypted files. WordPress data export and erasure cover Bhranti's records.
+Your request, relevant site content and conversation context, selected instructions, preferences, and attachments may be sent to your configured provider. Bhranti adds no telemetry. Conversations are stored on your site and are not encrypted in the database; optional preference memory is encrypted separately in the WordPress database. WordPress data export and erasure cover Bhranti's records.
 
 See the [AI and privacy guide](site/src/content/docs/ai-and-privacy.md) for sharing, retention and deletion details.
 

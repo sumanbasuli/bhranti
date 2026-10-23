@@ -166,7 +166,7 @@ class PackagingTests(unittest.TestCase):
                 builder.validate_metadata()
 
     def test_two_and_three_component_release_versions(self):
-        for version in ("1.1", "1.1.1"):
+        for version in ("9.8", "9.8.1"):
             with self.subTest(version=version), fixture() as root:
                 previous = (root / "VERSION").read_text().strip()
                 (root / "VERSION").write_text(version + "\n")

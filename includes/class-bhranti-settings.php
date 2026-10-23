@@ -55,8 +55,7 @@ final class Bhranti_Settings {
 	 * @return bool
 	 */
 	public static function can_manage() {
-		$user = wp_get_current_user();
-		return current_user_can( 'manage_options' ) && ! get_user_meta( $user->ID, 'bhranti_managed_actor', true ) && ! in_array( 'bhranti_agent', $user->roles, true );
+		return ! is_wp_error( Bhranti_Identity::requester() );
 	}
 
 	/**
@@ -420,13 +419,7 @@ final class Bhranti_Settings {
 			$snapshot['state'] = 'completed';
 			return self::task_snapshot( $context, $snapshot );
 		};
-		$original_user        = get_current_user_id();
-		try {
-			wp_set_current_user( $context['actor_id'] );
-			$saved = self::persist( $config, $args['revision'], $context, $before, $after );
-		} finally {
-			wp_set_current_user( $original_user );
-		}
+		$saved                = self::persist( $config, $args['revision'], $context, $before, $after );
 		if ( is_wp_error( $saved ) ) {
 			if ( $snapshot_saved ) {
 				$snapshot['state'] = 'failed';
@@ -498,13 +491,7 @@ final class Bhranti_Settings {
 			$snapshot['state'] = 'rolled_back';
 			return self::task_snapshot( $context, $snapshot );
 		};
-		$original_user    = get_current_user_id();
-		try {
-			wp_set_current_user( $context['actor_id'] );
-			$saved = self::persist( $config, $old['revision'], $context, $before, $after );
-		} finally {
-			wp_set_current_user( $original_user );
-		}
+		$saved            = self::persist( $config, $old['revision'], $context, $before, $after );
 		if ( is_wp_error( $saved ) ) {
 			if ( $rollback_started ) {
 				self::fresh_option( 'bhranti_settings' );
@@ -553,7 +540,7 @@ final class Bhranti_Settings {
 		clean_post_cache( $context['session_id'] );
 		$post = get_post( $context['session_id'] );
 		if ( ! user_can( $context['requester_id'], 'manage_options' ) || ! user_can( $context['actor_id'], 'manage_options' ) || ! $post || 'bhranti_session' !== $post->post_type || 'private' !== $post->post_status || (int) $post->post_author !== $context['requester_id'] ) {
-			return self::error( 'bhranti_task_limit_permission', __( 'Both your account and Bhranti must be allowed to manage site settings.', 'bhranti' ), 403 );
+			return self::error( 'bhranti_task_limit_permission', __( 'Your account must be allowed to manage site settings.', 'bhranti' ), 403 );
 		}
 		return $recovery ? true : self::allows( 'manage_site_settings' );
 	}
@@ -783,7 +770,7 @@ final class Bhranti_Settings {
 	}
 
 	/**
-	 * Log metadata only, preserving explicit human and managed actor identities.
+	 * Log metadata only, preserving the actual requesting and executing identities.
 	 *
 	 * @param string $type Event code.
 	 * @param string $message Safe summary.

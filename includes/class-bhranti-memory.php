@@ -1,6 +1,6 @@
 <?php
 /**
- * Private, encrypted, owner-scoped memory using WordPress filesystem storage.
+ * Private, encrypted, owner-scoped memory in native WordPress site options.
  *
  * @package Bhranti
  * @license GPL-2.0-or-later
@@ -10,18 +10,17 @@ defined( 'ABSPATH' ) || exit;
 
 /** Saved data never grants permissions or supplies executable instructions. */
 final class Bhranti_Memory {
-	const GUARD            = "<?php\n// Bhranti private memory.\nexit;\n?>\n";
-	const LIMIT            = 131072;
-	const GATE_ACTIVE      = "<?php\n// Bhranti private memory gate.\nexit;\n// active\n";
-	const GATE_UNINSTALLED = "<?php\n// Bhranti private memory gate.\nexit;\n// uninstalled\n";
+	const FORMAT = 'bhranti-memory-v2:';
+	const ERASED = 'bhranti-memory-erased:';
+	const LIMIT  = 131072;
 	/**
-	 * Gate handles retained until request shutdown after successful uninstall.
+	 * One native main-site lock shared by nested network lifecycle operations.
 	 *
-	 * @var array<string, resource>
+	 * @var array|null
 	 */
-	private static $completed_uninstall_gates = array();
+	private static $network_lock = null;
 	/**
-	 * A network uninstall owns one retained gate while per-site gates are released.
+	 * Whether the current callback owns a complete network uninstall sweep.
 	 *
 	 * @var bool
 	 */
@@ -44,20 +43,21 @@ final class Bhranti_Memory {
 	 * @return true
 	 */
 	public static function activate( $network_wide = false ) {
-		if ( is_multisite() ) {
-			$result = self::site_gate(
-				'activate',
-				static function () use ( $network_wide ) {
-					return self::activate_sites( $network_wide );
-				},
-				0
-			);
-		} else {
-			$result = self::activate_sites( $network_wide );
-		}
+		$result = self::network_locked(
+			static function () use ( $network_wide ) {
+				if ( is_multisite() ) {
+					$enabled = self::network_lifecycle( 'active' );
+					if ( is_wp_error( $enabled ) ) {
+						return $enabled;
+					}
+				}
+				return self::activate_sites( $network_wide );
+			},
+			true
+		);
 		if ( is_wp_error( $result ) ) {
 			wp_die(
-				esc_html__( 'Bhranti could not safely enable private memory. Check the site storage permissions and try activating the plugin again.', 'bhranti' ),
+				esc_html__( 'Bhranti could not safely enable private memory. Check the site database and try activating the plugin again.', 'bhranti' ),
 				esc_html__( 'Bhranti activation stopped', 'bhranti' ),
 				array( 'response' => 500 )
 			);
@@ -67,56 +67,49 @@ final class Bhranti_Memory {
 	}
 
 	/**
-	 * Activate only after the network gate has excluded concurrent uninstall.
+	 * Activate only after the network lock has excluded concurrent uninstall.
 	 *
-	 * @param bool $network_wide Whether WordPress is activating on every site.
+	 * @param bool $network_wide Whether WordPress activates on every site.
 	 * @return true|WP_Error
 	 */
 	private static function activate_sites( $network_wide ) {
-		$result = true;
-		if ( $network_wide && is_multisite() ) {
-			$offset = 0;
-			do {
-				$sites = get_sites(
-					array(
-						'fields'  => 'ids',
-						'number'  => 100,
-						'offset'  => $offset,
-						'orderby' => 'id',
-						'order'   => 'ASC',
-					)
-				);
-				foreach ( $sites as $site_id ) {
-					switch_to_blog( (int) $site_id );
-					try {
-						$result = self::site_gate(
-							'activate',
-							static function () {
-								return true;
-							}
-						);
-					} finally {
-						restore_current_blog();
-					}
-					if ( is_wp_error( $result ) ) {
-						break;
-					}
+		$enable = static function () {
+			return self::locked(
+				static function () {
+					return self::set_lifecycle( 'bhranti_memory_state', 'active' );
+				},
+				true
+			);
+		};
+		if ( ! $network_wide || ! is_multisite() ) {
+			return $enable();
+		}
+		$offset = 0;
+		do {
+			$sites = get_sites(
+				array(
+					'fields'  => 'ids',
+					'number'  => 100,
+					'offset'  => $offset,
+					'orderby' => 'id',
+					'order'   => 'ASC',
+				)
+			);
+			foreach ( $sites as $site_id ) {
+				switch_to_blog( (int) $site_id );
+				try {
+					$result = $enable();
+				} finally {
+					restore_current_blog();
 				}
 				if ( is_wp_error( $result ) ) {
-					break;
+					return $result;
 				}
-				$count   = count( $sites );
-				$offset += $count;
-			} while ( 100 === $count );
-		} else {
-			$result = self::site_gate(
-				'activate',
-				static function () {
-					return true;
-				}
-			);
-		}
-		return $result;
+			}
+			$count   = count( $sites );
+			$offset += $count;
+		} while ( 100 === $count );
+		return true;
 	}
 
 	/** Register owned endpoints; no caller-supplied user or filesystem path. */
@@ -140,12 +133,12 @@ final class Bhranti_Memory {
 	/** Explain retention and native provider sharing in the privacy-policy helper. */
 	public static function privacy_policy() {
 		if ( function_exists( 'wp_add_privacy_policy_content' ) ) {
-			wp_add_privacy_policy_content( 'Bhranti memory', '<p>' . esc_html__( 'Bhranti stores preferences you explicitly ask it to remember and bounded verified image-handling facts in encrypted files on this WordPress site, separately for each administrator. Relevant memory is sent as untrusted context to your configured native AI provider. Preferences remain until forgotten, reset, erased or uninstalled; capability observations expire after one day and never replace current permissions or live capability checks. Settings lets you review and reset your memory. WordPress personal-data export and erasure include your memory. Changing WordPress authentication salts makes old memory unreadable; it can still be reset. No provider credentials, raw error responses or generated code are stored in memory.', 'bhranti' ) . '</p>' );
+			wp_add_privacy_policy_content( 'Bhranti memory', '<p>' . esc_html__( 'Bhranti stores preferences you explicitly ask it to remember and bounded verified image-handling facts in encrypted records in this WordPress site’s database, separately for each administrator. Relevant memory is sent as untrusted context to your configured native AI provider. Preferences remain until forgotten, reset, erased or uninstalled; capability observations expire after one day and never replace current permissions or live capability checks. Settings lets you review and reset your memory. WordPress personal-data export and erasure include your memory. Changing WordPress authentication salts makes old memory unreadable; it can still be reset. No provider credentials, raw error responses or generated code are stored in memory.', 'bhranti' ) . '</p>' );
 		}
 	}
 
 	/**
-	 * Review only the authenticated human's file.
+	 * Review only the authenticated human's private record.
 	 *
 	 * @return array|WP_Error
 	 */
@@ -244,10 +237,7 @@ final class Bhranti_Memory {
 		if ( Bhranti_Credentials::contains( $command ) ) {
 			return Bhranti_Credentials::error( 'memory' );
 		}
-		$actor = Bhranti_Actions::ensure_actor();
-		if ( is_wp_error( $actor ) || ! user_can( $actor, 'manage_options' ) ) {
-			return self::error( 'permission', 403 );
-		}
+		$actor  = (int) $requester_id;
 		$logged = Bhranti_Audit::record( 'memory_requested', __( 'Reviewing a private memory request.', 'bhranti' ), $session_id, array( 'tool' => 'bhranti_memory' ), $requester_id, $actor );
 		if ( ! $logged || is_wp_error( $logged ) ) {
 			return self::error( 'storage', 500 );
@@ -263,7 +253,7 @@ final class Bhranti_Memory {
 	 * @param array $command Tool envelope.
 	 * @param int   $requester_id Human administrator.
 	 * @param int   $session_id Owned conversation.
-	 * @param int   $actor Managed actor.
+	 * @param int   $actor Actual submitting administrator.
 	 * @return array|WP_Error
 	 */
 	private static function execute_owned( $command, $requester_id, $session_id, $actor ) {
@@ -427,7 +417,7 @@ final class Bhranti_Memory {
 			return array();
 		}
 		$fresh = array();
-		$actor = (int) get_option( 'bhranti_actor_id', 0 );
+		$actor = (int) $user_id;
 		if ( $actor && method_exists( 'Bhranti_Media', 'capabilities' ) ) {
 			$checked = Bhranti_Media::capabilities( $user_id, $actor );
 			if ( is_array( $checked ) ) {
@@ -520,38 +510,28 @@ final class Bhranti_Memory {
 	}
 
 	/**
-	 * Remove only this subject's encrypted payload under its own file lock.
+	 * Erase this subject's encrypted site option, including unreadable data.
 	 *
 	 * @param int $user_id Erasure subject.
-	 * @return bool|WP_Error True if a file was removed; false if none existed.
+	 * @return bool|WP_Error Whether an owned record was removed.
 	 */
 	public static function erase_user( $user_id ) {
-		return self::erase_user_under_gate( $user_id, false );
-	}
-
-	/**
-	 * Remove an owner payload while reusing the uninstall site's gate when held.
-	 *
-	 * @param int  $user_id Owner.
-	 * @param bool $site_gate_held Whether uninstall holds the gate.
-	 * @return bool|WP_Error
-	 */
-	private static function erase_user_under_gate( $user_id, $site_gate_held ) {
+		if ( ! self::owner_name( $user_id ) ) {
+			return self::error( 'invalid' );
+		}
 		return self::locked(
-			$user_id,
-			static function ( $fs, $path ) {
-				if ( ! $fs->exists( $path ) ) {
-					return false;
+			static function ( $lock ) use ( $user_id ) {
+				$name = self::owner_name( $user_id );
+				if ( ! Bhranti_Lock::owns( 'bhranti_memory_lock', $lock ) ) {
+					return self::error( 'busy', 409 );
 				}
-				return $fs->delete( $path, false, 'f' ) ? true : self::error( 'storage', 500 );
-			},
-			false,
-			$site_gate_held
+				return self::erase_owner( $name );
+			}
 		);
 	}
 
 	/**
-	 * Network account deletion also erases memory from former site memberships.
+	 * Network account deletion also erases former site memberships' memory.
 	 *
 	 * @param int $user_id Deleted account.
 	 */
@@ -585,173 +565,106 @@ final class Bhranti_Memory {
 	}
 
 	/**
-	 * Remove only recognized own files on the current site, preserving unknown files.
+	 * Remove only this site's numeric owner records under its lifecycle lock.
 	 *
-	 * @return true|WP_Error Whether private memory was completely removed.
+	 * Retain a non-personal tombstone so an already loaded request cannot recreate
+	 * memory after uninstall returns. Only explicit activation clears it.
+	 *
+	 * @return true|WP_Error
 	 */
 	public static function uninstall_site() {
-		return self::site_gate(
-			'uninstall',
-			static function () {
-				return self::uninstall_site_data();
+		return self::locked(
+			static function ( $lock ) {
+				$result = self::set_lifecycle( 'bhranti_memory_state', 'uninstalled' );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+				global $wpdb;
+				$after = '';
+				do {
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Enumerate durable private records while holding the site's memory lock.
+					$names = $wpdb->get_col( $wpdb->prepare( 'SELECT option_name FROM %i WHERE option_name LIKE %s AND option_name > %s ORDER BY option_name ASC LIMIT 100', $wpdb->options, $wpdb->esc_like( 'bhranti_memory_user_' ) . '%', $after ) );
+					if ( $wpdb->last_error || ! is_array( $names ) ) {
+						return self::error( 'storage', 500 );
+					}
+					foreach ( $names as $name ) {
+						$after = $name;
+						if ( ! preg_match( '/\Abhranti_memory_user_[1-9][0-9]*\z/', $name ) ) {
+							continue;
+						}
+						if ( ! Bhranti_Lock::owns( 'bhranti_memory_lock', $lock ) ) {
+							return self::error( 'busy', 409 );
+						}
+						$removed = self::delete_owner( $name );
+						if ( is_wp_error( $removed ) ) {
+							return $removed;
+						}
+					}
+					$count = count( $names );
+				} while ( 100 === $count );
+				return true;
 			},
-			null,
-			! self::$network_uninstall_active
+			true
 		);
 	}
 
 	/**
-	 * Keep one network gate until shutdown while releasing each cleaned site's gate.
+	 * Exclude writes on unswept sites throughout a network uninstall.
 	 *
-	 * The network gate excludes activation between site sweeps. Each site's own
-	 * durable tombstone still rejects a loaded request after its lock is released.
-	 *
-	 * @param callable $callback Network uninstall operation.
+	 * @param callable $callback Native uninstall site sweep.
 	 * @return mixed
+	 * @throws Throwable If the protected uninstall operation throws.
 	 */
 	public static function uninstall_network( $callback ) {
 		if ( ! is_multisite() || self::$network_uninstall_active ) {
 			return self::error( 'storage', 503 );
 		}
-		return self::site_gate(
-			'uninstall',
+		return self::network_locked(
 			static function () use ( $callback ) {
+				$result = self::network_lifecycle( 'uninstalled' );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 				self::$network_uninstall_active = true;
+				$complete                       = false;
 				try {
-					$result = call_user_func( $callback );
-					return true === $result || is_wp_error( $result ) ? $result : self::error( 'storage', 500 );
+					$result   = call_user_func( $callback );
+					$complete = true === $result;
+					return $complete || is_wp_error( $result ) ? $result : self::error( 'storage', 500 );
 				} finally {
 					self::$network_uninstall_active = false;
+					if ( ! $complete ) {
+						self::network_lifecycle( 'active' );
+					}
 				}
 			},
-			0
+			true
 		);
 	}
 
-	/** Sweep this site's owned files only while its durable gate is held. */
-	private static function uninstall_site_data() {
-		$content = realpath( WP_CONTENT_DIR );
-		if ( ! $content ) {
-			return self::error( 'storage', 503 );
-		}
-		$root      = $content . '/bhranti-memory';
-		$directory = $root . '/site-' . get_current_blog_id();
-		if ( is_link( $root ) || is_link( $directory ) || ( file_exists( $root ) && ! is_dir( $root ) ) ) {
-			return self::error( 'storage', 503 );
-		}
-		if ( ! file_exists( $root ) ) {
-			return true;
-		}
-		$fs = self::filesystem();
-		if ( is_wp_error( $fs ) ) {
-			return $fs;
-		}
-		$root_files = $fs->dirlist( $root );
-		if ( ! is_array( $root_files ) ) {
-			return self::error( 'storage', 503 );
-		}
-		if ( ! isset( $root_files[ 'site-' . get_current_blog_id() ] ) ) {
-			return true;
-		}
-		$path = self::path( 1 );
-		if ( is_wp_error( $path ) ) {
-			return $path;
-		}
-		$files = $fs->dirlist( $directory );
-		if ( ! is_array( $files ) ) {
-			return self::error( 'storage', 503 );
-		}
-		foreach ( $files as $name => $info ) {
-			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\z/', $name, $match ) ) {
-				if ( is_link( $directory . '/' . $name ) || 'f' !== $info['type'] ) {
-					return self::error( 'storage', 503 );
-				}
-				$erased = self::erase_user_under_gate( (int) $match[1], true );
-				if ( is_wp_error( $erased ) || $fs->exists( $directory . '/' . $name ) ) {
-					return is_wp_error( $erased ) ? $erased : self::error( 'storage', 500 );
-				}
-			}
-		}
-		$files = $fs->dirlist( $directory );
-		if ( ! is_array( $files ) ) {
-			return self::error( 'storage', 503 );
-		}
-		foreach ( $files as $name => $info ) {
-			$file = $directory . '/' . $name;
-			if ( preg_match( '/\Auser-[1-9][0-9]*\.php\z/', $name ) ) {
-				return self::error( 'storage', 500 );
-			}
-			if ( preg_match( '/\Auser-([1-9][0-9]*)\.php\.lock\z/', $name, $match ) ) {
-				if ( is_link( $file ) || 'f' !== $info['type'] ) {
-					return self::error( 'storage', 500 );
-				}
-				$handle = fopen( $file, 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Native filesystem has no flock handle API.
-				if ( ! $handle ) {
-					return self::error( 'storage', 500 );
-				}
-				try {
-					if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
-						return self::error( 'busy', 409 );
-					}
-					if ( $fs->exists( $directory . '/user-' . $match[1] . '.php' ) || ! $fs->delete( $file, false, 'f' ) ) {
-						return self::error( 'storage', 500 );
-					}
-				} finally {
-					flock( $handle, LOCK_UN );
-					fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
-				}
-			} elseif ( preg_match( '/\Auser-[1-9][0-9]*\.php\.[a-f0-9-]{36}\.tmp\z/', $name ) ) {
-				if ( is_link( $file ) || 'f' !== $info['type'] ) {
-					return self::error( 'storage', 500 );
-				}
-				$size = $fs->size( $file );
-				$raw  = false !== $size && $size <= self::LIMIT ? $fs->get_contents( $file ) : false;
-				if ( ! is_string( $raw ) || 0 !== strpos( $raw, self::GUARD ) || ! $fs->delete( $file, false, 'f' ) ) {
-					return self::error( 'storage', 500 );
-				}
-			}
-		}
-		$files = $fs->dirlist( $directory );
-		if ( ! is_array( $files ) ) {
-			return self::error( 'storage', 503 );
-		}
-		foreach ( array_keys( $files ) as $name ) {
-			if ( preg_match( '/\Auser-[1-9][0-9]*\.php(?:\.lock|\.[a-f0-9-]{36}\.tmp)?\z/', $name ) ) {
-				return self::error( 'storage', 500 );
-			}
-		}
-		foreach ( array( $directory, dirname( $directory ) ) as $folder ) {
-			$remaining = $fs->dirlist( $folder );
-			if ( is_array( $remaining ) && array_keys( $remaining ) === array( 'index.php' ) && ! is_link( $folder . '/index.php' ) && self::GUARD === $fs->get_contents( $folder . '/index.php' ) ) {
-				$fs->delete( $folder . '/index.php', false, 'f' );
-				$fs->delete( $folder, false, 'd' );
-			}
-		}
-		return true;
-	}
-
 	/**
-	 * Conflict-safe encrypted replacement; audit contains no preference text.
+	 * Apply a revision-checked change under native database-backed operation locks.
 	 *
 	 * @param int         $user_id Owner.
-	 * @param string|null $revision Expected revision; null for trusted observations.
+	 * @param string|null $revision Expected revision, null for verified observations.
 	 * @param callable    $callback Pure state change.
-	 * @param bool        $reset Permit replacing an unreadable payload.
+	 * @param bool        $reset Replace unreadable data only after exact review.
 	 * @param int         $session_id Optional owned conversation.
-	 * @param int         $actor_id Optional managed actor.
+	 * @param int         $actor_id Actual submitting administrator.
 	 * @return true|WP_Error
 	 */
 	private static function change( $user_id, $revision, $callback, $reset = false, $session_id = 0, $actor_id = 0 ) {
-		if ( ! function_exists( 'sodium_crypto_secretbox' ) || ! function_exists( 'sodium_crypto_secretbox_open' ) ) {
+		if ( ! self::owner_name( $user_id ) || ! function_exists( 'sodium_crypto_secretbox' ) || ! function_exists( 'sodium_crypto_secretbox_open' ) ) {
 			return self::error( 'storage', 503 );
 		}
 		return self::locked(
-			$user_id,
-			static function ( $fs, $path ) use ( $user_id, $revision, $callback, $reset, $session_id, $actor_id ) {
-				$raw = self::read( $user_id );
-				if ( is_wp_error( $raw ) ) {
-					return $raw;
+			static function ( $lock ) use ( $user_id, $revision, $callback, $reset, $session_id, $actor_id ) {
+				$name     = self::owner_name( $user_id );
+				$previous = self::raw_option( $name );
+				if ( is_wp_error( $previous ) ) {
+					return $previous;
 				}
+				$raw = null === $previous ? '' : $previous;
 				if ( null !== $revision && ( ! self::valid_revision( $revision ) || ! hash_equals( self::revision( $raw ), $revision ) ) ) {
 					return self::error( 'conflict', 409 );
 				}
@@ -769,13 +682,16 @@ final class Bhranti_Memory {
 				$nonce = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
 				$json  = wp_json_encode(
 					array(
-						'version' => 1,
+						'version' => 2,
 						'site'    => get_current_blog_id(),
 						'owner'   => (int) $user_id,
 						'data'    => $state,
 					)
 				);
-				$bytes = self::GUARD . base64_encode( $nonce . sodium_crypto_secretbox( $json, $nonce, self::key( $user_id ) ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encode authenticated ciphertext, never executable code.
+				if ( ! is_string( $json ) ) {
+					return self::error( 'storage', 500 );
+				}
+				$bytes = self::FORMAT . bin2hex( $nonce . sodium_crypto_secretbox( $json, $nonce, self::key( $user_id ) ) );
 				if ( strlen( $bytes ) > self::LIMIT ) {
 					return self::error( 'full', 409 );
 				}
@@ -783,19 +699,12 @@ final class Bhranti_Memory {
 				if ( is_wp_error( $logged ) || ! $logged ) {
 					return self::error( 'storage', 500 );
 				}
-				$temp = $path . '.' . wp_generate_uuid4() . '.tmp';
-				try {
-					if ( is_link( $temp ) || ! $fs->put_contents( $temp, $bytes, 0600 ) || ! $fs->chmod( $temp, 0600 ) || $fs->get_contents( $temp ) !== $bytes ) {
-						return self::error( 'storage', 500 );
-					}
-					// WP_Filesystem::move deletes an existing destination first; rename preserves atomic replacement.
-					if ( ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Same-directory atomic replacement under the own-file lock.
-						return self::error( 'storage', 500 );
-					}
-				} finally {
-					if ( $fs->exists( $temp ) && ! is_link( $temp ) ) {
-						$fs->delete( $temp, false, 'f' );
-					}
+				if ( ! Bhranti_Lock::owns( 'bhranti_memory_lock', $lock ) ) {
+					return self::error( 'busy', 409 );
+				}
+				$saved = self::compare_exchange( $name, $previous, $bytes );
+				if ( is_wp_error( $saved ) ) {
+					return $saved;
 				}
 				Bhranti_Audit::record( 'memory_completed', __( 'Private memory updated.', 'bhranti' ), $session_id, array( 'reset' => $reset ), $user_id, $actor_id );
 				return true;
@@ -804,326 +713,322 @@ final class Bhranti_Memory {
 	}
 
 	/**
-	 * Native filesystem storage is local-only to retain atomic replacement/locking.
+	 * Lock network first, then site, for every memory lifecycle mutation.
 	 *
-	 * @return WP_Filesystem_Direct|WP_Error
+	 * @param callable $callback Operation receiving the owned site token.
+	 * @param bool     $allow_uninstalled Explicit activation/uninstall only.
+	 * @return mixed
 	 */
-	private static function filesystem() {
-		if ( defined( 'FS_METHOD' ) && 'direct' !== FS_METHOD ) {
-			return self::error( 'storage', 503 );
-		}
-		require_once ABSPATH . 'wp-admin/includes/class-wp-filesystem-base.php';
-		require_once ABSPATH . 'wp-admin/includes/class-wp-filesystem-direct.php';
-		return new WP_Filesystem_Direct( null );
+	private static function locked( $callback, $allow_uninstalled = false ) {
+		return self::network_locked(
+			static function () use ( $callback, $allow_uninstalled ) {
+				$lock = Bhranti_Lock::acquire( 'bhranti_memory_lock', 600 );
+				if ( ! $lock ) {
+					return self::error( 'busy', 409 );
+				}
+				try {
+					$state = self::raw_option( 'bhranti_memory_state' );
+					if ( is_wp_error( $state ) || ! in_array( $state, array( null, 'active', 'uninstalled' ), true ) || ( ! $allow_uninstalled && 'uninstalled' === $state ) ) {
+						return self::error( 'storage', 503 );
+					}
+					return call_user_func( $callback, $lock );
+				} finally {
+					Bhranti_Lock::release( 'bhranti_memory_lock', $lock );
+				}
+			},
+			$allow_uninstalled
+		);
 	}
 
 	/**
-	 * Keep one stable gate inode outside the memory tree across uninstall attempts.
+	 * Use one main-site lock to serialize memory lifecycle across the network.
 	 *
-	 * @param string   $mode Write, uninstall or activate.
-	 * @param callable $callback Operation protected by the site gate.
-	 * @param int|null $gate_id Explicit network gate ID, or current site ID.
-	 * @param bool     $retain Retain a successful uninstall gate until shutdown.
+	 * @param callable $callback Protected operation.
+	 * @param bool     $allow_uninstalled Explicit activation/uninstall only.
 	 * @return mixed
-	 * @throws Throwable If the protected operation throws after best-effort gate recovery.
 	 */
-	private static function site_gate( $mode, $callback, $gate_id = null, $retain = true ) {
-		$base = realpath( WP_CONTENT_DIR );
-		if ( ! $base || ! in_array( $mode, array( 'write', 'uninstall', 'activate' ), true ) || ( null !== $gate_id && 0 !== $gate_id ) ) {
-			return self::error( 'storage', 503 );
+	private static function network_locked( $callback, $allow_uninstalled = false ) {
+		if ( ! is_multisite() ) {
+			return call_user_func( $callback );
 		}
-		$path   = $base . '/.bhranti-memory-site-' . ( null === $gate_id ? get_current_blog_id() : $gate_id ) . '.php';
-		$shared = 0 === $gate_id && 'write' === $mode;
-		if ( isset( self::$completed_uninstall_gates[ $path ] ) ) {
-			return 'uninstall' === $mode ? call_user_func( $callback ) : self::error( 'busy', 409 );
+		if ( self::$network_lock ) {
+			return Bhranti_Lock::owns( 'bhranti_memory_network_lock', self::$network_lock ) ? call_user_func( $callback ) : self::error( 'busy', 409 );
 		}
-		$before  = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Absence is expected before the first memory operation.
-		$created = false;
-		if ( false === $before ) {
-			if ( ! is_writable( $base ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- A native gate file requires native flock; avoid initializing a gate where the base is unwritable.
-				// Memory is optional on an unwritable fresh site; there is no tombstone to clear.
-				if ( 'activate' === $mode ) {
-					return null === $gate_id ? true : call_user_func( $callback );
-				}
+		$main = (int) get_main_site_id();
+		switch_to_blog( $main );
+		try {
+			$lock  = Bhranti_Lock::acquire( 'bhranti_memory_network_lock', 600 );
+			$state = $lock ? self::raw_option( 'bhranti_memory_network_state' ) : self::error( 'busy', 409 );
+		} finally {
+			restore_current_blog();
+		}
+		if ( ! $lock ) {
+			return self::error( 'busy', 409 );
+		}
+		self::$network_lock = $lock;
+		try {
+			if ( is_wp_error( $state ) || ! in_array( $state, array( null, 'active', 'uninstalled' ), true ) || ( ! $allow_uninstalled && 'uninstalled' === $state ) ) {
 				return self::error( 'storage', 503 );
 			}
-			$old_umask = umask( 0177 );
+			return call_user_func( $callback );
+		} finally {
+			self::$network_lock = null;
+			switch_to_blog( $main );
 			try {
-				$handle = @fopen( $path, 'x+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Exclusive creation may lose a race; a handle is required for flock.
+				Bhranti_Lock::release( 'bhranti_memory_network_lock', $lock );
 			} finally {
-				umask( $old_umask );
-			}
-			$created = (bool) $handle;
-			if ( ! $created ) {
-				$before = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A failed exclusive create may be a concurrent creator.
+				restore_current_blog();
 			}
 		}
-		if ( ! $created ) {
-			if ( ! self::valid_gate_stat( $before ) ) {
-				return self::error( 'storage', 503 );
-			}
-			$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Verify the opened inode before reading or writing it.
-		}
-		if ( ! $handle ) {
-			return self::error( 'storage', 503 );
-		}
-		$keep = false;
+	}
+
+	/**
+	 * Change the network marker in its native site's options table.
+	 *
+	 * @param string $state Active or uninstalled.
+	 * @return true|WP_Error
+	 */
+	private static function network_lifecycle( $state ) {
+		switch_to_blog( (int) get_main_site_id() );
 		try {
-			if ( $created && ! self::secure_created_gate( $path, $handle ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( ! self::same_gate_inode( $path, $handle ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( ! flock( $handle, ( $shared && ! $created ? LOCK_SH : LOCK_EX ) | LOCK_NB ) ) {
-				return self::error( 'busy', 409 );
-			}
-			if ( ! self::same_gate_inode( $path, $handle ) ) {
-				return self::error( 'storage', 503 );
-			}
-			$stat = fstat( $handle );
-			if ( ! is_array( $stat ) || $stat['size'] > strlen( self::GATE_UNINSTALLED ) || ! rewind( $handle ) ) {
-				return self::error( 'storage', 503 );
-			}
-			$state = stream_get_contents( $handle, strlen( self::GATE_UNINSTALLED ) + 1 );
-			if ( ! is_string( $state ) || ! in_array( $state, array( '', self::GATE_ACTIVE, self::GATE_UNINSTALLED ), true ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( 'write' === $mode && ( self::GATE_UNINSTALLED === $state || ( '' === $state && ! $created ) ) ) {
-				return self::error( 'storage', 503 );
-			}
-			$required = 'uninstall' === $mode ? self::GATE_UNINSTALLED : self::GATE_ACTIVE;
-			if ( $required !== $state && ! self::write_gate_state( $handle, $required ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( ! self::same_gate_inode( $path, $handle ) ) {
-				return self::error( 'storage', 503 );
-			}
-			// The first network writer keeps EX; later writers take SH on the initialized gate.
-			try {
-				$result = call_user_func( $callback );
-			} catch ( Throwable $failure ) {
-				// An interrupted network uninstall stays tombstoned if recovery itself fails.
-				if ( 'uninstall' === $mode && 0 === $gate_id && self::same_gate_inode( $path, $handle ) ) {
-					self::write_gate_state( $handle, self::GATE_ACTIVE );
-				}
-				throw $failure;
-			}
-			if ( 'uninstall' === $mode && 0 === $gate_id && true !== $result && ( ! self::same_gate_inode( $path, $handle ) || ! self::write_gate_state( $handle, self::GATE_ACTIVE ) ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( 'uninstall' === $mode && true === $result && $retain ) {
-				// Core deletes plugin files after uninstall.php returns; hold this inode until request shutdown.
-				self::$completed_uninstall_gates[ $path ] = $handle;
-
-				$keep = true;
-			}
-			return $result;
+			return self::set_lifecycle( 'bhranti_memory_network_state', $state );
 		} finally {
-			if ( ! $keep ) {
-				flock( $handle, LOCK_UN );
-				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
-			}
+			restore_current_blog();
 		}
 	}
 
 	/**
-	 * Set private permissions only on the empty inode this request created exclusively.
+	 * Persist a static non-personal lifecycle marker without autoloading it.
 	 *
-	 * Some filesystems do not apply umask during creation. Existing gates are never
-	 * repaired here: their permissions and tombstones must pass the strict checks.
-	 *
-	 * @param string   $path New gate path.
-	 * @param resource $handle Exclusively created gate handle.
-	 * @return bool
+	 * @param string $name Fixed lifecycle option name.
+	 * @param string $state Active or uninstalled.
+	 * @return true|WP_Error
 	 */
-	private static function secure_created_gate( $path, $handle ) {
-		clearstatcache( true, $path );
-		$path_stat = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A missing or replaced new gate must fail closed.
-		$open_stat = fstat( $handle );
-		foreach ( array( $path_stat, $open_stat ) as $stat ) {
-			if ( ! is_array( $stat ) || 0100000 !== ( $stat['mode'] & 0170000 ) || 1 !== $stat['nlink'] || 0 !== $stat['size'] ) {
-				return false;
-			}
+	private static function set_lifecycle( $name, $state ) {
+		$previous = self::raw_option( $name );
+		if ( is_wp_error( $previous ) ) {
+			return $previous;
 		}
-		if ( $path_stat['dev'] !== $open_stat['dev'] || $path_stat['ino'] !== $open_stat['ino'] ) {
-			return false;
-		}
-		if ( 0600 !== ( $path_stat['mode'] & 0777 ) || 0600 !== ( $open_stat['mode'] & 0777 ) ) {
-			if ( ! @chmod( $path, 0600 ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- This native lock gate requires verified inode identity and exact permissions around the local change.
-				return false;
-			}
-		}
-		return self::same_gate_inode( $path, $handle );
+		return $previous === $state ? true : self::compare_exchange( $name, $previous, $state );
 	}
 
 	/**
-	 * Confirm both path and open handle still name the same private regular file.
+	 * Derive only a site-table-local, numeric human owner option name.
 	 *
-	 * @param string   $path Gate path.
-	 * @param resource $handle Open gate handle.
-	 * @return bool
+	 * @param int $user_id Human owner.
+	 * @return string Empty string for an invalid owner.
 	 */
-	private static function same_gate_inode( $path, $handle ) {
-		clearstatcache( true, $path );
-		$path_stat = @lstat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Treat a missing or replaced gate as a storage error.
-		$open_stat = fstat( $handle );
-		return self::valid_gate_stat( $path_stat ) && self::valid_gate_stat( $open_stat ) && $path_stat['dev'] === $open_stat['dev'] && $path_stat['ino'] === $open_stat['ino'];
+	private static function owner_name( $user_id ) {
+		return (int) $user_id > 0 && (string) (int) $user_id === (string) $user_id ? 'bhranti_memory_user_' . (int) $user_id : '';
 	}
 
 	/**
-	 * Never accept a symlink, hard link, directory or world-readable gate.
+	 * Read persisted bounded bytes, independently of option and notoptions caches.
 	 *
-	 * @param array|false $stat Native file stat.
-	 * @return bool
+	 * @param string $name Fixed plugin-owned option name.
+	 * @return string|null|WP_Error Persisted data, absent row, or storage failure.
 	 */
-	private static function valid_gate_stat( $stat ) {
-		return is_array( $stat ) && 0100000 === ( $stat['mode'] & 0170000 ) && 0600 === ( $stat['mode'] & 0777 ) && 1 === $stat['nlink'];
-	}
+	private static function raw_option( $name ) {
+		global $wpdb;
 
-	/**
-	 * Persist an exact static state before an uninstall sweep or activation.
-	 *
-	 * @param resource $handle Locked gate handle.
-	 * @param string   $state Exact state to store.
-	 * @return bool
-	 */
-	private static function write_gate_state( $handle, $state ) {
-		if ( ! rewind( $handle ) || ! ftruncate( $handle, 0 ) ) {
-			return false;
-		}
-		$written = fwrite( $handle, $state ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Write the exact state through the verified, locked inode; WP_Filesystem has no locked-handle API.
-		return strlen( $state ) === $written && fflush( $handle ) && rewind( $handle ) && stream_get_contents( $handle, strlen( $state ) + 1 ) === $state;
-	}
-
-	/**
-	 * Resolve only fixed plugin-owned paths; never follow links below wp-content.
-	 *
-	 * @param int  $user_id Owner.
-	 * @param bool $create Create private directories only for mutations.
-	 * @return string|WP_Error
-	 */
-	private static function path( $user_id, $create = false ) {
-		$fs   = self::filesystem();
-		$base = realpath( WP_CONTENT_DIR );
-		if ( is_wp_error( $fs ) || ! $base || (int) $user_id < 1 || ! $fs->is_writable( $base ) ) {
-			return self::error( 'storage', 503 );
-		}
-		foreach ( array( 'bhranti-memory', 'site-' . get_current_blog_id() ) as $directory ) {
-			$base .= '/' . $directory;
-			if ( is_link( $base ) ) {
-				return self::error( 'storage', 503 );
-			}
-			if ( ! $fs->exists( $base ) ) {
-				if ( ! $create ) {
-					continue;
-				}
-				if ( ! $fs->mkdir( $base, 0700 ) || ! $fs->put_contents( $base . '/index.php', self::GUARD, 0600 ) ) {
-					return self::error( 'storage', 503 );
-				}
-			}
-			if ( $fs->exists( $base ) && ( ! $fs->is_dir( $base ) || is_link( $base . '/index.php' ) || self::GUARD !== $fs->get_contents( $base . '/index.php' ) ) ) {
-				return self::error( 'storage', 503 );
-			}
-		}
-		$path = $base . '/user-' . (int) $user_id . '.php';
-		return is_link( $path ) || is_link( $path . '.lock' ) ? self::error( 'storage', 503 ) : $path;
-	}
-
-	/**
-	 * Lock only the fixed owner file; WordPress has no advisory-lock API.
-	 *
-	 * @param int      $user_id Owner.
-	 * @param callable $callback Operation under lock.
-	 * @param bool     $create Create directory when needed.
-	 * @param bool     $site_gate_held Whether uninstall already holds the site gate.
-	 * @param bool     $network_gate_held Whether a shared network gate is held.
-	 * @return mixed
-	 */
-	private static function locked( $user_id, $callback, $create = true, $site_gate_held = false, $network_gate_held = false ) {
-		if ( ! $site_gate_held && ! $network_gate_held && is_multisite() ) {
-			return self::site_gate(
-				'write',
-				static function () use ( $user_id, $callback, $create ) {
-					return self::locked( $user_id, $callback, $create, false, true );
-				},
-				0
-			);
-		}
-		if ( ! $site_gate_held ) {
-			return self::site_gate(
-				'write',
-				static function () use ( $user_id, $callback, $create, $network_gate_held ) {
-					return self::locked( $user_id, $callback, $create, true, $network_gate_held );
-				}
-			);
-		}
-		$path = self::path( $user_id, $create );
-		if ( is_wp_error( $path ) ) {
-			return $path;
-		}
-		$fs = self::filesystem();
-		if ( ! $create && ! $fs->exists( $path ) ) {
-			return false;
-		}
-		$handle = fopen( $path . '.lock', 'c' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Native filesystem has no flock handle API.
-		if ( ! $handle ) {
-			return self::error( 'storage', 503 );
-		}
+		$previous_suppression = $wpdb->suppress_errors( true );
 		try {
-			if ( ! $fs->chmod( $path . '.lock', 0600 ) || ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
-				return self::error( 'busy', 409 );
-			}
-			return call_user_func( $callback, $fs, $path );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Fresh bounded state is required for conflict-safe private memory and lifecycle checks.
+			$row      = $wpdb->get_row( $wpdb->prepare( 'SELECT CASE WHEN LENGTH(option_value) <= %d THEN option_value ELSE NULL END AS option_value FROM %i WHERE option_name = %s', self::LIMIT, $wpdb->options, $name ), ARRAY_A );
+			$db_error = $wpdb->last_error;
 		} finally {
-			flock( $handle, LOCK_UN );
-			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the advisory-lock handle.
+			$wpdb->suppress_errors( $previous_suppression );
 		}
+		if ( '' !== $db_error || ( null !== $row && ( ! is_array( $row ) || ! isset( $row['option_value'] ) || ! is_string( $row['option_value'] ) ) ) ) {
+			return self::error( 'storage', 503 );
+		}
+		return null === $row ? null : $row['option_value'];
 	}
 
 	/**
-	 * Bound the encoded read before allocating or decrypting it.
+	 * Atomically replace precisely the observed revision, never upsert a race.
 	 *
-	 * @param int $user_id Owner.
-	 * @return string|WP_Error Empty string means no saved file.
+	 * @param string      $name Plugin-owned option name.
+	 * @param string|null $previous Observed bytes or absent row.
+	 * @param string      $value New authenticated bytes or lifecycle marker.
+	 * @return true|WP_Error
+	 */
+	private static function compare_exchange( $name, $previous, $value ) {
+		global $wpdb;
+
+		$previous_suppression = $wpdb->suppress_errors( true );
+		try {
+			if ( null === $previous ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Plain INSERT cannot overwrite a competing owner; add_option() uses an upsert.
+				$changed = $wpdb->insert(
+					$wpdb->options,
+					array(
+						'option_name'  => $name,
+						'option_value' => $value,
+						'autoload'     => 'no',
+					),
+					array( '%s', '%s', '%s' )
+				);
+			} else {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Options API has no exact-value compare-and-swap; clear all relevant caches after the committed update.
+				$changed = $wpdb->update(
+					$wpdb->options,
+					array(
+						'option_value' => $value,
+						'autoload'     => 'no',
+					),
+					array(
+						'option_name'  => $name,
+						'option_value' => $previous,
+					),
+					array( '%s', '%s' ),
+					array( '%s', '%s' )
+				);
+			}
+		} finally {
+			$wpdb->suppress_errors( $previous_suppression );
+		}
+		if ( 1 !== $changed ) {
+			return self::error( 'conflict', 409 );
+		}
+		self::clear_cache( $name );
+		$saved = self::raw_option( $name );
+		return is_string( $saved ) && hash_equals( $value, $saved ) ? true : self::error( 'storage', 500 );
+	}
+
+	/**
+	 * Erase preferences while keeping only a random concurrency tombstone.
+	 *
+	 * A deleted row would make its revision initial again, allowing an already
+	 * prepared initial write to recreate erased preferences. This marker contains
+	 * no preferences, observations or secrets and decodes to an empty export.
+	 *
+	 * @param string $name Fixed numeric owner option name.
+	 * @return bool|WP_Error Whether saved data was erased.
+	 */
+	private static function erase_owner( $name ) {
+		global $wpdb;
+
+		$length = strlen( self::ERASED ) + 64;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Inspect only a bounded prefix, so malformed oversized records remain erasable without allocation.
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT LEFT(option_value, %d) AS head, LENGTH(option_value) AS bytes FROM %i WHERE option_name = %s', $length, $wpdb->options, $name ), ARRAY_A );
+		if ( $wpdb->last_error || ( null !== $row && ( ! is_array( $row ) || ! isset( $row['head'], $row['bytes'] ) ) ) ) {
+			return self::error( 'storage', 500 );
+		}
+		if ( $row && $length === (int) $row['bytes'] && self::erased( $row['head'] ) ) {
+			return false;
+		}
+		$marker = self::ERASED . bin2hex( random_bytes( 32 ) );
+		if ( null === $row ) {
+			$saved = self::compare_exchange( $name, null, $marker );
+			return is_wp_error( $saved ) ? $saved : false;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Forced privacy erasure holds the native lifecycle lock and never reads the discarded payload.
+		$changed = $wpdb->update(
+			$wpdb->options,
+			array(
+				'option_value' => $marker,
+				'autoload'     => 'no',
+			),
+			array( 'option_name' => $name ),
+			array( '%s', '%s' ),
+			array( '%s' )
+		);
+		if ( 1 !== $changed ) {
+			return self::error( 'storage', 500 );
+		}
+		self::clear_cache( $name );
+		$saved = self::raw_option( $name );
+		return is_string( $saved ) && hash_equals( $marker, $saved ) ? true : self::error( 'storage', 500 );
+	}
+
+	/**
+	 * Recognize only the fixed, non-personal erasure marker grammar.
+	 *
+	 * @param string $raw Persisted bytes.
+	 * @return bool
+	 */
+	private static function erased( $raw ) {
+		return is_string( $raw ) && 1 === preg_match( '/\Abhranti-memory-erased:[a-f0-9]{64}\z/', $raw );
+	}
+
+	/**
+	 * Erase an exact numeric owner row under the already held lifecycle lock.
+	 *
+	 * Erasure does not decrypt or allocate the payload, so corrupt or oversized
+	 * records remain removable through privacy erasure and uninstall.
+	 *
+	 * @param string $name Fixed numeric owner option name.
+	 * @return bool|WP_Error Whether a row was removed.
+	 */
+	private static function delete_owner( $name ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Force erasure under the lifecycle lock even if option caches or payload bytes are corrupt.
+		$changed = $wpdb->delete( $wpdb->options, array( 'option_name' => $name ), array( '%s' ) );
+		if ( false === $changed ) {
+			return self::error( 'storage', 500 );
+		}
+		self::clear_cache( $name );
+		$saved = self::raw_option( $name );
+		return null === $saved ? ( 1 === $changed ) : self::error( 'storage', 500 );
+	}
+
+	/**
+	 * Invalidate all native option cache locations after committed mutations.
+	 *
+	 * @param string $name Option name.
+	 */
+	private static function clear_cache( $name ) {
+		wp_cache_delete( $name, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+	}
+
+	/**
+	 * Bound the encrypted site/user record before allocating or decrypting it.
+	 *
+	 * @param int $user_id Human owner.
+	 * @return string|WP_Error Empty string means no saved record.
 	 */
 	private static function read( $user_id ) {
-		$path = self::path( $user_id );
-		if ( is_wp_error( $path ) ) {
-			return $path;
+		$name = self::owner_name( $user_id );
+		if ( ! $name ) {
+			return self::error( 'invalid' );
 		}
-		$fs = self::filesystem();
-		if ( ! $fs->exists( $path ) ) {
-			return '';
-		}
-		if ( ! $fs->is_file( $path ) || $fs->size( $path ) > self::LIMIT ) {
+		$state = self::raw_option( 'bhranti_memory_state' );
+		if ( is_wp_error( $state ) || ! in_array( $state, array( null, 'active' ), true ) ) {
 			return self::error( 'storage', 503 );
 		}
-		$raw = $fs->get_contents( $path );
-		return is_string( $raw ) ? $raw : self::error( 'storage', 503 );
+		$raw = self::raw_option( $name );
+		return null === $raw ? '' : $raw;
 	}
 
 	/**
-	 * Authenticate and validate data; never include or execute a memory file.
+	 * Authenticate and validate data; never include or execute stored memory.
 	 *
-	 * @param string $raw Encoded file bytes.
+	 * @param string $raw Encoded encrypted option bytes.
 	 * @param int    $user_id Owner.
 	 * @return array|WP_Error
 	 */
 	private static function decode( $raw, $user_id ) {
-		if ( '' === $raw ) {
+		if ( '' === $raw || self::erased( $raw ) ) {
 			return self::empty_state();
 		}
-		if ( ! function_exists( 'sodium_crypto_secretbox_open' ) || 0 !== strpos( $raw, self::GUARD ) ) {
+		if ( ! function_exists( 'sodium_crypto_secretbox_open' ) || 0 !== strpos( $raw, self::FORMAT ) ) {
 			return self::error( 'unreadable', 409 );
 		}
-		$bytes = base64_decode( substr( $raw, strlen( self::GUARD ) ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decode ciphertext before authentication; never include or execute file content.
-		if ( false === $bytes || strlen( $bytes ) < SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES ) {
+		$hex = substr( $raw, strlen( self::FORMAT ) );
+		if ( strlen( $raw ) > self::LIMIT || 0 !== strlen( $hex ) % 2 || ! preg_match( '/\A[a-f0-9]+\z/', $hex ) ) {
+			return self::error( 'unreadable', 409 );
+		}
+		$bytes = hex2bin( $hex );
+		if ( strlen( $bytes ) < SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES ) {
 			return self::error( 'unreadable', 409 );
 		}
 		$json = sodium_crypto_secretbox_open( substr( $bytes, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ), substr( $bytes, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES ), self::key( $user_id ) );
 		$data = is_string( $json ) ? json_decode( $json, true, 12 ) : null;
-		if ( ! self::exact_keys( $data, array( 'version', 'site', 'owner', 'data' ) ) || 1 !== ( $data['version'] ?? 0 ) || get_current_blog_id() !== ( $data['site'] ?? 0 ) || ( $data['owner'] ?? 0 ) !== (int) $user_id || ! self::valid_state( $data['data'] ) ) {
+		if ( ! self::exact_keys( $data, array( 'version', 'site', 'owner', 'data' ) ) || 2 !== ( $data['version'] ?? 0 ) || get_current_blog_id() !== ( $data['site'] ?? 0 ) || ( $data['owner'] ?? 0 ) !== (int) $user_id || ! self::valid_state( $data['data'] ) ) {
 			return self::error( 'unreadable', 409 );
 		}
 		return $data['data'];
@@ -1245,7 +1150,7 @@ final class Bhranti_Memory {
 	 * @return string Binary secretbox key.
 	 */
 	private static function key( $user_id ) {
-		return hash_hmac( 'sha256', 'bhranti-memory-v1|' . get_current_blog_id() . '|' . (int) $user_id, wp_salt( 'auth' ), true );
+		return hash_hmac( 'sha256', 'bhranti-memory-v2|' . get_current_blog_id() . '|' . (int) $user_id, wp_salt( 'auth' ), true );
 	}
 
 	/**

@@ -55,7 +55,7 @@ Unsent text drafts are kept separately for each conversation in the current brow
 
 ## How private memory differs
 
-Preferences you explicitly ask Bhranti to remember, along with a limited set of checked image capabilities, are stored in encrypted files for your account on this site. Chat still works if your server does not support private memory.
+Preferences you explicitly ask Bhranti to remember, along with a limited set of checked image capabilities, are encrypted separately in the WordPress database for your account on this site. Chat still works if your server does not support private memory.
 
 Review and reset your own memory in **Bhranti → Settings → Memory**. [See the memory guide](/docs/memory/) for the exact controls and what a reset removes.
 
@@ -82,6 +82,6 @@ Use **Reset memory** to remove saved preferences and capability information whil
 
 ## Uninstall Bhranti
 
-Uninstall removes Bhranti’s stored workspace data and the administrative privileges of its dedicated account. Site content and authorship stay in place. You can later remove that account or reassign its content through WordPress administration.
+Uninstall removes Bhranti’s private workspace data and saved preferences. Site content, authorship and existing user accounts stay in place.
 
 Uninstall leaves completed site changes in place, including content edits, published pages and plugin changes. If you want to restore a supported earlier state, use **Roll back** before uninstalling.

@@ -8,17 +8,17 @@
 
 defined( 'ABSPATH' ) || exit;
 
-/** Allow native theme discovery without granting permanent theme-changing caps. */
+/** Read native theme data with the requesting user's unchanged capabilities. */
 final class Bhranti_Site {
 
 	/**
-	 * Run an exact native GET theme callback with an actor-only read capability.
+	 * Run an exact native GET theme callback as the requesting user.
 	 *
 	 * The caller must first validate the route schema and the human's unchanged
 	 * native permission callback. This helper is internal; it registers no routes.
 	 *
 	 * @param WP_REST_Request $request Reviewed native GET request.
-	 * @param int             $actor_id Managed Bhranti user.
+	 * @param int             $actor_id Requesting WordPress user.
 	 * @param callable        $callback Actor permission callback or REST dispatch.
 	 * @return mixed|WP_Error
 	 */
@@ -26,27 +26,8 @@ final class Bhranti_Site {
 		if ( ! $request instanceof WP_REST_Request || 'GET' !== $request->get_method() || ! is_callable( $callback ) || ! self::is_theme_request( $request ) ) {
 			return new WP_Error( 'bhranti_site_read_only', __( 'Only reviewed native theme reads can use this permission scope.', 'bhranti' ), array( 'status' => 403 ) );
 		}
-		wp_cache_delete( 'bhranti_actor_id', 'options' );
-		wp_cache_delete( 'alloptions', 'options' );
-		clean_user_cache( $actor_id );
-		if ( (int) get_option( 'bhranti_actor_id' ) !== (int) $actor_id || (int) get_user_meta( $actor_id, 'bhranti_managed_actor', true ) !== get_current_blog_id() ) {
-			return new WP_Error( 'bhranti_site_actor', __( 'The managed Bhranti identity could not be verified for this read.', 'bhranti' ), array( 'status' => 403 ) );
-		}
-		$grant         = static function ( $allcaps, $required, $args, $user ) use ( $actor_id ) {
-			if ( (int) $user->ID === (int) $actor_id && 'switch_themes' === ( $args[0] ?? '' ) ) {
-				$allcaps['switch_themes'] = true;
-			}
-			return $allcaps;
-		};
-		$previous_user = get_current_user_id();
-		add_filter( 'user_has_cap', $grant, 10, 4 );
-		try {
-			wp_set_current_user( $actor_id );
-			return call_user_func( $callback );
-		} finally {
-			remove_filter( 'user_has_cap', $grant, 10 );
-			wp_set_current_user( $previous_user );
-		}
+		$identity = Bhranti_Identity::requester( $actor_id );
+		return is_wp_error( $identity ) ? $identity : call_user_func( $callback );
 	}
 
 	/**
@@ -92,7 +73,7 @@ final class Bhranti_Site {
 	 *
 	 * @param mixed $data         Native REST response data.
 	 * @param int   $requester_id Requesting user, after native theme permission checks.
-	 * @param int   $actor_id     Managed actor, after native theme permission checks.
+	 * @param int   $actor_id     Requesting user, after native theme permission checks.
 	 * @return array
 	 */
 	public static function theme_data( $data, $requester_id = 0, $actor_id = 0 ) {
@@ -133,8 +114,8 @@ final class Bhranti_Site {
 	 *
 	 * @param string $stylesheet  Installed theme identifier.
 	 * @param int    $requester_id Requesting user.
-	 * @param int    $actor_id     Managed actor.
-	 * @return int|null Existing ID readable by both identities, otherwise null.
+	 * @param int    $actor_id     Requesting user.
+	 * @return int|null Existing ID readable by the requester, otherwise null.
 	 */
 	private static function global_styles_id( $stylesheet, $requester_id, $actor_id ) {
 		$theme = wp_get_theme( $stylesheet );
@@ -183,17 +164,12 @@ final class Bhranti_Site {
 		$request = new WP_REST_Request( 'GET', '/wp/v2/global-styles/' . $id );
 		$request->set_url_params( array( 'id' => $id ) );
 		$request->set_query_params( array( 'context' => 'view' ) );
-		$previous_user = get_current_user_id();
-		try {
-			foreach ( array( $requester_id, $actor_id ) as $user_id ) {
-				wp_set_current_user( $user_id );
-				$permission = $controller->get_item_permissions_check( $request );
-				if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
-					return null;
-				}
-			}
-		} finally {
-			wp_set_current_user( $previous_user );
+		if ( (int) $requester_id !== (int) $actor_id || is_wp_error( Bhranti_Identity::requester( $requester_id ) ) ) {
+			return null;
+		}
+		$permission = $controller->get_item_permissions_check( $request );
+		if ( is_wp_error( $permission ) || false === $permission || null === $permission ) {
+			return null;
 		}
 		return $id;
 	}
