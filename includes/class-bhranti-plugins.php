@@ -765,7 +765,7 @@ final class Bhranti_Plugins {
 		}
 		$real = realpath( WP_PLUGIN_DIR . '/' . $file );
 		$root = realpath( WP_PLUGIN_DIR );
-		if ( ! $real || ! $root || ! str_starts_with( $real, trailingslashit( $root ) ) || is_link( WP_PLUGIN_DIR . '/' . $file ) || ( str_contains( $file, '/' ) && is_link( WP_PLUGIN_DIR . '/' . dirname( $file ) ) ) ) {
+		if ( false === self::relative_plugin_path( $real, $root ) || is_link( WP_PLUGIN_DIR . '/' . $file ) || ( str_contains( $file, '/' ) && is_link( WP_PLUGIN_DIR . '/' . dirname( $file ) ) ) ) {
 			return self::error( 'bhranti_plugin_blocked', __( 'Symlinked or external plugin paths are outside Bhranti plugin management.', 'bhranti' ), 403 );
 		}
 		clearstatcache( true, $real );
@@ -851,6 +851,22 @@ final class Bhranti_Plugins {
 	}
 
 	/**
+	 * Compare resolved paths using WordPress's platform-independent separators.
+	 *
+	 * @param string|false $path Resolved plugin file path.
+	 * @param string|false $root Resolved native plugin directory.
+	 * @return string|false Relative path, or false outside the resolved root.
+	 */
+	private static function relative_plugin_path( $path, $root ) {
+		if ( ! is_string( $path ) || ! is_string( $root ) || '' === $path || '' === $root ) {
+			return false;
+		}
+		$path = wp_normalize_path( $path );
+		$root = trailingslashit( wp_normalize_path( $root ) );
+		return str_starts_with( $path, $root ) ? substr( $path, strlen( $root ) ) : false;
+	}
+
+	/**
 	 * Protect this runtime and all locally registered native provider implementations.
 	 *
 	 * @param string $plugin REST plugin identifier.
@@ -859,12 +875,19 @@ final class Bhranti_Plugins {
 	private static function protected_plugin( $plugin ) {
 		$file    = $plugin . '.php';
 		$folders = array( dirname( plugin_basename( BHRANTI_FILE ) ), 'ai' );
+		$root    = realpath( WP_PLUGIN_DIR );
+		if ( false === $root ) {
+			return true;
+		}
 		try {
 			$registry = WordPress\AiClient\AiClient::defaultRegistry();
 			foreach ( $registry->getRegisteredProviderIds() as $provider_id ) {
-				$source = ( new ReflectionClass( $registry->getProviderClassName( $provider_id ) ) )->getFileName();
-				if ( $source && str_starts_with( wp_normalize_path( $source ), trailingslashit( wp_normalize_path( WP_PLUGIN_DIR ) ) ) ) {
-					$relative  = substr( wp_normalize_path( $source ), strlen( trailingslashit( wp_normalize_path( WP_PLUGIN_DIR ) ) ) );
+				$source   = ( new ReflectionClass( $registry->getProviderClassName( $provider_id ) ) )->getFileName();
+				$relative = self::relative_plugin_path( $source, $root );
+				if ( false !== $relative ) {
+					if ( $relative === $file ) {
+						return true;
+					}
 					$folders[] = explode( '/', $relative )[0];
 				}
 			}

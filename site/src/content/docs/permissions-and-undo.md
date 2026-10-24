@@ -50,7 +50,7 @@ To undo a supported change, use **Roll back** in its action details.
 3. Expand the completed-actions group if the action is inside one.
 4. Expand the particular action you want to restore.
 5. Select **Roll back**, if offered.
-6. Review the browser confirmation. Confirm to proceed, or cancel to keep the current state.
+6. Review the confirmation inside the chat. Select **Approve rollback** to proceed, or **Cancel** to keep the current state.
 7. Wait for **Rollback completed.**, then inspect the item.
 
 You can roll back supported changes for **seven days**. Before restoring, Bhranti checks that the current item still matches its saved result. If someone has edited it since, Bhranti will not overwrite their work. Roll back is unavailable for expired or unsupported changes.

@@ -301,7 +301,14 @@
 		display: block;
 	}
 	.bhranti-log-table thead {
-		display: none;
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect(1px, 1px, 1px, 1px);
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.bhranti-log-table tbody tr {
 		display: grid;

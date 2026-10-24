@@ -12,7 +12,7 @@ Bhranti opens beside WordPress, so you can ask for help where you are already wo
 You need:
 
 - **WordPress 7.0 or later** and **PHP 8.0 or later**.
-- An administrator account. First-time setup also needs permission to add users.
+- An administrator account.
 - A compatible text provider configured in WordPress’s native **Settings → Connectors** screen.
 
 [Download the Bhranti plugin ZIP](/download/), then follow the installation steps below.

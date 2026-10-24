@@ -136,6 +136,10 @@ The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (
 == Changelog ==
 
 = 1.2 =
+* Confirm Roll back inside the chat and recover the saved outcome after an interrupted response.
+* Recognize natural requests to forget a saved preference.
+* Improve plugin path handling on Windows and sites with a linked plugin directory.
+* Preserve activity table headings for assistive technology on small screens.
 * Run reviewed actions as the requesting administrator without creating another WordPress user or granting extra capabilities.
 * Store private preferences as encrypted, nonautoloaded WordPress database records, with export, erasure and reset controls.
 * Show one requesting user in Logs while retaining execution identity in raw audit records.

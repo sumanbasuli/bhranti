@@ -34,6 +34,7 @@
 		menu: false,
 		workspace: { sessions: [], ai: {} },
 		session: null,
+		rollback: null,
 		draft: '',
 		drafts: new Map(),
 		screenshots: new Map(),
@@ -102,6 +103,7 @@
 	let pendingAction = null,
 		stopRunKey = '',
 		blockedObservation = null,
+		backgroundStatusError = '',
 		credentialReview = false;
 	const settingsEvents = new Map();
 	let triggerFingerprint = '';
@@ -464,6 +466,8 @@
 		}
 	}
 	async function runRequest( path, data, label ) {
+		const sessionId = state.session && state.session.id,
+			runId = currentRun() && currentRun().id;
 		const action =
 			/\/execute$/.test( path ) &&
 			currentRun() &&
@@ -479,6 +483,20 @@
 		try {
 			const result = await request( path, 'POST', data );
 			if ( pendingAction === action ) pendingAction = null;
+			if (
+				state.session &&
+				state.session.id === sessionId &&
+				currentRun() &&
+				currentRun().id === runId &&
+				result &&
+				result.id === sessionId &&
+				result.run &&
+				result.run.id === runId
+			) {
+				if ( state.connectionError === backgroundStatusError )
+					state.connectionError = '';
+				backgroundStatusError = '';
+			}
 			return result;
 		} catch ( error ) {
 			if (
@@ -507,7 +525,7 @@
 			? error.message
 			: __( 'Something went wrong. Please try again.', 'bhranti' );
 	}
-	function notify( message, type = 'error' ) {
+	function notify( message, type = 'error', scope = '' ) {
 		if (
 			state.notices.some(
 				( notice ) => notice.message === message && notice.type === type
@@ -515,7 +533,7 @@
 		)
 			return;
 		const id = 'bhranti-' + ++noticeSequence;
-		state.notices.push( { id, message, type } );
+		state.notices.push( { id, message, type, scope } );
 		if ( state.notices.length > 3 ) dismissNotice( state.notices[ 0 ].id );
 		if ( wp.data && wp.notices )
 			wp.data
@@ -532,6 +550,12 @@
 			wp.data
 				.dispatch( wp.notices.store || 'core/notices' )
 				.removeNotice( id, 'bhranti' );
+	}
+	function clearEditorError() {
+		state.editorError = '';
+		state.notices
+			.filter( ( notice ) => notice.scope === 'editor-safety' )
+			.forEach( ( notice ) => dismissNotice( notice.id ) );
 	}
 	function rememberSession( id ) {
 		try {
@@ -1639,7 +1663,7 @@
 					dirty: !! result.dirty,
 					stale_dirty: !! result.stale_dirty,
 				};
-				state.editorError = '';
+				clearEditorError();
 				if ( previousError || previousDirty !== state.editor.dirty )
 					editorSync.generation++;
 				if (
@@ -1651,7 +1675,10 @@
 					editorSync.pending.attempts = 0;
 					scheduleEditorChanges();
 				}
-				if ( state.open && previous !== JSON.stringify( state.editor ) )
+				if (
+					state.open &&
+					( previousError || previous !== JSON.stringify( state.editor ) )
+				)
 					render();
 				else syncTrigger();
 				return state.editor;
@@ -1713,10 +1740,11 @@
 			Date.now() - blockedObservation.started >= 600000
 		) {
 			blockedObservation.stopped = true;
-			state.connectionError = __(
+			backgroundStatusError = __(
 				'Latest task status is unavailable. Reconnect to check the saved progress.',
 				'bhranti'
 			);
+			state.connectionError = backgroundStatusError;
 			if ( state.open ) render();
 		}
 		if (
@@ -1793,10 +1821,11 @@
 					].includes( run.status )
 				) {
 					observation.stopped = true;
-					state.connectionError = __(
+					backgroundStatusError = __(
 						'The saved task changed. Reconnect to review it.',
 						'bhranti'
 					);
+					state.connectionError = backgroundStatusError;
 					render();
 					return;
 				}
@@ -1825,7 +1854,7 @@
 				state.session = session;
 				if ( advanced ) {
 					state.pausedForEditor = false;
-					state.editorError = '';
+					clearEditorError();
 					editorSync.generation++;
 					observation.step = run.step;
 					observation.started = Date.now();
@@ -1850,10 +1879,11 @@
 			const status = Number( error && error.data && error.data.status );
 			if ( observation && status >= 400 && status < 500 )
 				observation.stopped = true;
-			state.connectionError = __(
+			backgroundStatusError = __(
 				'Latest task status is unavailable. Reopen Bhranti to reconnect.',
 				'bhranti'
 			);
+			state.connectionError = backgroundStatusError;
 			if ( observation && state.open ) render();
 			else syncTrigger();
 		} finally {
@@ -1886,7 +1916,11 @@
 			state.pausedForEditor = false;
 		} catch ( error ) {
 			state.pausedForEditor = true;
-			notify( state.editorError || errorMessage( error ) );
+			notify(
+				state.editorError || errorMessage( error ),
+				'error',
+				'editor-safety'
+			);
 		} finally {
 			state.busy = false;
 			render();
@@ -2629,7 +2663,13 @@
 		}
 	}
 	async function openSession( id, preserveDraft = false ) {
-		if ( state.busy || state.loading || state.capturing || state.stepping )
+		if (
+			state.busy ||
+			state.loading ||
+			state.capturing ||
+			state.stepping ||
+			state.rollback
+		)
 			return;
 		rememberDraft();
 		state.busy = true;
@@ -2854,7 +2894,13 @@
 		trigger.title = label;
 	}
 	function newChat() {
-		if ( state.busy || state.loading || state.capturing || activeRun() )
+		if (
+			state.busy ||
+			state.loading ||
+			state.capturing ||
+			activeRun() ||
+			state.rollback
+		)
 			return;
 		rememberDraft();
 		state.session = null;
@@ -3045,6 +3091,7 @@
 			state.loading ||
 			state.capturing ||
 			state.error ||
+			state.rollback ||
 			activeRun()
 		)
 			return;
@@ -3571,6 +3618,7 @@
 	async function resumeTask() {
 		const run = currentRun();
 		if (
+			state.rollback ||
 			state.busy ||
 			state.stepping ||
 			! state.session ||
@@ -3613,7 +3661,12 @@
 		if ( resumed ) continueRun();
 	}
 	async function confirmAction( approved ) {
-		if ( state.busy || ! state.session || ! state.session.confirmation )
+		if (
+			state.rollback ||
+			state.busy ||
+			! state.session ||
+			! state.session.confirmation
+		)
 			return;
 		const restoreFocus = [ 'bhranti-confirm', 'bhranti-cancel' ].includes(
 			document.activeElement && document.activeElement.id
@@ -3659,42 +3712,126 @@
 		)
 			continueRun();
 	}
-	async function rollback( actionId ) {
-		if ( state.busy || activeRun() ) return;
+	function rollbackEvent( choice ) {
 		if (
-			! window.confirm(
-				__(
-					'Roll back this change? Newly created items will move to Trash; updates restore their previous values. Later edits are protected.',
-					'bhranti'
-				)
-			)
+			! state.session ||
+			state.session.id !== choice.sessionId ||
+			( ( currentRun() && currentRun().id ) || null ) !== choice.runId
+		)
+			return null;
+		return ( state.session.events || [] ).find(
+			( event ) => JSON.stringify( event ) === choice.event
+		);
+	}
+	function rollback( actionId ) {
+		if (
+			state.busy ||
+			state.loading ||
+			state.stepping ||
+			state.capturing ||
+			state.error ||
+			state.rollback ||
+			activeRun() ||
+			! state.session ||
+			state.session.confirmation
 		)
 			return;
+		const event = ( state.session.events || [] ).find(
+			( value ) =>
+				value.action_id === actionId && value.rollback_available === true
+		);
+		if ( ! event ) return;
+		const choice = {
+			sessionId: state.session.id,
+			runId: ( currentRun() && currentRun().id ) || null,
+			actionId,
+			event: JSON.stringify( event ),
+			target: event.target ? { ...event.target } : null,
+			summary: __(
+				'Newly created content moves to Trash; updates restore their saved previous values. Later edits are protected.',
+				'bhranti'
+			),
+		};
+		state.rollback = choice;
+		state.menu = false;
+		const stream = root.querySelector( '.bhranti-stream' );
+		if ( stream ) stream.scrollTop = stream.scrollHeight;
+		render();
+		requestAnimationFrame( () => {
+			if ( state.rollback === choice ) {
+				const cancel = root.querySelector( '#bhranti-cancel' );
+				if ( cancel ) cancel.focus();
+			}
+		} );
+	}
+	async function confirmRollback( choice, approved ) {
+		if (
+			choice !== state.rollback ||
+			state.busy ||
+			state.loading ||
+			state.stepping ||
+			state.capturing
+		)
+			return;
+		const event = rollbackEvent( choice );
+		state.rollback = null;
+		if (
+			! approved ||
+			! event ||
+			! event.rollback_available ||
+			activeRun() ||
+			state.error
+		) {
+			render();
+			focusComposer();
+			return;
+		}
 		state.busy = true;
 		render();
 		try {
-			await request(
+			const fresh = await request(
 				'/sessions/' +
-					encodeURIComponent( state.session.id ) +
+					encodeURIComponent( choice.sessionId ) +
 					'/rollback',
 				'POST',
-				{ action_id: actionId }
+				{ action_id: choice.actionId }
 			);
-			state.session = await request(
-				'/sessions/' + encodeURIComponent( state.session.id )
-			);
+			if ( ! rollbackEvent( choice ) || pageSuspended ) return;
+			if (
+				! fresh ||
+				fresh.id !== choice.sessionId ||
+				( ( fresh.run && fresh.run.id ) || null ) !== choice.runId
+			)
+				throw new Error(
+					__( 'The saved task changed. Reconnect to review it.', 'bhranti' )
+				);
+			state.session = fresh;
 			notify( __( 'Rollback completed.', 'bhranti' ), 'success' );
 		} catch ( error ) {
-			notify( errorMessage( error ) );
-			await reloadAfterError();
+			if ( ! rollbackEvent( choice ) || pageSuspended ) return;
+			state.error = errorMessage( error );
+			if (
+				( await reloadAfterError() ) &&
+				( state.session.events || [] ).some(
+					( value ) =>
+						value.action_id === choice.actionId &&
+						value.operation === 'rollback' &&
+						value.success === true
+				)
+			) {
+				state.error = '';
+				notify( __( 'Rollback completed.', 'bhranti' ), 'success' );
+			}
 		} finally {
 			state.busy = false;
+			markExistingEvents();
 			render();
+			focusComposer();
 		}
-		markExistingEvents();
 	}
 	async function deleteChat() {
 		if (
+			state.rollback ||
 			state.busy ||
 			state.loading ||
 			state.capturing ||
@@ -3893,7 +4030,8 @@
 					state.busy ||
 					state.loading ||
 					state.capturing ||
-					!! activeRun();
+					!! activeRun() ||
+					!! state.rollback;
 				list.appendChild( element( 'li', '', item ) );
 			} );
 		wrap.appendChild( list );
@@ -4723,7 +4861,9 @@
 		if ( preview ) stream.appendChild( preview );
 		const status = ! activeRun() && runStatus();
 		if ( status ) stream.appendChild( status );
-		const confirmation = state.session && state.session.confirmation;
+		const rollbackChoice = state.rollback,
+			confirmation =
+				rollbackChoice || ( state.session && state.session.confirmation );
 		if ( confirmation ) {
 			const action =
 				confirmation.target &&
@@ -4733,7 +4873,11 @@
 				'h3',
 				'',
 				icon( action ? 'plugin' : 'clock' ),
-				action ? action[ 0 ] : __( 'Approval required', 'bhranti' )
+				rollbackChoice
+					? __( 'Roll back this change?', 'bhranti' )
+					: action
+					? action[ 0 ]
+					: __( 'Approval required', 'bhranti' )
 			);
 			heading.id = 'bhranti-confirmation-title';
 			const target =
@@ -4762,17 +4906,27 @@
 			card.id = 'bhranti-confirmation';
 			card.setAttribute( 'aria-labelledby', heading.id );
 			const yes = button(
-					action ? action[ 1 ] : __( 'Approve', 'bhranti' ),
+					rollbackChoice
+						? __( 'Approve rollback', 'bhranti' )
+						: action
+						? action[ 1 ]
+						: __( 'Approve', 'bhranti' ),
 					'bhranti-small-button is-primary',
-					() => confirmAction( true ),
+					() =>
+						rollbackChoice
+							? confirmRollback( rollbackChoice, true )
+							: confirmAction( true ),
 					'bhranti-confirm'
 				),
 				no = button(
-					action
+					rollbackChoice || action
 						? __( 'Cancel', 'bhranti' )
 						: __( 'Deny', 'bhranti' ),
 					'bhranti-small-button',
-					() => confirmAction( false ),
+					() =>
+						rollbackChoice
+							? confirmRollback( rollbackChoice, false )
+							: confirmAction( false ),
 					'bhranti-cancel'
 				);
 			yes.disabled = no.disabled = state.busy;
@@ -4985,6 +5139,7 @@
 			state.loading ||
 			state.capturing ||
 			!! state.error ||
+			!! state.rollback ||
 			!! activeRun() ||
 			! state.draft.trim();
 		const send = iconButton(
@@ -5210,6 +5365,11 @@
 		return handle;
 	}
 	function render() {
+		if (
+			state.rollback &&
+			( ! rollbackEvent( state.rollback ) || activeRun() )
+		)
+			state.rollback = null;
 		syncEditorControl();
 		observeEditorChanges();
 		observeSettingsChanges();
@@ -5267,6 +5427,7 @@
 			state.menu,
 			state.workspace,
 			state.session,
+			state.rollback,
 			state.draft,
 			state.screenshot,
 			referenceImageRemoved(),
@@ -5347,7 +5508,11 @@
 			'bhranti-new-chat'
 		);
 		start.disabled =
-			state.busy || state.loading || state.capturing || !! activeRun();
+			state.busy ||
+			state.loading ||
+			state.capturing ||
+			!! activeRun() ||
+			!! state.rollback;
 		const controls = element(
 				'div',
 				'bhranti-header-controls',

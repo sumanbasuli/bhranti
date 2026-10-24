@@ -18,7 +18,7 @@ The static Astro website is configured for `https://bhranti.org` and Cloudflare 
 - Prepared action intent, operation, affected item, actual task status, and Stop are visible. Expandable outcomes and separate Logs support traceability.
 - Each plugin installation or later status/deletion operation, and supported content Trash, requires server-stored human approval. Approvals expire after ten minutes and bind to the exact listed changes and item state. One Approve/Cancel installation card may include activation of the current WordPress.org package when both current switches and native capabilities allow it. Installation without activation remains inactive. No second prompt follows activation already listed on the installation card. Cancel stops the current run. Resolved decisions fold chronologically into expandable task history.
 - Supported changes have conflict-safe seven-day Undo. Later changes block restoration; third-party effects such as email/webhooks cannot be rolled back.
-- Permission switches define supported actions. Planning, reads and ordinary site actions use the managed account with requester checks. Approved plugin dispatch and explicit plugin Undo run as the authenticated human; Logs records the actual actor.
+- Permission switches define supported actions. Planning, reads, site actions and explicit Undo run as the requesting administrator with their current WordPress permissions; Logs records the requester and execution identity.
 - Unsaved editor state is protected.
 - Persisted tasks may continue through native scheduling; site traffic or a configured native cron runner is required.
 - Image generation depends on native connector and site support.

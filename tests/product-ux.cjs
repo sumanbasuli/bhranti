@@ -850,6 +850,62 @@ async function testPendingHeartbeatRecovery() {
   } finally { page.close(); }
 }
 
+async function testResolvedTransientStatus() {
+  for (const resolution of ['heartbeat', 'checkpoint']) {
+    let reports = 0;
+    const page = fixture({ background: true, handler: async (request) => {
+      if (request.path.endsWith('/editor-state')) {
+        if (++reports === 1) throw new Error('Synthetic editor safety outage.');
+        return { dirty: false, active: false, write_blocked: false, stale_dirty: false };
+      }
+      if (request.method === 'GET') return session('complete', { step: 4 });
+      throw new Error('Resolving a notice cannot issue a task mutation.');
+    } });
+    try {
+      await page.api.resumeRun();
+      equal(page.api.state.notices.length, 1, resolution + ': failed explicit Resume exposes its safety warning');
+      page.api.notify('An unrelated operation still needs attention.');
+      page.api.state.error = 'An earlier action response is still uncertain.';
+      if (resolution === 'heartbeat') await page.api.reportEditor();
+      else {
+        page.api.state.session = session('running', { step: 3 });
+        page.api.scheduleBackgroundObservation(); await page.advance(4000);
+      }
+      equal(page.api.state.editorError, '', resolution + ': authoritative safety resolution clears the transient safety state');
+      equal(page.api.state.notices.length, 1, resolution + ': only the proven resolved editor-safety notice is dismissed');
+      equal(page.notices.length, 1, resolution + ': the matching native WordPress notice is dismissed too');
+      check(!page.w.document.querySelector('.bhranti-notices').textContent.includes('Editor safety could not be checked'), resolution + ': a resolved safety warning immediately disappears from the visible sidebar');
+      check(page.api.state.notices.some((notice) => notice.message === 'An unrelated operation still needs attention.'), resolution + ': unrelated notices remain visible');
+      equal(page.api.state.error, 'An earlier action response is still uncertain.', resolution + ': resolving a safety read does not erase uncertain action state');
+      equal(page.api.state.pausedForEditor, resolution === 'heartbeat', resolution + ': a heartbeat alone does not resume a paused task');
+      equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/editor-state')).length, 0, resolution + ': resolving transient UI state never replays a task mutation');
+    } finally { page.close(); }
+  }
+  for (const outcome of ['success', 'failure', 'other-run', 'other-session', 'chat-list']) {
+    const page = fixture({ background: true, session: session('running'), handler: async (request) => {
+      if (request.method === 'GET') throw Object.assign(new Error('Synthetic status outage.'), { data: { status: 403 } });
+      if (request.path.endsWith('/step')) {
+        if (outcome === 'failure') throw new Error('An uncertain task response.');
+        const result = session('complete', { id: outcome === 'other-run' ? 'another-run' : runId });
+        if (outcome === 'other-session') result.id = 18;
+        return result;
+      }
+      throw new Error('Unexpected task status request.');
+    } });
+    try {
+      page.api.state.pausedForEditor = true; page.api.scheduleBackgroundObservation(); await page.advance(4000);
+      const warning = page.api.state.connectionError;
+      check(warning.includes('Latest task status is unavailable'), outcome + ': a failed background status read exposes a reconnect warning');
+      if (outcome === 'chat-list') page.api.state.connectionError = 'The chat list will update when the connection returns.';
+      let rejected = false;
+      await page.api.runRequest('/sessions/17/step', { run_id: runId }, 'Planning next step…').catch(() => { rejected = true; });
+      equal(rejected, outcome === 'failure', outcome + ': the actual task response keeps its real success or failure');
+      equal(page.api.state.connectionError, outcome === 'success' ? '' : outcome === 'chat-list' ? 'The chat list will update when the connection returns.' : warning, outcome + ': only a successful same-task response clears its resolved background-status warning');
+      equal(count(page, '/step', 'POST'), 1, outcome + ': notice recovery never retries a task request');
+    } finally { page.close(); }
+  }
+}
+
 async function testRenderedBackgroundHandoff() {
   const action = { tool: 'wp_request', method: 'POST', path: '/wp/v2/pages/99', summary: 'Update the saved page.', write: true, target: historical.target };
   const jobId = 'f7e894c2-10e2-4429-9e24-7bf238d13d2f';
@@ -1340,6 +1396,83 @@ async function testLiveRequestElapsed() {
       equal(count(page, '/cancel', 'POST'), 0, 'An already terminal returned checkpoint requires no additional cancel mutation');
       check(!page.w.document.querySelector('.bhranti-elapsed'), 'No elapsed badge remains after the request ends');
     } finally { held.resolve(session('complete')); if (operation) await operation; page.close(); }
+  }
+}
+
+async function testRollbackChatApproval() {
+  const actionId = 'snapshot-rollback';
+  const original = session('complete');
+  original.events = [tool('rollback-original', 'write', { action_id: actionId, rollback_available: true, summary: 'Moved the fixture page to Trash.' })];
+  const restored = clone(original);
+  restored.events[0].rollback_available = false;
+  restored.events.push(tool('rollback-result', 'rollback', { action_id: actionId, rollback_available: false, summary: 'Previous WordPress state restored.' }));
+  for (const outcome of ['cancel', 'approve', 'lost', 'lost-completed', 'timeout']) {
+    const held = deferred();
+    const page = fixture({ session: clone(original), handler: async (request) => {
+      if (request.path.endsWith('/rollback') && request.method === 'POST') return held.promise;
+      if (request.method === 'GET') return clone(outcome === 'lost-completed' ? restored : original);
+      throw new Error('Rollback approval cannot send a model, message or second mutation.');
+    } });
+    try {
+      page.w.confirm = () => { throw new Error('Rollback must use its in-chat approval, never a native popup.'); };
+      page.api.state.draft = 'Keep my unsent follow-up'; page.api.render();
+      page.api.rollback(actionId); await page.advance(20);
+      equal(page.requests.length, 0, outcome + ': opening rollback approval makes no request');
+      const card = page.w.document.getElementById('bhranti-confirmation'), approve = page.w.document.getElementById('bhranti-confirm'), cancel = page.w.document.getElementById('bhranti-cancel');
+      check(card && card.textContent.includes('Fixture page'), outcome + ': approval identifies the original affected item');
+      check(card.textContent.includes('Trash') && card.textContent.includes('Later edits'), outcome + ': approval explains the actual rollback consequences');
+      equal(approve.textContent, 'Approve rollback', outcome + ': rollback requires an explicit human approval');
+      equal(cancel.textContent, 'Cancel', outcome + ': cancellation is available inside chat');
+      equal(approve.type, 'button', outcome + ': approval cannot accidentally submit the composer');
+      equal(page.w.document.activeElement, cancel, outcome + ': opening the card initially focuses the safe Cancel choice');
+      equal(page.w.document.getElementById('bhranti-new-chat').disabled, true, outcome + ': a pending choice disables New chat');
+      equal(page.w.document.getElementById('bhranti-send').disabled, true, outcome + ': a pending choice disables sending');
+      const input = page.w.document.getElementById('bhranti-composer'); input.dispatchEvent(new page.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      page.api.newChat(); await page.api.openSession(18); await page.api.sendMessage();
+      equal(page.api.state.session.id, 17, outcome + ': keyboard or direct navigation cannot race the choice');
+      equal(page.requests.length, 0, outcome + ': drafting and pending navigation cannot dispatch a mutation');
+      if (outcome === 'cancel') {
+        cancel.click(); await page.advance(20);
+        equal(page.w.document.getElementById('bhranti-confirmation'), null, 'Cancel removes only the pending rollback card');
+        equal(page.requests.length, 0, 'Cancel does not call the rollback or plugin-confirmation endpoint');
+      } else {
+        approve.click(); await until(() => count(page, '/rollback', 'POST') === 1, page);
+        approve.click(); cancel.click(); await flush();
+        equal(count(page, '/rollback', 'POST'), 1, outcome + ': consuming approval prevents double or stale clicks');
+        const sent = page.requests.find((request) => request.path.endsWith('/rollback'));
+        equal(sent.path, '/bhranti/v1/sessions/17/rollback', outcome + ': approval uses only the original owned conversation');
+        equal(JSON.stringify(sent.data), JSON.stringify({ action_id: actionId }), outcome + ': approval binds the exact original action');
+        if (outcome === 'approve') held.resolve(clone(restored));
+        else if (outcome === 'timeout') await page.advance(240000);
+        else held.reject(new Error('The rollback response was lost.'));
+        await until(() => idle(page), page);
+        equal(count(page, '/rollback', 'POST'), 1, outcome + ': uncertain or completed rollback is never automatically replayed');
+        equal(count(page, '/sessions/17', 'GET'), outcome === 'approve' ? 0 : 1, outcome + ': only an uncertain response needs a safe reconciliation read');
+        equal(page.api.state.session.events.some((event) => event.operation === 'rollback'), outcome === 'approve' || outcome === 'lost-completed', outcome + ': chain history comes only from native rollback receipts');
+        equal(!!page.api.state.error, outcome === 'lost' || outcome === 'timeout', outcome + ': an unproven result remains visibly unresolved');
+        equal(page.notices.some((notice) => notice.text === 'Rollback completed.'), outcome === 'approve' || outcome === 'lost-completed', outcome + ': success requires an actual response or exact saved receipt');
+        approve.click(); await page.advance(20); equal(count(page, '/rollback', 'POST'), 1, outcome + ': an old approval cannot be reused after settlement');
+      }
+      equal(page.api.state.draft, 'Keep my unsent follow-up', outcome + ': approval and recovery preserve the unsent draft');
+      equal(page.requests.filter((request) => request.method !== 'GET' && !request.path.endsWith('/rollback')).length, 0, outcome + ': rollback never invokes model, message or plugin-confirmation routes');
+    } finally { held.resolve(clone(restored)); await flush(); page.close(); }
+  }
+  for (const stale of ['session', 'run', 'action', 'target', 'receipt', 'active-run']) {
+    const page = fixture({ session: clone(original), handler: async () => { throw new Error('A stale rollback choice must never make a request.'); } });
+    try {
+      page.w.confirm = () => { throw new Error('No native popup.'); };
+      page.api.rollback(actionId);
+      const approve = page.w.document.getElementById('bhranti-confirm');
+      if (stale === 'session') page.api.state.session.id = 18;
+      if (stale === 'run') page.api.state.session.run.id = 'new-run';
+      if (stale === 'action') page.api.state.session.events[0].action_id = 'different-action';
+      if (stale === 'target') page.api.state.session.events[0].target = { ...historical.target, id: 100, title: 'Another page' };
+      if (stale === 'receipt') page.api.state.session.events[0].rollback_available = false;
+      if (stale === 'active-run') page.api.state.session.run.status = 'running';
+      approve.click(); await flush(); page.api.render();
+      equal(page.requests.length, 0, stale + ': stale approval cannot roll back another action or race a running task');
+      equal(page.w.document.getElementById('bhranti-confirmation'), null, stale + ': invalid local rollback approval is discarded');
+    } finally { page.close(); }
   }
 }
 
@@ -2227,6 +2360,7 @@ async function main() {
   await testUncertainActionRecovery();
   await testBackgroundPreparedStepRace();
   await testPendingHeartbeatRecovery();
+  await testResolvedTransientStatus();
   await testSafetyBlockedBackgroundObservation();
   await testRenderedBackgroundHandoff();
   await testCompletedTargetRefresh();
@@ -2236,6 +2370,7 @@ async function main() {
   await testNativeDisclosureToggleRace();
   await testTruthfulTaskDock();
   await testLiveRequestElapsed();
+  await testRollbackChatApproval();
   await testExactApprovalControls();
   await testPluginApprovalHistory();
   await testChatMenuJumpAndCopy();
