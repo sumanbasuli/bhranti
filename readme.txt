@@ -141,6 +141,7 @@ The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (
 * Show one requesting user in Logs while retaining execution identity in raw audit records.
 * Distinguish unavailable server locking from another running request without weakening write protection.
 * Show connection setup before chatting when no native AI provider is configured.
+* Retry private memory cleanup after account deletion when storage is busy.
 
 = 1.1 =
 * Add screenshots of editing, live actions and Bhranti on the website.

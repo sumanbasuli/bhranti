@@ -30,6 +30,8 @@ final class Bhranti_Memory {
 	public static function register() {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 		add_action( 'deleted_user', array( __CLASS__, 'deleted_user' ) );
+		add_action( 'bhranti_memory_erase_user', array( __CLASS__, 'retry_erasure' ), 10, 2 );
+		add_action( 'admin_init', array( __CLASS__, 'resume_erasures' ) );
 		add_action( 'admin_init', array( __CLASS__, 'privacy_policy' ) );
 		if ( defined( 'BHRANTI_FILE' ) && function_exists( 'register_activation_hook' ) ) {
 			register_activation_hook( BHRANTI_FILE, array( __CLASS__, 'activate' ) );
@@ -536,8 +538,11 @@ final class Bhranti_Memory {
 	 * @param int $user_id Deleted account.
 	 */
 	public static function deleted_user( $user_id ) {
+		if ( ! self::owner_name( $user_id ) ) {
+			return;
+		}
 		if ( ! is_multisite() || get_userdata( $user_id ) ) {
-			self::erase_user( $user_id );
+			self::erase_deleted_owner( $user_id );
 			return;
 		}
 		$offset = 0;
@@ -554,7 +559,7 @@ final class Bhranti_Memory {
 			foreach ( $sites as $site_id ) {
 				switch_to_blog( (int) $site_id );
 				try {
-					self::erase_user( $user_id );
+					self::erase_deleted_owner( $user_id );
 				} finally {
 					restore_current_blog();
 				}
@@ -562,6 +567,321 @@ final class Bhranti_Memory {
 			$count   = count( $sites );
 			$offset += $count;
 		} while ( 100 === $count );
+	}
+
+	/**
+	 * Retry only a stored erasure intent, never an arbitrary live account.
+	 *
+	 * @param int    $user_id Deleted subject on this exact site.
+	 * @param string $generation Exact native deletion cycle.
+	 * @return true|false|WP_Error
+	 */
+	public static function retry_erasure( $user_id, $generation = '' ) {
+		$pending = self::pending_erasure( $user_id );
+		if ( ! is_array( $pending ) ) {
+			return $pending;
+		}
+		if ( ! is_string( $generation ) || ! hash_equals( $pending['generation'], $generation ) ) {
+			return false;
+		}
+		$result = self::erase_pending_owner( $user_id, $pending );
+		if ( ! is_wp_error( $result ) ) {
+			return self::finish_erasure( $user_id, $pending );
+		}
+		$next            = $pending;
+		$next['attempt'] = min( 3, $next['attempt'] + 1 );
+		$saved           = self::compare_exchange( 'bhranti_memory_erasure_' . $user_id, wp_json_encode( $pending ), wp_json_encode( $next ) );
+		if ( is_wp_error( $saved ) ) {
+			return self::erasure_failed( $user_id, 'storage' );
+		}
+		$queued = self::queue_erasure( $user_id );
+		return is_wp_error( $queued ) ? $queued : $result;
+	}
+
+	/** Requeue at most 100 durable local intents if native scheduling failed. */
+	public static function resume_erasures() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Recover only bounded private cleanup intents independently of option caches.
+		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT option_name FROM %i WHERE option_name LIKE %s ORDER BY option_name ASC LIMIT 100', $wpdb->options, $wpdb->esc_like( 'bhranti_memory_erasure_' ) . '%' ) );
+		foreach ( is_array( $names ) ? $names : array() as $name ) {
+			if ( preg_match( '/\Abhranti_memory_erasure_([1-9][0-9]*)\z/', $name, $match ) ) {
+				self::queue_erasure( (int) $match[1] );
+			}
+		}
+	}
+
+	/**
+	 * Cancel native callbacks while inactive; keep failed erasure intents private.
+	 *
+	 * @param bool $network_wide Whether WordPress deactivates every site.
+	 */
+	public static function deactivate( $network_wide = false ) {
+		if ( ! $network_wide || ! is_multisite() ) {
+			wp_unschedule_hook( 'bhranti_memory_erase_user', true );
+			return;
+		}
+		$offset = 0;
+		do {
+			$sites = get_sites(
+				array(
+					'fields' => 'ids',
+					'number' => 100,
+					'offset' => $offset,
+				)
+			);
+			foreach ( $sites as $site_id ) {
+				switch_to_blog( (int) $site_id );
+				try {
+					wp_unschedule_hook( 'bhranti_memory_erase_user', true );
+				} finally {
+					restore_current_blog();
+				}
+			}
+			$count   = count( $sites );
+			$offset += $count;
+		} while ( 100 === $count );
+	}
+
+	/**
+	 * Preserve a failed native deletion's exact subject before scheduling retry.
+	 *
+	 * @param int $user_id Removed account or local membership.
+	 * @return true|WP_Error
+	 */
+	private static function erase_deleted_owner( $user_id ) {
+		if ( self::erasure_unneeded( $user_id ) ) {
+			return true;
+		}
+		$previous = self::raw_option( 'bhranti_memory_erasure_' . $user_id );
+		if ( is_wp_error( $previous ) ) {
+			return self::erasure_failed( $user_id, 'storage' );
+		}
+		$revision = self::erasure_revision( $user_id );
+		$pending  = array(
+			'site'       => get_current_blog_id(),
+			'user'       => (int) $user_id,
+			'deleted'    => ! get_userdata( $user_id ),
+			'attempt'    => 0,
+			'generation' => bin2hex( random_bytes( 16 ) ),
+			'revision'   => is_wp_error( $revision ) ? null : $revision,
+		);
+		$saved    = self::compare_exchange( 'bhranti_memory_erasure_' . $user_id, $previous, wp_json_encode( $pending ) );
+		if ( is_wp_error( $saved ) ) {
+			return self::erasure_failed( $user_id, 'storage' );
+		}
+		if ( is_wp_error( $revision ) ) {
+			self::erasure_failed( $user_id, 'storage' );
+		}
+		$old = is_string( $previous ) ? json_decode( $previous, true, 4 ) : null;
+		if ( is_array( $old ) && is_string( $old['generation'] ?? null ) ) {
+			wp_clear_scheduled_hook( 'bhranti_memory_erase_user', array( (int) $user_id, $old['generation'] ), true );
+		}
+		$result = self::erase_pending_owner( $user_id, $pending );
+		return is_wp_error( $result ) ? self::queue_erasure( $user_id ) : self::finish_erasure( $user_id, $pending );
+	}
+
+	/**
+	 * Recheck live account membership inside the same guard as the final erasure.
+	 *
+	 * @param int   $user_id Removed subject.
+	 * @param array $pending Exact local deletion intent.
+	 * @return bool|WP_Error
+	 */
+	private static function erase_pending_owner( $user_id, $pending ) {
+		return self::locked(
+			static function ( $lock ) use ( $user_id, $pending ) {
+				$fresh = self::pending_erasure( $user_id );
+				if ( ! is_array( $fresh ) || ! hash_equals( $pending['generation'], $fresh['generation'] ) ) {
+					return self::error( 'conflict', 409 );
+				}
+				clean_user_cache( $user_id );
+				$user = get_userdata( $user_id );
+				if ( $user && ( $pending['deleted'] || ! is_multisite() || is_user_member_of_blog( $user_id, get_current_blog_id() ) ) ) {
+					return false;
+				}
+				if ( $user && user_can( $user_id, 'manage_options' ) ) {
+					$revision = self::erasure_revision( $user_id );
+					if ( is_wp_error( $revision ) ) {
+						return $revision;
+					}
+					if ( null === $pending['revision'] ) {
+						$raw = self::raw_option( self::owner_name( $user_id ) );
+						return null === $raw || ( is_string( $raw ) && self::erased( $raw ) ) ? false : self::error( 'storage', 503 );
+					}
+					if ( ! hash_equals( $pending['revision'], $revision ) ) {
+						return false;
+					}
+				}
+				if ( ! Bhranti_Lock::owns( 'bhranti_memory_lock', $lock ) ) {
+					return self::error( 'busy', 409 );
+				}
+				return self::erase_owner( self::owner_name( $user_id ) );
+			}
+		);
+	}
+
+	/**
+	 * Fingerprint the removed site's saved bytes without retaining their data.
+	 *
+	 * @param int $user_id Removed subject.
+	 * @return string|WP_Error
+	 */
+	private static function erasure_revision( $user_id ) {
+		global $wpdb;
+		$suppressed = $wpdb->suppress_errors( true );
+		try {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Distinguish oversized private bytes from a technical read failure without allocating oversized data.
+			$row   = $wpdb->get_row( $wpdb->prepare( 'SELECT CASE WHEN LENGTH(option_value) <= %d THEN option_value ELSE NULL END AS payload, LENGTH(option_value) AS bytes FROM %i WHERE option_name = %s', self::LIMIT, $wpdb->options, self::owner_name( $user_id ) ), ARRAY_A );
+			$error = $wpdb->last_error;
+		} finally {
+			$wpdb->suppress_errors( $suppressed );
+		}
+		if ( $error || ( null !== $row && ( ! is_array( $row ) || ! isset( $row['bytes'] ) || ! is_numeric( $row['bytes'] ) ) ) ) {
+			return self::error( 'storage', 503 );
+		}
+		if ( null === $row ) {
+			return 'initial';
+		}
+		if ( (int) $row['bytes'] > self::LIMIT ) {
+			return 'unreadable';
+		}
+		return isset( $row['payload'] ) && is_string( $row['payload'] ) ? self::revision( $row['payload'] ) : self::error( 'storage', 503 );
+	}
+
+	/**
+	 * Read bounded inert intent data, scoped to the owning site and account.
+	 *
+	 * @param int $user_id Positive numeric subject.
+	 * @return array|null|WP_Error
+	 */
+	private static function pending_erasure( $user_id ) {
+		if ( ! self::owner_name( $user_id ) ) {
+			return self::error( 'invalid' );
+		}
+		$raw = self::raw_option( 'bhranti_memory_erasure_' . $user_id );
+		if ( null === $raw || is_wp_error( $raw ) ) {
+			return $raw;
+		}
+		$pending = strlen( $raw ) <= 256 ? json_decode( $raw, true, 4 ) : null;
+		return self::exact_keys( $pending, array( 'site', 'user', 'deleted', 'attempt', 'generation', 'revision' ) ) && get_current_blog_id() === $pending['site'] && (int) $user_id === $pending['user'] && is_bool( $pending['deleted'] ) && is_int( $pending['attempt'] ) && $pending['attempt'] >= 0 && $pending['attempt'] <= 3 && is_string( $pending['generation'] ) && 1 === preg_match( '/\A[a-f0-9]{32}\z/', $pending['generation'] ) && ( null === $pending['revision'] || 'unreadable' === $pending['revision'] || self::valid_revision( $pending['revision'] ) ) ? $pending : self::error( 'storage', 503 );
+	}
+
+	/**
+	 * Keep one native callback per local subject with capped retry intervals.
+	 *
+	 * @param int $user_id Erasure subject.
+	 * @return true|false|WP_Error
+	 */
+	private static function queue_erasure( $user_id ) {
+		$pending = self::pending_erasure( $user_id );
+		if ( ! is_array( $pending ) ) {
+			return $pending;
+		}
+		if ( self::erasure_unneeded( $user_id ) ) {
+			return self::finish_erasure( $user_id, $pending );
+		}
+		if ( self::uninstalled() ) {
+			return self::error( 'storage', 503 );
+		}
+		$args = array( (int) $user_id, $pending['generation'] );
+		if ( wp_next_scheduled( 'bhranti_memory_erase_user', $args ) ) {
+			return true;
+		}
+		$delay  = array( 60, 300, 900, 3600 )[ $pending['attempt'] ];
+		$queued = wp_schedule_single_event( time() + $delay, 'bhranti_memory_erase_user', $args, true );
+		if ( self::uninstalled() ) {
+			wp_clear_scheduled_hook( 'bhranti_memory_erase_user', $args, true );
+			return self::error( 'storage', 503 );
+		}
+		if ( is_wp_error( $queued ) && 'duplicate_event' === $queued->get_error_code() && wp_next_scheduled( 'bhranti_memory_erase_user', $args ) ) {
+			return true;
+		}
+		return $queued && ! is_wp_error( $queued ) ? true : self::erasure_failed( $user_id, 'schedule' );
+	}
+
+	/**
+	 * A local tombstone proves completion only when this owner's bytes are gone.
+	 *
+	 * @param int $user_id Removed subject.
+	 * @return bool
+	 */
+	private static function erasure_unneeded( $user_id ) {
+		if ( 'uninstalled' !== self::raw_option( 'bhranti_memory_state' ) ) {
+			return false;
+		}
+		$raw = self::raw_option( self::owner_name( $user_id ) );
+		return null === $raw || ( is_string( $raw ) && self::erased( $raw ) );
+	}
+
+	/**
+	 * Refuse late retries after a site or network uninstall tombstone.
+	 *
+	 * @return bool
+	 */
+	private static function uninstalled() {
+		if ( 'uninstalled' === self::raw_option( 'bhranti_memory_state' ) ) {
+			return true;
+		}
+		if ( ! is_multisite() ) {
+			return false;
+		}
+		switch_to_blog( (int) get_main_site_id() );
+		try {
+			return 'uninstalled' === self::raw_option( 'bhranti_memory_network_state' );
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Clear only the completed or superseded local erasure callback and intent.
+	 *
+	 * @param int   $user_id Erasure subject.
+	 * @param array $pending Exact completed native deletion intent.
+	 * @return true|WP_Error
+	 */
+	private static function finish_erasure( $user_id, $pending ) {
+		$cleared = wp_clear_scheduled_hook( 'bhranti_memory_erase_user', array( (int) $user_id, $pending['generation'] ), true );
+		if ( is_wp_error( $cleared ) || false === $cleared ) {
+			return self::erasure_failed( $user_id, 'storage' );
+		}
+		global $wpdb;
+		$name = 'bhranti_memory_erasure_' . $user_id;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Clear native caches after deleting only this completed generation, preserving a newer native removal cycle.
+		$removed = $wpdb->delete(
+			$wpdb->options,
+			array(
+				'option_name'  => $name,
+				'option_value' => wp_json_encode( $pending ),
+			),
+			array( '%s', '%s' )
+		);
+		self::clear_cache( $name );
+		return false === $removed ? self::erasure_failed( $user_id, 'storage' ) : true;
+	}
+
+	/**
+	 * Record failure without claiming completion or including private bytes.
+	 *
+	 * @param int    $user_id Erasure subject.
+	 * @param string $reason Finite safe failure reason.
+	 * @return WP_Error
+	 */
+	private static function erasure_failed( $user_id, $reason ) {
+		Bhranti_Audit::record(
+			'memory_erasure_failed',
+			__( 'Private memory erasure is pending. Resolve site storage or scheduling problems so cleanup can resume.', 'bhranti' ),
+			0,
+			array(
+				'target_id'   => (int) $user_id,
+				'target_type' => 'memory',
+				'code'        => $reason,
+			)
+		);
+		return self::error( 'storage', 503 );
 	}
 
 	/**
@@ -825,7 +1145,7 @@ final class Bhranti_Memory {
 	 * @return string Empty string for an invalid owner.
 	 */
 	private static function owner_name( $user_id ) {
-		return (int) $user_id > 0 && (string) (int) $user_id === (string) $user_id ? 'bhranti_memory_user_' . (int) $user_id : '';
+		return ( is_int( $user_id ) || is_string( $user_id ) ) && (int) $user_id > 0 && (string) (int) $user_id === (string) $user_id ? 'bhranti_memory_user_' . (int) $user_id : '';
 	}
 
 	/**

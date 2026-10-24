@@ -21,9 +21,11 @@ $bhranti_remove_site_data = static function () {
 	if ( is_wp_error( $bhranti_memory_removed ) ) {
 		return $bhranti_memory_removed;
 	}
-	$bhranti_unscheduled = wp_unschedule_hook( 'bhranti_run_tick', true );
-	if ( false === $bhranti_unscheduled || is_wp_error( $bhranti_unscheduled ) ) {
-		return new WP_Error( 'bhranti_uninstall_cron', __( 'Bhranti could not remove its scheduled tasks.', 'bhranti' ) );
+	foreach ( array( 'bhranti_run_tick', 'bhranti_memory_erase_user' ) as $bhranti_hook ) {
+		$bhranti_unscheduled = wp_unschedule_hook( $bhranti_hook, true );
+		if ( false === $bhranti_unscheduled || is_wp_error( $bhranti_unscheduled ) ) {
+			return new WP_Error( 'bhranti_uninstall_cron', __( 'Bhranti could not remove its scheduled tasks.', 'bhranti' ) );
+		}
 	}
 	$bhranti_retained_count = 0;
 	do {

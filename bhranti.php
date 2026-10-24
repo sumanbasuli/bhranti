@@ -78,8 +78,9 @@ Bhranti_Runner::register();
 Bhranti_Render::register();
 register_deactivation_hook(
 	BHRANTI_FILE,
-	static function () {
+	static function ( $network_wide ) {
 		wp_unschedule_hook( 'bhranti_run_tick', true );
+		Bhranti_Memory::deactivate( $network_wide );
 	}
 );
 

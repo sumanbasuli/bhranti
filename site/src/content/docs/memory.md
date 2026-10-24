@@ -54,6 +54,8 @@ Your server must support the encryption and database locking Bhranti uses for pr
 
 Memory is encrypted in the WordPress database, separately for your account and this site. If your site administrator changes WordPress’s authentication keys, earlier memory can become unreadable; you can reset it in Settings. WordPress personal-data export, erasure and plugin uninstall also cover this memory.
 
+While Bhranti is active, deleting a WordPress account also clears its saved memory. If storage is busy, Bhranti retries through WordPress scheduling, which needs site traffic or a configured scheduler. On multisite, removing someone from one site clears only their memory for that site.
+
 On a multisite network, an interrupted plugin deletion can leave memory unavailable until the administrator retries deletion or explicitly reactivates Bhranti. Preferences already erased during the interrupted attempt cannot be restored by reactivation.
 
 Conversations are stored separately in the WordPress database and are not encrypted there. [Read the full privacy guide](/docs/ai-and-privacy/).
