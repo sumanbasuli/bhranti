@@ -1314,6 +1314,9 @@ final class Bhranti_Commerce {
 	/** Acquire a short site-wide native option lock for store writes. */
 	private static function lock() {
 		$value = Bhranti_Lock::acquire( 'bhranti_commerce_lock', 600 );
+		if ( is_wp_error( $value ) ) {
+			return $value;
+		}
 		return $value ? $value : self::error( 'bhranti_commerce_busy', __( 'Another store change is running. Wait for it to finish.', 'bhranti' ), 409 );
 	}
 

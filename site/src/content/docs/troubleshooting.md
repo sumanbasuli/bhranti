@@ -25,6 +25,12 @@ Check whether Bhranti is working, loading the chat, preparing an attachment or s
 
 If Bhranti asks a question, answer in the same chat. If it is still running and you want to end it, select **Stop** and wait for the current step to finish.
 
+## Bhranti says another request is running
+
+Wait for the current step to finish, including work started in another browser tab. Reopen the conversation to check its saved status before sending the same request again.
+
+If the message says **Bhranti could not secure this operation**, the server could not verify the lock that prevents overlapping changes. Try again once. If it continues, share the error code `bhranti_lock_guard` with your site administrator or hosting support so they can check server locking support.
+
 ## Bhranti is waiting for my answer
 
 Reply in the same conversation with the missing decision, such as the audience, price, image source or whether to publish. Bhranti will wait for your answer before continuing.

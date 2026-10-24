@@ -81,7 +81,7 @@ function lock_unsafe_sidecar( $name, $root ) {
 	file_put_contents( $target, 'unchanged', LOCK_EX );
 	try {
 		lock_check( symlink( $target, $path ), 'Symlink fixture created.' );
-		lock_check( false === Bhranti_Lock::acquire( $name, 1 ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A symlink fails closed on acquisition and activity checks.' );
+		lock_check( is_wp_error( Bhranti_Lock::acquire( $name, 1 ) ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A symlink reports a guard error and fails closed on acquisition and activity checks.' );
 		lock_check( 'unchanged' === file_get_contents( $target ), 'A rejected symlink target is not modified.' );
 	} finally {
 		if ( is_link( $path ) ) {
@@ -91,7 +91,7 @@ function lock_unsafe_sidecar( $name, $root ) {
 	}
 	try {
 		lock_check( mkdir( $path, 0700 ), 'Directory fixture created.' );
-		lock_check( false === Bhranti_Lock::acquire( $name, 1 ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A non-regular sidecar fails closed.' );
+		lock_check( is_wp_error( Bhranti_Lock::acquire( $name, 1 ) ) && is_wp_error( Bhranti_Lock::active( $name, 1 ) ), 'A non-regular sidecar reports a guard error and fails closed.' );
 	} finally {
 		if ( is_dir( $path ) ) {
 			rmdir( $path );

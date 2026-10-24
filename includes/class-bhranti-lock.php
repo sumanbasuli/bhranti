@@ -29,13 +29,16 @@ final class Bhranti_Lock {
 	 *
 	 * @param string $name One of Bhranti's private lock option names.
 	 * @param int    $ttl  Lifetime in seconds.
-	 * @return array|false Unique token, or false when the lock is occupied or unavailable.
+	 * @return array|false|WP_Error Unique token, false on contention or invalid input, or a guard error.
 	 */
 	public static function acquire( $name, $ttl ) {
 		if ( ! self::valid_name( $name ) || ! self::valid_ttl( $ttl ) ) {
 			return false;
 		}
 		$guard = self::claim_guard( $name );
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
 		if ( ! is_array( $guard ) ) {
 			return false;
 		}
@@ -168,7 +171,7 @@ final class Bhranti_Lock {
 	 * Acquire a guard that remains held even when an option lease expires.
 	 *
 	 * @param string $name Private lock option name.
-	 * @return array|false Guard details, or false on contention or unsupported storage.
+	 * @return array|false|WP_Error Guard details, false on contention, or an unavailable guard.
 	 */
 	private static function claim_guard( $name ) {
 		global $wpdb;
@@ -180,7 +183,10 @@ final class Bhranti_Lock {
 				return false;
 			}
 			$row = self::mysql_row( 'acquire', $resource );
-			if ( is_wp_error( $row ) || ! isset( $row['acquired'], $row['connection_id'] ) || '1' !== (string) $row['acquired'] ) {
+			if ( is_wp_error( $row ) || ! isset( $row['acquired'], $row['connection_id'] ) || ! in_array( (string) $row['acquired'], array( '0', '1' ), true ) ) {
+				return self::guard_error();
+			}
+			if ( '0' === (string) $row['acquired'] ) {
 				return false;
 			}
 			return array(
@@ -193,21 +199,24 @@ final class Bhranti_Lock {
 			);
 		}
 		if ( 'sqlite' !== $backend ) {
-			return false;
+			return self::guard_error();
 		}
 		$path = self::sqlite_guard_file( $name );
-		if ( is_wp_error( $path ) || isset( self::$guards[ $path ] ) ) {
+		if ( is_wp_error( $path ) ) {
+			return $path;
+		}
+		if ( isset( self::$guards[ $path ] ) ) {
 			return false;
 		}
 		$handle = self::open_sqlite_guard( $path );
 		if ( ! is_resource( $handle ) ) {
-			return false;
+			return self::guard_error();
 		}
 		$would_block = 0;
 		if ( ! flock( $handle, LOCK_EX | LOCK_NB, $would_block ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing the advisory-lock handle releases its OS lock.
 			fclose( $handle );
-			return false;
+			return $would_block ? false : self::guard_error();
 		}
 		return array(
 			'key'       => $path,
@@ -478,7 +487,7 @@ final class Bhranti_Lock {
 	 * @return WP_Error Safe error for the background runner to defer on.
 	 */
 	private static function guard_error() {
-		return new WP_Error( 'bhranti_lock_guard', __( 'Bhranti could not verify an operation guard.', 'bhranti' ) );
+		return new WP_Error( 'bhranti_lock_guard', __( 'Bhranti could not secure this operation. Try again; if it continues, ask your site administrator to check server locking support.', 'bhranti' ), array( 'status' => 503 ) );
 	}
 
 	/**

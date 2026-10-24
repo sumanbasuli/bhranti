@@ -350,6 +350,9 @@ final class Bhranti_Workspace {
 	public static function mutate( $callback ) {
 		$key  = 'bhranti_lock_' . get_current_user_id();
 		$lock = Bhranti_Lock::acquire( $key, 600 );
+		if ( is_wp_error( $lock ) ) {
+			return $lock;
+		}
 		if ( ! $lock ) {
 			return new WP_Error( 'bhranti_busy', __( 'Another Bhranti request is running. Wait a moment and try again.', 'bhranti' ), array( 'status' => 409 ) );
 		}

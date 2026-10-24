@@ -2060,7 +2060,156 @@ async function testDurableTaskPresentation() {
     equal(page.api.navigation.length, 0, 'Task notes never navigate or reload the native screen');
   } finally { page.close(); }
 }
+async function testDisconnectedAiSetup() {
+  const page = fixture();
+  try {
+    page.api.state.session = null; page.api.state.workspace.ai = { available: false }; page.api.state.draft = 'Keep this unfinished question'; page.api.rememberDraft(); page.api.render();
+    const doc = page.w.document;
+    equal(doc.querySelectorAll('#bhranti-connection-setup').length, 1, 'An empty disconnected chat shows one visible setup state');
+    check(doc.getElementById('bhranti-connection-setup').textContent.includes('Connect a text provider in WordPress Settings → Connectors'), 'Setup clearly names the native screen and required text provider');
+    const link = doc.querySelector('#bhranti-connection-setup a');
+    equal(link.href, 'https://bhranti.wp.local/wp-admin/options-connectors.php', 'Setup links directly to native WordPress Connectors');
+    equal(link.target, '_blank', 'Connector setup leaves the current native editor and draft open');
+    check(link.getAttribute('aria-label').includes('new tab') && link.rel.includes('noopener'), 'The separate setup tab is labelled accessibly and isolates its opener');
+    equal(doc.getElementById('bhranti-composer').disabled, true, 'Disconnected chat cannot accept a message');
+    equal(doc.getElementById('bhranti-send').disabled, true, 'Disconnected chat cannot send');
+    equal(doc.getElementById('bhranti-attach-image').disabled, true, 'Disconnected chat does not invite image preparation');
+    equal(doc.getElementById('bhranti-screenshot').disabled, true, 'Disconnected chat does not invite a tab capture');
+    check(doc.getElementById('bhranti-settings') && !doc.getElementById('bhranti-new-chat').disabled, 'Settings and chat navigation stay available before provider setup');
+    await page.api.sendMessage();
+    doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); doc.getElementById('bhranti-composer').dispatchEvent(new page.w.KeyboardEvent('keyup', { key: 'Enter', bubbles: true })); await page.advance();
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Click/direct/keyboard submission cannot create a chat or request AI without a connector');
+    equal(page.api.state.draft, 'Keep this unfinished question', 'The setup gate preserves the exact unsent draft');
+    page.api.state.session = session(); page.api.render();
+    equal(doc.querySelectorAll('#bhranti-connection-setup').length, 1, 'A historical conversation shows one setup notice beside its composer');
+    check(doc.getElementById('bhranti-stream').textContent.includes('The local test task.'), 'Existing conversation history remains readable while disconnected');
+    await page.api.openSession(18); await until(() => idle(page), page);
+    equal(page.api.state.session.id, 18, 'A disconnected user can still read another saved chat');
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Disconnected chat navigation remains read-only');
+  } finally { page.close(); }
+}
+async function testConnectorReturnRefresh() {
+  for (const returnMethod of ['check', 'focus', 'reopen']) {
+    const page = fixture();
+    try {
+      page.api.state.workspace.ai = { available: false }; page.api.state.draft = 'A draft kept through provider setup'; page.api.rememberDraft(); page.api.render();
+      page.setHandler(async (request) => {
+        if (request.path.endsWith('/workspace')) return { sessions: [{ id: 17, title: 'First chat' }], agents: [{ id: 'bhranti', name: 'Bhranti' }], ai: { available: true } };
+        if (request.method === 'GET' && request.path.endsWith('/sessions/17')) return session();
+        throw new Error('Checking connector configuration must not issue a provider or mutation request.');
+      });
+      if (returnMethod === 'reopen') { page.api.closePanel(); await page.api.openPanel(); }
+      else if (returnMethod === 'focus') { page.w.dispatchEvent(new page.w.Event('focus')); await until(() => !page.api.state.checkingAi, page); }
+      else { page.w.document.getElementById('bhranti-check-connection').click(); await until(() => !page.api.state.checkingAi, page); }
+      equal(count(page, '/workspace', 'GET'), 1, returnMethod + ': returning from native setup obtains fresh local configuration');
+      equal(page.w.document.getElementById('bhranti-connection-setup'), null, returnMethod + ': successful native setup removes the disconnected state');
+      equal(page.w.document.getElementById('bhranti-composer').disabled, false, returnMethod + ': composer becomes available without reloading WordPress');
+      equal(page.w.document.getElementById('bhranti-composer').value, 'A draft kept through provider setup', returnMethod + ': the previous draft remains intact');
+      equal(page.w.document.getElementById('bhranti-send').disabled, false, returnMethod + ': retained draft can be sent when configured');
+      equal(page.requests.filter((request) => request.method !== 'GET').length, 0, returnMethod + ': setup checks never generate text or mutate site data');
+    } finally { page.close(); }
+  }
+  const pending = deferred(), page = fixture();
+  try {
+    page.api.state.workspace.ai = { available: false }; page.api.render(); page.setHandler(() => pending.promise);
+    page.w.dispatchEvent(new page.w.Event('focus'));
+    page.w.document.dispatchEvent(new page.w.Event('visibilitychange'));
+    page.api.checkAiConnection(); await flush();
+    equal(count(page, '/workspace', 'GET'), 1, 'Focus/visibility/manual checks share one in-flight configuration request');
+    equal(page.w.document.getElementById('bhranti-check-connection').disabled, true, 'A pending configuration check cannot be repeatedly submitted');
+    pending.reject(new Error('Temporary native API connection error')); await until(() => !page.api.state.checkingAi, page);
+    equal(page.w.document.getElementById('bhranti-composer').disabled, true, 'A failed refresh cannot accidentally enable disconnected chat');
+    check(page.w.document.getElementById('bhranti-connection-setup').textContent.includes('Could not check the connection'), 'An actual check failure has a concise retry explanation');
+    equal(page.w.document.getElementById('bhranti-check-connection').disabled, false, 'A failed configuration check may be explicitly retried');
+    equal(page.requests.filter((request) => request.method !== 'GET').length, 0, 'Configuration failure cannot trigger AI or replay a mutation');
+  } finally { pending.resolve({ sessions: [], ai: { available: false } }); page.close(); }
+}
+async function testConnectorRemovedBeforeSend() {
+  let configured = false;
+  const page = fixture({ handler: async (request) => {
+    if (request.path.endsWith('/workspace')) return { sessions: [{ id: 17 }], ai: { available: configured } };
+    if (request.path.endsWith('/messages')) {
+      if (!configured) throw Object.assign(new Error('Native AI is no longer configured.'), { code: 'bhranti_ai_unavailable', data: { status: 400 } });
+      const saved = session(); saved.messages.push({ role: 'user', content: request.data.content }); return saved;
+    }
+    throw new Error('A known pre-save connector rejection must not replay or reconcile an unsaved message.');
+  } });
+  try {
+    const original = JSON.stringify(page.api.state.session.messages);
+    page.api.state.draft = '  Keep my exact draft after the connector is removed.\n'; page.api.rememberDraft(); await page.api.sendMessage();
+    equal(count(page, '/messages', 'POST'), 1, 'A connector removed since the last local check receives one server-rejected attempt');
+    equal(JSON.stringify(page.api.state.session.messages), original, 'The known pre-save rejection removes its optimistic chat bubble');
+    equal(page.api.state.draft, '  Keep my exact draft after the connector is removed.\n', 'The server rejection preserves whitespace and unsent text exactly');
+    equal(page.api.state.error, '', 'A missing native connector produces setup guidance instead of a generic chat error');
+    check(page.w.document.getElementById('bhranti-connection-setup'), 'The rejected stale configuration switches to the explicit setup state');
+    equal(page.w.document.getElementById('bhranti-send').disabled, true, 'Further disconnected sends are blocked locally');
+    await page.api.sendMessage(); equal(count(page, '/messages', 'POST'), 1, 'The same disconnected message is not automatically or manually replayed');
+    configured = true; await page.api.checkAiConnection();
+    equal(page.w.document.getElementById('bhranti-composer').disabled, false, 'Reconnecting through native setup restores chat');
+    await page.api.sendMessage();
+    equal(count(page, '/messages', 'POST'), 2, 'A newly explicit send works once native setup is complete');
+    equal(page.api.state.draft, '', 'The restored configured chat clears its draft only after explicit submission');
+    equal(page.api.state.session.messages[1].content, 'Keep my exact draft after the connector is removed.', 'Normal connected chat still receives the intended message');
+  } finally { page.close(); }
+}
+
+async function testConnectorRefreshOrdering() {
+  const older = deferred(); let workspaceReads = 0;
+  const page = fixture({ handler: async (request) => {
+    if (request.path.endsWith('/workspace')) return ++workspaceReads === 1 ? older.promise : { sessions: [], ai: { available: false } };
+    if (request.path.endsWith('/messages')) throw Object.assign(new Error('The provider was disconnected.'), { code: 'bhranti_ai_unavailable', data: { status: 400 } });
+    throw new Error('Unexpected connector-ordering fixture request.');
+  } });
+  try {
+    page.api.state.draft = 'Exact draft during a native connector change'; page.api.rememberDraft();
+    const checking = page.api.checkAiConnection(); await flush();
+    await page.api.sendMessage();
+    equal(page.api.state.workspace.ai.available, false, 'A newer native message rejection disables stale configured state');
+    older.resolve({ sessions: [{ id: 999, title: 'Outdated chat list' }], ai: { available: true } }); await checking;
+    equal(page.api.state.workspace.ai.available, false, 'A late older positive configuration cannot undo the newer server rejection');
+    equal(page.w.document.getElementById('bhranti-send').disabled, true, 'Late configuration cannot falsely invite another disconnected send');
+    equal(page.api.state.workspace.sessions.length, 0, 'An older workspace response cannot restore its stale chat list either');
+    equal(page.api.state.draft, 'Exact draft during a native connector change', 'Rejecting stale metadata does not alter the preserved draft');
+    equal(count(page, '/messages', 'POST'), 1, 'Stale metadata never retries the rejected message');
+  } finally { older.resolve({ sessions: [], ai: { available: true } }); page.close(); }
+  for (const late of ['disabled', '403', '503']) {
+    const held = deferred(); let reads = 0;
+    const current = fixture({ handler: async (request) => {
+      if (request.path.endsWith('/workspace')) return ++reads === 1 ? held.promise : { sessions: [{ id: 17 }], ai: { available: true } };
+      throw new Error('Configuration checks cannot mutate site data.');
+    } });
+    try {
+      current.api.state.workspace.ai = { available: false }; current.api.state.draft = 'Retain the latest connected draft'; current.api.render();
+      const checking = current.api.checkAiConnection(); await flush();
+      await current.api.refreshWorkspace(); current.api.render();
+      equal(current.w.document.getElementById('bhranti-composer').disabled, false, late + ': a newer successful native check enables chat');
+      if (late === 'disabled') held.resolve({ sessions: [], ai: { available: false } });
+      else held.reject(Object.assign(new Error('An older native read failed.'), { data: { status: Number(late) } }));
+      await checking;
+      equal(current.api.state.workspace.ai.available, true, late + ': a late older response cannot undo current connected state');
+      equal(current.api.state.aiConnectionError, '', late + ': an older failed check cannot add a new setup error');
+      equal(current.api.state.connectionError, '', late + ': an older failure cannot overwrite newer successful transport state');
+      equal(current.api.state.reconnecting, 0, late + ': superseded errors do not start reconnect retries');
+      equal(count(current, '/workspace', 'GET'), 2, late + ': stale failures never generate another configuration request');
+      equal(current.w.document.getElementById('bhranti-send').disabled, false, late + ': current connected draft stays ready to send');
+      equal(current.api.state.draft, 'Retain the latest connected draft', late + ': the ordering guard preserves the exact current draft');
+    } finally { held.resolve({ sessions: [], ai: { available: false } }); current.close(); }
+  }
+  const held = deferred(); let reads = 0;
+  const quiet = fixture({ handler: async () => ++reads === 1 ? held.promise : { sessions: [{ id: 17 }], ai: { available: true } } });
+  try {
+    const refreshing = quiet.api.refreshWorkspaceQuietly(); await flush(); await quiet.api.refreshWorkspace();
+    held.reject(Object.assign(new Error('The outdated chat-list request failed.'), { data: { status: 503 } })); await refreshing;
+    equal(quiet.api.state.connectionError, '', 'An outdated quiet chat-list failure cannot replace a newer successful connection');
+    equal(count(quiet, '/workspace', 'GET'), 2, 'An outdated quiet read cannot start unnecessary automatic retries');
+  } finally { held.resolve({ sessions: [], ai: { available: true } }); quiet.close(); }
+}
+
 async function main() {
+  await testConnectorRefreshOrdering();
+  await testDisconnectedAiSetup();
+  await testConnectorReturnRefresh();
+  await testConnectorRemovedBeforeSend();
   await testChatListRefreshOnOpen();
   await testTransportBoundaries();
   await testReferenceImageContext();

@@ -863,6 +863,51 @@
 	color: #fff;
 	border-color: #72aee6;
 }
+.bhranti-app .bhranti-connection-setup {
+	flex-shrink: 0;
+	margin: 0 15px 14px;
+	padding: 14px;
+	border: 1px solid #50575e;
+	border-radius: 4px;
+	background: #2c3338;
+}
+.bhranti-app .bhranti-connection-setup.is-empty {
+	margin: 34px 0 12px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+.bhranti-app .bhranti-connection-setup h3 {
+	font-size: 15px;
+	font-weight: 500;
+	line-height: 1.5;
+}
+.bhranti-app .bhranti-connection-setup p {
+	margin-top: 8px;
+	color: #c3c4c7;
+	font-size: 12px;
+	line-height: 1.7;
+}
+.bhranti-app .bhranti-connection-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 14px;
+}
+.bhranti-app .bhranti-connection-actions a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 32px;
+	text-decoration: none;
+}
+.bhranti-app .bhranti-connection-setup .bhranti-connection-error {
+	color: #facfd2;
+}
+.bhranti-app .bhranti-composer:disabled {
+	color: #a7aaad;
+	cursor: default;
+}
 .bhranti-app .bhranti-composer-form {
 	flex-shrink: 0;
 	margin: 0 15px;

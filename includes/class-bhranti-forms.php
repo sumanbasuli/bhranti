@@ -856,6 +856,9 @@ final class Bhranti_Forms {
 	/** Acquire a short site-local lock to serialize form configuration writes. */
 	private static function lock() {
 		$token = Bhranti_Lock::acquire( 'bhranti_forms_lock', 600 );
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
 		return $token ? $token : self::error( 'bhranti_forms_busy', __( 'Another form change is running. Wait for it to finish.', 'bhranti' ), 409 );
 	}
 

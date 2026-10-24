@@ -919,6 +919,9 @@ final class Bhranti_Plugins {
 	 */
 	private static function acquire_lock() {
 		$lock = Bhranti_Lock::acquire( 'bhranti_plugins_lock', 600 );
+		if ( is_wp_error( $lock ) ) {
+			return $lock;
+		}
 		if ( ! $lock ) {
 			return self::error( 'bhranti_plugin_busy', __( 'Another Bhranti plugin request is running. Review its result before trying again.', 'bhranti' ), 409 );
 		}

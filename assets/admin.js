@@ -21,6 +21,8 @@
 	const state = {
 		open: false,
 		initialized: false,
+		checkingAi: false,
+		aiConnectionError: '',
 		loading: false,
 		busy: false,
 		stepping: false,
@@ -82,7 +84,9 @@
 	let renderedFingerprint = '',
 		menuScroll = 0,
 		chatSearch = '',
-		chatListRequest = null;
+		chatListRequest = null,
+		aiConnectionRequest = null,
+		workspaceRequestSequence = 0;
 	const editorSync = {
 		baselines: new Map(),
 		pending: null,
@@ -348,7 +352,7 @@
 		node.setAttribute( 'aria-label', label );
 		return node;
 	}
-	async function request( path, method = 'GET', data ) {
+	async function request( path, method = 'GET', data, isCurrent = () => true ) {
 		if ( ! wp.apiFetch )
 			return Promise.reject(
 				new Error(
@@ -406,9 +410,10 @@
 						...options,
 						signal: controller.signal,
 					} );
-					state.connectionError = '';
+					if ( isCurrent() ) state.connectionError = '';
 					return result;
 				} catch ( error ) {
+					if ( ! isCurrent() ) throw error;
 					const status = Number(
 						error && error.data && error.data.status
 					);
@@ -430,7 +435,7 @@
 					window.clearTimeout( timer );
 				}
 				await wait( ( attempt + 1 ) * 1500 );
-				if ( pageSuspended )
+				if ( pageSuspended || ! isCurrent() )
 					throw new Error(
 						__( 'This page is no longer active.', 'bhranti' )
 					);
@@ -2522,8 +2527,50 @@
 		window.location.assign( target.href );
 		return true;
 	}
+	function aiAvailable() {
+		return ( state.workspace.ai || {} ).available === true;
+	}
+	async function checkAiConnection() {
+		if (
+			! state.open ||
+			! state.initialized ||
+			state.loading ||
+			pageSuspended
+		)
+			return;
+		if ( aiConnectionRequest ) return aiConnectionRequest;
+		state.checkingAi = true;
+		state.aiConnectionError = '';
+		render();
+		const refreshing = refreshWorkspace(),
+			sequence = workspaceRequestSequence;
+		aiConnectionRequest = refreshing
+			.catch( () => {
+				if ( sequence !== workspaceRequestSequence ) return;
+				state.aiConnectionError = __(
+					'Could not check the connection. Please try again.',
+					'bhranti'
+				);
+			} )
+			.finally( () => {
+				aiConnectionRequest = null;
+				state.checkingAi = false;
+				if ( ! pageSuspended ) render();
+			} );
+		return aiConnectionRequest;
+	}
 	async function refreshWorkspace() {
-		const workspace = await request( '/workspace' );
+		const sequence = ++workspaceRequestSequence,
+			current = () => sequence === workspaceRequestSequence;
+		let workspace;
+		try {
+			workspace = await request( '/workspace', 'GET', undefined, current );
+		} catch ( error ) {
+			if ( current() ) throw error;
+			return false;
+		}
+		if ( ! current() ) return false;
+		state.aiConnectionError = '';
 		state.workspace = {
 			...workspace,
 			sessions: Array.isArray( workspace.sessions )
@@ -2535,9 +2582,12 @@
 		};
 	}
 	async function refreshWorkspaceQuietly() {
+		const refreshing = refreshWorkspace(),
+			sequence = workspaceRequestSequence;
 		try {
-			await refreshWorkspace();
+			await refreshing;
 		} catch ( error ) {
+			if ( sequence !== workspaceRequestSequence ) return;
 			state.connectionError = __(
 				'The chat list will update when the connection returns.',
 				'bhranti'
@@ -2990,6 +3040,7 @@
 			content = draft.trim();
 		if (
 			! content ||
+			! aiAvailable() ||
 			state.busy ||
 			state.loading ||
 			state.capturing ||
@@ -3039,7 +3090,15 @@
 			state.screenshots.delete( draftKey( null ) );
 			clearReferenceRemoval( state.session && state.session.id );
 		} catch ( error ) {
-			if ( error.code === 'bhranti_credentials' )
+			if ( error.code === 'bhranti_ai_unavailable' ) {
+				// An older configuration read cannot override this newer server rejection.
+				++workspaceRequestSequence;
+				// The server rejected this before saving the message or starting AI.
+				if ( state.session ) state.session.messages = messages;
+				state.draft = draft;
+				state.workspace.ai = { ...state.workspace.ai, available: false };
+				state.error = '';
+			} else if ( error.code === 'bhranti_credentials' )
 				await rejectCredentialSubmission(
 					draft,
 					submissionId,
@@ -4442,7 +4501,13 @@
 			title.title = state.session.title;
 			stream.appendChild( title );
 		}
-		if ( ! state.session || ! messages.length ) {
+		if (
+			( ! state.session || ! messages.length ) &&
+			state.initialized &&
+			! aiAvailable()
+		) {
+			stream.appendChild( connectionSetup( true ) );
+		} else if ( ! state.session || ! messages.length ) {
 			const empty = element(
 				'div',
 				'bhranti-empty',
@@ -4761,6 +4826,56 @@
 			)
 		);
 	}
+	function connectionSetup( empty = false ) {
+		const link = element(
+			'a',
+			'bhranti-small-button is-primary',
+			__( 'Open Connectors', 'bhranti' )
+		);
+		link.href = settings.connectorsUrl || '/wp-admin/options-connectors.php';
+		link.target = '_blank';
+		link.rel = 'noopener';
+		link.setAttribute(
+			'aria-label',
+			__( 'Open WordPress Connectors in a new tab', 'bhranti' )
+		);
+		const check = button(
+			state.checkingAi
+				? __( 'Checking…', 'bhranti' )
+				: __( 'Check connection', 'bhranti' ),
+			'bhranti-small-button',
+			checkAiConnection,
+			'bhranti-check-connection'
+		);
+		check.disabled = state.checkingAi;
+		const notice = element(
+			'section',
+			'bhranti-connection-setup' + ( empty ? ' is-empty' : '' ),
+			element( 'h3', '', __( 'Connect an AI provider', 'bhranti' ) ),
+			element(
+				'p',
+				'',
+				__(
+					'Connect a text provider in WordPress Settings → Connectors to use Bhranti.',
+					'bhranti'
+				)
+			),
+			element( 'div', 'bhranti-connection-actions', link, check ),
+			state.aiConnectionError
+				? element(
+						'p',
+						'bhranti-connection-error',
+						state.aiConnectionError
+				  )
+				: null
+		);
+		notice.id = 'bhranti-connection-setup';
+		notice.setAttribute(
+			'aria-label',
+			__( 'AI connection required', 'bhranti' )
+		);
+		return notice;
+	}
 	function composer() {
 		const form = element( 'form', 'bhranti-composer-form' );
 		form.id = 'bhranti-composer-form';
@@ -4846,7 +4961,9 @@
 		input.rows = 2;
 		input.maxLength = 12000;
 		if ( input.value !== state.draft ) input.value = state.draft;
-		input.placeholder = activeRun()
+		input.placeholder = ! aiAvailable()
+			? __( 'Connect an AI provider to chat', 'bhranti' )
+			: activeRun()
 			? __( 'Draft your next message…', 'bhranti' )
 			: __( 'Ask anything…', 'bhranti' );
 		input.setAttribute( 'aria-label', __( 'Message Bhranti', 'bhranti' ) );
@@ -4855,6 +4972,7 @@
 			'bhranti-composer-hint bhranti-disclosure'
 		);
 		input.disabled =
+			! aiAvailable() ||
 			state.loading ||
 			state.capturing ||
 			( state.busy &&
@@ -4862,6 +4980,7 @@
 				! activeRun() &&
 				! credentialReview );
 		const sendingBlocked = () =>
+			! aiAvailable() ||
 			state.busy ||
 			state.loading ||
 			state.capturing ||
@@ -4916,6 +5035,7 @@
 			'plus',
 			'bhranti-attach'
 		);
+		attach.disabled = ! aiAvailable() || state.loading;
 		if ( state.screenshot ) {
 			const image = element( 'img', 'bhranti-screenshot-preview' );
 			image.src =
@@ -4976,7 +5096,11 @@
 			'bhranti-attach-image'
 		);
 		upload.disabled =
-			state.busy || state.loading || state.capturing || !! activeRun();
+			! aiAvailable() ||
+			state.busy ||
+			state.loading ||
+			state.capturing ||
+			!! activeRun();
 		const screenshot = iconButton(
 			state.capturing
 				? __( 'Choosing screenshot…', 'bhranti' )
@@ -4987,7 +5111,11 @@
 			'bhranti-screenshot'
 		);
 		screenshot.disabled =
-			state.busy || state.loading || state.capturing || !! activeRun();
+			! aiAvailable() ||
+			state.busy ||
+			state.loading ||
+			state.capturing ||
+			!! activeRun();
 		const hint = element(
 			'span',
 			'screen-reader-text',
@@ -5127,6 +5255,8 @@
 		const fingerprint = JSON.stringify( [
 			state.open,
 			state.initialized,
+			state.checkingAi,
+			state.aiConnectionError,
 			state.loading,
 			state.busy,
 			state.stepping,
@@ -5288,17 +5418,6 @@
 			]
 		);
 		details.id = 'bhranti-disclosure';
-		if ( ! ( state.workspace.ai || {} ).available && state.initialized )
-			details.appendChild(
-				element(
-					'p',
-					'',
-					__(
-						'No AI provider is configured. Use WordPress connectors in the Bhranti menu.',
-						'bhranti'
-					)
-				)
-			);
 		const streamNode = conversation(),
 			dock = activeRun()
 				? element( 'div', 'bhranti-task-dock', runStatus() )
@@ -5348,6 +5467,12 @@
 				noticeNodes,
 				region,
 				dock,
+				state.initialized &&
+				! aiAvailable() &&
+				state.session &&
+				( state.session.messages || [] ).length
+					? connectionSetup()
+					: null,
 				composer(),
 				details,
 			].filter( Boolean )
@@ -5398,6 +5523,11 @@
 		} );
 	}
 
+	// Returning from native Connectors refreshes local configuration only; no AI call.
+	window.addEventListener( 'focus', checkAiConnection );
+	document.addEventListener( 'visibilitychange', () => {
+		if ( document.visibilityState === 'visible' ) checkAiConnection();
+	} );
 	window.addEventListener( 'bhranti:settings-saved', async () => {
 		await refreshWorkspaceQuietly();
 		render();

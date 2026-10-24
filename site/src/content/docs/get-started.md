@@ -35,6 +35,8 @@ Use the installable Bhranti release ZIP. GitHub’s automatic **Source code** ar
 
 Manage your provider connection in Connectors. Available models and features depend on that connection. You do not need to enter an API key in Bhranti Settings or install the separate WordPress AI plugin.
 
+Until a provider is connected, the sidebar shows **Connect an AI provider** and keeps the message and attachment controls disabled. Select **Open Connectors** to set it up in a new tab, then return to Bhranti. It checks the connection again when you return; select **Check connection** if needed. Existing chats remain readable.
+
 ## 3. Open the sidebar
 
 Select **Bhranti** in the WordPress admin bar. In a post or page editor where the admin-bar opener is not available, look for the Bhranti button in the editor header.

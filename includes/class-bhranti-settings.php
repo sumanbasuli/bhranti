@@ -245,6 +245,9 @@ final class Bhranti_Settings {
 	 */
 	private static function persist( $config, $revision, $context = array(), $before_write = null, $after_write = null ) {
 		$lock = Bhranti_Lock::acquire( 'bhranti_settings_lock', 600 );
+		if ( is_wp_error( $lock ) ) {
+			return $lock;
+		}
 		if ( ! $lock ) {
 			return self::error( 'bhranti_settings_busy', __( 'Another administrator is saving settings. Try again shortly.', 'bhranti' ), 409 );
 		}

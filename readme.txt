@@ -139,6 +139,8 @@ The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (
 * Run reviewed actions as the requesting administrator without creating another WordPress user or granting extra capabilities.
 * Store private preferences as encrypted, nonautoloaded WordPress database records, with export, erasure and reset controls.
 * Show one requesting user in Logs while retaining execution identity in raw audit records.
+* Distinguish unavailable server locking from another running request without weakening write protection.
+* Show connection setup before chatting when no native AI provider is configured.
 
 = 1.1 =
 * Add screenshots of editing, live actions and Bhranti on the website.

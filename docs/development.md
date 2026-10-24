@@ -69,6 +69,8 @@ npx @wp-playground/cli@3.1.60 php --php=8.0 --wp=7.0 \
 
 `php tests/lock-sidecar.php` checks SQLite lock-file creation, existing-file preservation, removal races, ignored creation masks and denied permission changes in isolated temporary files. It does not bootstrap a site or use a database, network or AI.
 
+`php tests/lock-errors.php` checks real sidecar contention and technical acquisition errors across every operation adapter. It uses actual WordPress error/hook code and isolated filesystem fixtures; one disabled-function stub injects an unavailable `flock()` syscall. Technical guard failures return `bhranti_lock_guard` with HTTP 503; only genuine contention retains HTTP 409. Failed guards never execute mutation callbacks. Set `BHRANTI_TEST_WP_ROOT` when core lives elsewhere.
+
 `tests/content-preservation-native.php` checks existing-content preservation with native KSES and REST writes on uniquely marked disposable posts. It permits equivalent void-tag closing space while rejecting changes to attributes, unsafe markup and other content. The test requires its explicit mutation flag and a dedicated, marked native demonstration fixture; it never runs against an ordinary site or contacts an AI provider.
 
 Run syntax checks, WordPress Coding Standards and the official Plugin Check against the distribution. Current native integration entry points are `tests/review-e2e.mjs` and `tests/review-multisite.mjs`, which create disposable sites. Historical exact-site suites importing `tests/integration.php` assume a dedicated service account; they now stop before site bootstrap under requester execution. Keep them as reference until their remaining cases are ported to disposable fixtures. Never run historical mutation suites on an existing user site.

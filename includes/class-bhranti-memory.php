@@ -723,6 +723,9 @@ final class Bhranti_Memory {
 		return self::network_locked(
 			static function () use ( $callback, $allow_uninstalled ) {
 				$lock = Bhranti_Lock::acquire( 'bhranti_memory_lock', 600 );
+				if ( is_wp_error( $lock ) ) {
+					return $lock;
+				}
 				if ( ! $lock ) {
 					return self::error( 'busy', 409 );
 				}
@@ -758,9 +761,12 @@ final class Bhranti_Memory {
 		switch_to_blog( $main );
 		try {
 			$lock  = Bhranti_Lock::acquire( 'bhranti_memory_network_lock', 600 );
-			$state = $lock ? self::raw_option( 'bhranti_memory_network_state' ) : self::error( 'busy', 409 );
+			$state = is_array( $lock ) ? self::raw_option( 'bhranti_memory_network_state' ) : self::error( 'busy', 409 );
 		} finally {
 			restore_current_blog();
+		}
+		if ( is_wp_error( $lock ) ) {
+			return $lock;
 		}
 		if ( ! $lock ) {
 			return self::error( 'busy', 409 );
