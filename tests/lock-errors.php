@@ -4,7 +4,7 @@
  *
  * Uses WordPress's actual hooks and WP_Error, and real isolated SQLite/sidecar
  * files. No database queries, HTTP, AI, existing sites or credentials are used.
- * Only the unavailable-flock branch injects a disabled-function replacement;
+ * Only unavailable acquire/unlock branches inject disabled-function replacements;
  * the occupied-lock branch uses a real second native OS file handle.
  *
  * BHRANTI_TEST_WP_ROOT=/path/to/wordpress php tests/lock-errors.php
@@ -15,9 +15,9 @@
 $lock_error_mode = $argv[2] ?? '';
 if ( '--child' !== ( $argv[1] ?? '' ) ) {
 	$lock_error_total = 0;
-	foreach ( array( 'unsupported', 'missing-database', 'symlink', 'directory', 'public-sidecar', 'flock-unavailable', 'contention', 'network-missing-database' ) as $lock_error_case ) {
+	foreach ( array( 'unsupported', 'missing-database', 'symlink', 'directory', 'public-sidecar', 'flock-unavailable', 'flock-missing', 'unlock-unavailable', 'reacquire-contention', 'contention', 'network-missing-database' ) as $lock_error_case ) {
 		$lock_error_command = array( PHP_BINARY );
-		if ( 'flock-unavailable' === $lock_error_case ) {
+		if ( in_array( $lock_error_case, array( 'flock-unavailable', 'flock-missing', 'unlock-unavailable', 'reacquire-contention' ), true ) ) {
 			$lock_error_command[] = '-d';
 			$lock_error_command[] = 'disable_functions=flock';
 		}
@@ -37,7 +37,7 @@ if ( '--child' !== ( $argv[1] ?? '' ) ) {
 		}
 		$lock_error_total += $lock_error_result['checks'];
 	}
-	echo 'PASS ' . $lock_error_total . " lock-error and contention checks in 8 isolated processes.\n";
+	echo 'PASS ' . $lock_error_total . " lock-error and contention checks in 11 isolated processes.\n";
 	return;
 }
 
@@ -65,12 +65,23 @@ function switch_to_blog( $site ) { $GLOBALS['lock_error_blogs'][] = $site; }
 /** Record the inverse of the isolated native blog switch. */
 function restore_current_blog() { array_pop( $GLOBALS['lock_error_blogs'] ); }
 
-if ( 'flock-unavailable' === $lock_error_mode ) {
+if ( in_array( $lock_error_mode, array( 'flock-unavailable', 'unlock-unavailable', 'reacquire-contention' ), true ) ) {
 	if ( function_exists( 'flock' ) ) {
 		throw new RuntimeException( 'The unavailable-flock case requires its isolated disabled-function configuration.' );
 	}
 	/** Model an unsupported advisory-lock syscall, without claiming contention. */
-	function flock( $stream, $operation, &$would_block = null ) { $would_block = 0; return false; }
+	function flock( $stream, $operation, &$would_block = null ) {
+		$would_block = 0;
+		if ( 'reacquire-contention' === $GLOBALS['lock_error_mode'] ) {
+			$path = stream_get_meta_data( $stream )['uri'];
+			if ( ! empty( $GLOBALS['lock_error_occupied'][ $path ] ) ) { $would_block = 1; return false; }
+			if ( LOCK_UN === $operation ) { return true; }
+			if ( ! empty( $GLOBALS['lock_error_first'][ $path ] ) ) { $GLOBALS['lock_error_occupied'][ $path ] = true; $would_block = 1; return false; }
+			$GLOBALS['lock_error_first'][ $path ] = true;
+			return true;
+		}
+		return 'unlock-unavailable' === $GLOBALS['lock_error_mode'] && ( LOCK_EX | LOCK_NB ) === $operation;
+	}
 }
 
 $lock_error_root = sys_get_temp_dir() . '/bhranti-lock-errors-' . bin2hex( random_bytes( 8 ) );
@@ -149,8 +160,12 @@ try {
 		}
 	}
 	$lock_error_streams = count( get_resources( 'stream' ) );
-	$lock_error_contended = 'contention' === $lock_error_mode;
+	$lock_error_contended = in_array( $lock_error_mode, array( 'contention', 'reacquire-contention' ), true );
 	foreach ( $lock_error_names as $lock_error_name ) {
+		if ( in_array( $lock_error_mode, array( 'unlock-unavailable', 'reacquire-contention' ), true ) ) {
+			$claim = lock_error_invoke( 'Bhranti_Lock', 'claim_guard', array( $lock_error_name ) );
+			lock_error_check( $lock_error_contended ? false === $claim : is_wp_error( $claim ), 'A broken release or lost reacquisition is rejected before any lock-option write.' );
+		}
 		$lock_error_value = Bhranti_Lock::acquire( $lock_error_name, 600 );
 		if ( $lock_error_contended ) {
 			lock_error_check( false === $lock_error_value, 'Real lock contention remains false, not a technical error.' );

@@ -31,6 +31,8 @@ Wait for the current step to finish, including work started in another browser t
 
 If the message says **Bhranti could not secure this operation**, the server could not verify the lock that prevents overlapping changes. Try again once. If it continues, share the error code `bhranti_lock_guard` with your site administrator or hosting support so they can check server locking support.
 
+If you use WordPress Studio, update Studio and restart the site before retrying. Current Studio releases use native PHP; older Sandbox runtimes can fail to release operation locks. Keep Bhranti’s safety checks enabled. See [Studio’s update history](https://developer.wordpress.com/docs/developer-tools/studio/changelog/).
+
 ## Bhranti is waiting for my answer
 
 Reply in the same conversation with the missing decision, such as the audience, price, image source or whether to publish. Bhranti will wait for your answer before continuing.

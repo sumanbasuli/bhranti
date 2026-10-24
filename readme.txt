@@ -136,6 +136,7 @@ The bundled axe-core 4.14.0 accessibility engine by Deque Systems uses MPL-2.0 (
 == Changelog ==
 
 = 1.2 =
+* Verify server lock release support before beginning protected operations.
 * Confirm Roll back inside the chat and recover the saved outcome after an interrupted response.
 * Recognize natural requests to forget a saved preference.
 * Improve plugin path handling on Windows and sites with a linked plugin directory.

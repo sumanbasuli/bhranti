@@ -1,6 +1,7 @@
 === Bhranti release history ===
 
 = 1.2 =
+* Verify server lock release support before beginning protected operations.
 * Confirm Roll back inside the chat and recover the saved outcome after an interrupted response.
 * Recognize natural requests to forget a saved preference.
 * Improve plugin path handling on Windows and sites with a linked plugin directory.

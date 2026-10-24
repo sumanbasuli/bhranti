@@ -198,7 +198,7 @@ final class Bhranti_Lock {
 				'table'         => $wpdb->options,
 			);
 		}
-		if ( 'sqlite' !== $backend ) {
+		if ( 'sqlite' !== $backend || ! function_exists( 'flock' ) ) {
 			return self::guard_error();
 		}
 		$path = self::sqlite_guard_file( $name );
@@ -213,7 +213,18 @@ final class Bhranti_Lock {
 			return self::guard_error();
 		}
 		$would_block = 0;
-		if ( ! flock( $handle, LOCK_EX | LOCK_NB, $would_block ) ) {
+		$acquired    = flock( $handle, LOCK_EX | LOCK_NB, $would_block );
+		if ( $acquired ) {
+			// Verify release support before any callback: some runtimes acquire but cannot unlock.
+			if ( ! flock( $handle, LOCK_UN ) ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Never enter an operation with a guard that cannot be released.
+				fclose( $handle );
+				return self::guard_error();
+			}
+			$would_block = 0;
+			$acquired    = flock( $handle, LOCK_EX | LOCK_NB, $would_block );
+		}
+		if ( ! $acquired ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing the advisory-lock handle releases its OS lock.
 			fclose( $handle );
 			return $would_block ? false : self::guard_error();
@@ -243,7 +254,7 @@ final class Bhranti_Lock {
 			}
 			return null !== $row['holder'];
 		}
-		if ( 'sqlite' !== $backend ) {
+		if ( 'sqlite' !== $backend || ! function_exists( 'flock' ) ) {
 			return self::guard_error();
 		}
 		$path = self::sqlite_guard_file( $name );
@@ -259,12 +270,10 @@ final class Bhranti_Lock {
 		}
 		$would_block = 0;
 		$acquired    = flock( $handle, LOCK_EX | LOCK_NB, $would_block );
-		if ( $acquired ) {
-			flock( $handle, LOCK_UN );
-		}
+		$released    = ! $acquired || flock( $handle, LOCK_UN );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing the advisory-lock handle releases its OS lock.
 		fclose( $handle );
-		if ( ! $acquired && ! $would_block ) {
+		if ( ! $released || ( ! $acquired && ! $would_block ) ) {
 			return self::guard_error();
 		}
 		return ! $acquired;
