@@ -104,3 +104,5 @@ Open **Bhranti → Logs**, set **Outcome** to **Failed** or **Needs attention**,
 You can ask Bhranti, “Look at the logs for this chat and explain what happened without making changes.” State “all site activity” when you want it to look beyond the current conversation.
 
 If you need to share the sequence for support, apply the relevant date or task filters and select **Download logs (.ndjson)**. Review the file before sharing it. Include what Bhranti was waiting for: an answer, approval, an editor, the AI provider or a page-preview check. See [Logs and recovery](/docs/logs-and-recovery/) for the full steps.
+
+For help using Bhranti, post in the [WordPress.org support forum](https://wordpress.org/support/plugin/bhranti/). For general questions, email [hey@bhranti.org](mailto:hey@bhranti.org). Report suspected vulnerabilities privately to [security@bhranti.org](mailto:security@bhranti.org); keep security details out of public support threads.

@@ -133,3 +133,5 @@ If Bhranti asks you to start a new chat because the conversation is full, includ
 Find the matching event and expand **Event details** to copy its error code, time and task ID when available. Include the affected item and whether Bhranti was planning, making a change, waiting for approval or paused for an editor.
 
 For a longer sequence, filter to the relevant conversation, task or dates and use **Download logs (.ndjson)**. Review the file before sharing it, and leave out passwords, keys and unrelated private content. [Troubleshooting](/docs/troubleshooting/) gives short next steps for common messages.
+
+For plugin help, use the [WordPress.org support forum](https://wordpress.org/support/plugin/bhranti/). See [contact and security reporting](/contact/) for general enquiries and private security reports.

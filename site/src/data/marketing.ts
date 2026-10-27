@@ -1,3 +1,4 @@
+import { contact } from './contact';
 import { release } from './release';
 
 export const productWalkthrough = `## A small edit. The whole picture.
@@ -101,6 +102,10 @@ Bhranti for WordPress ${release.wordpress}.
 - [Download Bhranti](/download/)
 - [Source code on GitHub](${release.repositoryUrl})
 - [View on WordPress.org](${release.wordpressOrgUrl})
+- [Plugin support](${contact.supportUrl})
+- [Contact & support](/contact/)
+
+Say hello: [${contact.generalEmail}](mailto:${contact.generalEmail})
 
 Made for WordPress. Made for your ideas.
 

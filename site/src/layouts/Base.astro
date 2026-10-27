@@ -4,12 +4,13 @@ import Mark from '../components/Mark.astro';
 import GitHubMark from '../components/GitHubMark.astro';
 import Arrow from '../components/Arrow.astro';
 import { release } from '../data/release';
+import { contact } from '../data/contact';
 
 interface Props {
   title: string;
   description: string;
   markdownHref: string;
-  active?: 'home' | 'product' | 'docs' | 'download';
+  active?: 'home' | 'product' | 'docs' | 'download' | 'contact';
   pageClass?: string;
 }
 
@@ -56,6 +57,7 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
             <a href="/docs/" aria-current={active === 'docs' ? 'page' : undefined}>Documentation</a>
             <a href="/download/" aria-current={active === 'download' ? 'page' : undefined}>Download Bhranti <Arrow direction="diagonal" /></a>
             <a href="/docs/get-started/">Get started <Arrow /></a>
+            <a href="/contact/" aria-current={active === 'contact' ? 'page' : undefined}>Contact &amp; support <Arrow /></a>
             <a href={release.repositoryUrl}>Source code on GitHub <GitHubMark /></a>
             <a href={release.wordpressOrgUrl}>View on WordPress.org <Arrow direction="diagonal" /></a>
           </nav>
@@ -71,12 +73,15 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
           <div class="footer-project-links">
             <a href={release.repositoryUrl}><GitHubMark /> GitHub</a>
             <a href={release.wordpressOrgUrl}>View on WordPress.org <Arrow direction="diagonal" /></a>
+            <a href={contact.supportUrl}>Plugin support <Arrow direction="diagonal" /></a>
           </div>
+          <p class="footer-contact">Say hello: <a href={`mailto:${contact.generalEmail}`}>{contact.generalEmail}</a></p>
         </div>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>
           <a href="/product/">Explore the product <Arrow /></a>
           <a href="/docs/">Read the documentation <Arrow /></a>
+          <a href="/contact/" aria-current={active === 'contact' ? 'page' : undefined}>Contact &amp; support <Arrow /></a>
           <a href={markdownHref} data-llm-hint="A complete text/markdown version of this page">Read this page as Markdown <span aria-hidden="true">↓</span></a>
         </nav>
       </div>

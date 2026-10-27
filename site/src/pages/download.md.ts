@@ -1,4 +1,5 @@
 import { release } from '../data/release';
+import { contact } from '../data/contact';
 import { siteFooter } from '../data/marketing';
 
 export function GET() {
@@ -29,6 +30,8 @@ A regular plugin installation. A native AI connection. Then your first conversat
 [Source code on GitHub](${release.repositoryUrl})
 
 [View on WordPress.org](${release.wordpressOrgUrl})
+
+[Get plugin support](${contact.supportUrl})
 
 1. **Install the plugin.** In WordPress, open **Plugins → Add New Plugin → Upload Plugin**. Choose the Bhranti ZIP, install it, and activate the plugin.
 2. **Connect your AI provider.** Configure your provider in **Settings → Connectors**. Bhranti uses the native WordPress AI Client; provider configuration and credentials stay in Connectors.

@@ -93,6 +93,9 @@
   .footer-project-links a { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; font-size: 13px; text-decoration: none; }
   .footer-project-links a:hover { color: var(--color-accent); }
   .footer-project-links svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .footer-intro .footer-contact { margin-top: 5px; font-size: 13px; }
+  .footer-contact a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; color: var(--color-text); }
+  .footer-contact a:hover, .footer-nav a[aria-current='page'] { color: var(--color-accent); }
   .footer-nav { display: flex; flex-direction: column; width: 270px; }
   .footer-nav a { display: flex; justify-content: space-between; align-items: center; gap: 18px; min-height: 44px; font-size: 13px; text-decoration: none; }
   .footer-nav a:hover { color: var(--color-accent); }

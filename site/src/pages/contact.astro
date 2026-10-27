@@ -1,0 +1,61 @@
+---
+import Base from '../layouts/Base.astro';
+import Arrow from '../components/Arrow.astro';
+import { contactIntro, contactSections } from '../data/contact';
+---
+
+<Base title="Contact & support" description="Get help with Bhranti, ask a question, or report a security issue privately." markdownHref="/contact.md" active="contact">
+  <div class="container contact-page">
+    <header class="contact-heading">
+      <h1>Get in <span class="serif">touch.</span></h1>
+      <p>{contactIntro}</p>
+    </header>
+    <div class="contact-options">
+      {contactSections.map((section) => (
+        <section class="contact-row" aria-labelledby={section.id}>
+          <h2 id={section.id}>{section.title}</h2>
+          <div class="contact-details">
+            <p>{section.description}</p>
+            <div class="contact-links">
+              {section.links.map((link) => <a href={link.href}>{link.label}<Arrow direction="diagonal" /></a>)}
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+    <p class="contact-note">Please leave passwords, API keys and private site information out of public posts.</p>
+  </div>
+</Base>
+
+<style>
+  .contact-page { padding-block: 88px 96px; }
+  .contact-heading { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 64px; padding-bottom: 72px; }
+  h1 { max-width: 520px; font-size: clamp(3.5rem, 6.4vw, 5.5rem); }
+  .contact-heading > p { max-width: 390px; color: var(--color-muted); font-size: 20px; line-height: 1.6; padding-bottom: 4px; }
+  .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; padding-block: 36px; border-top: 1px solid var(--color-border); }
+  h2 { max-width: 360px; font-size: 30px; letter-spacing: -.035em; line-height: 1.25; }
+  .contact-details { min-width: 0; }
+  .contact-details > p { max-width: 510px; color: var(--color-muted); font-size: 16px; line-height: 1.75; }
+  .contact-links { display: flex; flex-direction: column; align-items: flex-start; margin-top: 16px; }
+  .contact-links a { display: inline-flex; align-items: center; gap: 14px; min-height: 44px; max-width: 100%; color: var(--color-accent); text-decoration: none; overflow-wrap: anywhere; }
+  .contact-links a:hover { text-decoration: underline; }
+  .contact-links :global(svg) { flex-shrink: 0; width: 18px; height: 18px; }
+  .contact-note { border-top: 1px solid var(--color-border); padding-top: 26px; color: var(--color-muted); font-size: 13px; line-height: 1.75; }
+  @media (max-width: 800px) {
+    .contact-page { padding-block: 64px 72px; }
+    .contact-heading { gap: 32px; padding-bottom: 48px; }
+    .contact-heading > p { font-size: 18px; }
+    .contact-row { gap: 32px; }
+    h2 { font-size: 27px; }
+  }
+  @media (max-width: 640px) {
+    .contact-page { padding-block: 46px 56px; }
+    .contact-heading { grid-template-columns: 1fr; gap: 24px; padding-bottom: 38px; }
+    h1 { max-width: 320px; }
+    .contact-heading > p { font-size: 17px; }
+    .contact-row { grid-template-columns: 1fr; gap: 14px; padding-block: 28px; }
+    h2 { font-size: 26px; }
+    .contact-details > p { font-size: 15px; }
+    .contact-links { margin-top: 10px; }
+  }
+</style>

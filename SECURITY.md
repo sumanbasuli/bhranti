@@ -1,6 +1,6 @@
 # Security policy
 
-If you find a security issue in Bhranti, please report it privately through [GitHub’s vulnerability reporting form](https://github.com/sumanbasuli/bhranti/security/advisories/new).
+If you find a security issue in Bhranti, please email [security@bhranti.org](mailto:security@bhranti.org) or use [GitHub’s private vulnerability reporting form](https://github.com/sumanbasuli/bhranti/security/advisories/new).
 
 Please avoid posting vulnerabilities, exploit details or sensitive site information in public issues, discussions or support forums while a report is being investigated.
 
@@ -27,4 +27,4 @@ Use the latest stable release when possible, and include the affected version in
 
 We will review reports privately and coordinate fixes and public disclosure with the reporter. Response and resolution times depend on the issue; no fixed response time is promised.
 
-For ordinary bugs, feature requests or usage questions that do not expose a security issue, use the [public issue tracker](https://github.com/sumanbasuli/bhranti/issues).
+For help using the plugin, use the [WordPress.org support forum](https://wordpress.org/support/plugin/bhranti/). For general questions, feedback or other enquiries, email [hey@bhranti.org](mailto:hey@bhranti.org).

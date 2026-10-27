@@ -14,6 +14,7 @@ export async function GET() {
     '- [Home](https://bhranti.org/index.md)',
     '- [Product](https://bhranti.org/product.md)',
     '- [Download and requirements](https://bhranti.org/download.md)',
+    '- [Contact, plugin support and security reporting](https://bhranti.org/contact.md)',
     '- [Documentation index](https://bhranti.org/docs/index.md)',
     '',
     '## Guides',

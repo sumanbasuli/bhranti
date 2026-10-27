@@ -76,9 +76,13 @@ Run `./build.sh` to create the installable plugin folder, ZIP and SHA-256 checks
 
 See [build and release instructions](docs/release.md), [developer notes and verification](docs/development.md), and the [Astro website README](site/README.md). Website sources, dependencies and development tools are excluded from the installable plugin ZIP.
 
+## Support and contact
+
+For plugin help, visit the [WordPress.org support forum](https://wordpress.org/support/plugin/bhranti/). For general questions, feedback or other enquiries, email [hey@bhranti.org](mailto:hey@bhranti.org).
+
 ## Security
 
-Report vulnerabilities privately through [GitHub vulnerability reporting](https://github.com/sumanbasuli/bhranti/security/advisories/new). See the [security policy](SECURITY.md) for reporting guidance.
+Report vulnerabilities privately to [security@bhranti.org](mailto:security@bhranti.org) or through [GitHub vulnerability reporting](https://github.com/sumanbasuli/bhranti/security/advisories/new). See the [security policy](SECURITY.md) for reporting guidance.
 
 ## License
 

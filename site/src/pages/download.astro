@@ -4,6 +4,7 @@ import Arrow from '../components/Arrow.astro';
 import GitHubMark from '../components/GitHubMark.astro';
 import WordPressMark from '../components/WordPressMark.astro';
 import { release } from '../data/release';
+import { contact } from '../data/contact';
 ---
 
 <Base title="Download Bhranti" description="Get Bhranti for WordPress. Check the system requirements and follow the WordPress setup guide." markdownHref="/download.md" active="download" pageClass="download-page">
@@ -38,6 +39,7 @@ import { release } from '../data/release';
       <a class="text-link" href="/docs/get-started/">Full installation guide <Arrow /></a>
       <a class="text-link" href={release.repositoryUrl}>Source code on GitHub <GitHubMark /></a>
       <a class="text-link" href={release.wordpressOrgUrl}>View on WordPress.org <Arrow direction="diagonal" /></a>
+      <a class="text-link" href={contact.supportUrl}>Get plugin support <Arrow direction="diagonal" /></a>
     </div>
     <ol class="install-steps">
       <li><span class="step-number" aria-hidden="true">01</span><div><h3>Install the plugin.</h3><p>In WordPress, open <strong>Plugins → Add New Plugin → Upload Plugin</strong>. Choose the Bhranti ZIP, install it, and activate the plugin.</p></div></li>
