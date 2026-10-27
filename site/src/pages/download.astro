@@ -21,7 +21,7 @@ import { contact } from '../data/contact';
           <p>Download the plugin ZIP, then follow the guide to install Bhranti and connect your AI provider.</p>
           <a class="download-button" href={release.downloadUrl} download>Download Bhranti ZIP <span aria-hidden="true">↓</span></a>
           <p class="download-meta"><span>Version {release.version} · Installable ZIP</span><a href={release.checksumUrl} download>SHA-256 checksum</a></p>
-          <a class="button button-preview" href={release.previewUrl}>Try Live Preview <Arrow direction="diagonal" /></a>
+          <a class="button button-preview" href={release.previewUrl} target="_blank" rel="noopener noreferrer">Try Live Preview <span class="sr-only">(opens in a new tab)</span><Arrow direction="diagonal" /></a>
           <p class="preview-note">Explore a temporary WordPress site in your browser. Connect an AI provider in Settings → Connectors to send messages.</p>
           <a class="hero-link" href="/docs/get-started/">Read the setup guide <Arrow /></a>
         </div>

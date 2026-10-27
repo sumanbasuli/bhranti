@@ -140,11 +140,14 @@ def checked_tree(directory, plan, payload):
     return files + directories
 
 
+def require_confirmation(changed, version, publish, acknowledged):
+    if publish and 'tags/' + version + '/readme.txt' in changed and not acknowledged:
+        fail('Publishing the released readme requires acknowledgement that Release Confirmation is already disabled')
+
+
 def prepare(directory, commit, event, ref, publish, release_confirmation_disabled, actor):
     if event != 'workflow_dispatch' or ref != 'refs/heads/main':
         fail('Metadata maintenance is manual and must select main')
-    if publish and not release_confirmation_disabled:
-        fail('Live metadata publication requires acknowledgement that Release Confirmation is already disabled')
     release.current_main(commit)
     version = release.builder.validate_metadata()
     release.version_number(version)
@@ -181,6 +184,7 @@ def prepare(directory, commit, event, ref, publish, release_confirmation_disable
             run(['svn', 'add', '--parents', '--no-auto-props', '--non-interactive', str(target)])
             run(['svn', 'propset', '--non-interactive', 'svn:mime-type', 'application/json', str(target)])
     files, directories = changes(checkout, payload)
+    require_confirmation(files, version, publish, release_confirmation_disabled)
     plan = dict(schema=1, commit=commit, version=version, actor=actor, svn_url=release.SVN_URL,
                 revision=revision, publish=publish, release_confirmation_disabled=release_confirmation_disabled,
                 before=before, after=hashes(checkout), changed=files, added_directories=directories)
@@ -197,7 +201,7 @@ def publish(directory, commit, release_confirmation_disabled):
     report, checkout = directory / 'report', directory / 'svn'
     plan = json.loads(regular(report / 'plan.json'))
     if (plan.get('schema') != 1 or plan.get('publish') is not True
-            or plan.get('release_confirmation_disabled') is not True or not release_confirmation_disabled
+            or plan.get('release_confirmation_disabled') is not release_confirmation_disabled
             or plan.get('commit') != commit or plan.get('svn_url') != release.SVN_URL):
         fail('Publication requires the exact explicitly approved metadata preparation')
     release.current_main(commit)
@@ -208,6 +212,7 @@ def publish(directory, commit, release_confirmation_disabled):
             or regular(report / 'blueprint.json') != payload[BLUEPRINT]):
         fail('Review artifact differs from the selected source commit')
     targets = checked_tree(checkout, plan, payload)
+    require_confirmation(targets, plan['version'], True, release_confirmation_disabled)
     # Reject any plugin change since preparation; unrelated repositories may advance global HEAD.
     changed = xml(['svn', 'diff', '--summarize', '--xml', '--non-interactive',
                    '--revision', plan['revision'] + ':HEAD', release.SVN_URL], 'diff')

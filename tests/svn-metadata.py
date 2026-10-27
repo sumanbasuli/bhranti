@@ -25,10 +25,15 @@ def command(*args, cwd=None):
 
 
 class RequestTests(unittest.TestCase):
-    def test_publication_without_release_confirmation_acknowledgement_fails_before_io(self):
-        with patch.object(metadata.release, 'current_main') as current, self.assertRaisesRegex(ValueError, 'already disabled'):
-            metadata.prepare('/unused', 'a' * 40, 'workflow_dispatch', 'refs/heads/main', True, False, 'fixture')
-        current.assert_not_called()
+    def test_only_publishing_a_changed_stable_tag_readme_requires_acknowledgement(self):
+        changed = ['tags/1.2/readme.txt']
+        with self.assertRaisesRegex(ValueError, 'already disabled'):
+            metadata.require_confirmation(changed, '1.2', True, False)
+        for paths, publish, acknowledged in [(changed, False, False), (changed, True, True),
+                                             ([], True, False), ([metadata.BLUEPRINT], True, False),
+                                             (['trunk/readme.txt'], True, False)]:
+            with self.subTest(paths=paths, publish=publish, acknowledged=acknowledged):
+                metadata.require_confirmation(paths, '1.2', publish, acknowledged)
 
     def test_automatic_events_or_non_main_refs_are_rejected_before_io(self):
         for event, ref in [('push', 'refs/heads/main'), ('workflow_dispatch', 'refs/heads/feature'), ('workflow_dispatch', 'refs/tags/v1.2')]:
@@ -51,9 +56,19 @@ class RequestTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/metadata.yml').read_text()
         self.assertIn('workflow_dispatch:', workflow)
         self.assertNotIn('\n  push:', workflow)
-        self.assertEqual(workflow.count('default: false'), 2)
+        self.assertIn('default: dry-run', workflow)
+        self.assertIn('type: choice', workflow)
+        self.assertIn('          - dry-run\n          - publish', workflow)
+        self.assertNotIn('\n      commit:', workflow)
+        self.assertNotIn('inputs.commit', workflow)
+        self.assertNotIn('inputs.publish', workflow)
+        self.assertIn('METADATA_COMMIT: ${{ github.sha }}', workflow)
+        self.assertIn("METADATA_PUBLISH: ${{ inputs.mode == 'publish' }}", workflow)
+        self.assertIn('ref: ${{ github.sha }}', workflow)
+        self.assertEqual(workflow.count('default: false'), 1)
         final = workflow.partition('      - name: Publish only the explicitly selected metadata')[2]
-        self.assertIn('if: inputs.publish && inputs.release_confirmation_disabled', final)
+        self.assertIn("if: inputs.mode == 'publish'", final)
+        self.assertNotIn("if: inputs.mode == 'publish' &&", final)
         self.assertEqual(final.count('${{ secrets.'), 2)
         self.assertEqual(workflow.count('${{ secrets.'), 2)
         self.assertIn('group: bhranti-wordpress-org', workflow)
@@ -112,9 +127,9 @@ class NativeSvnTests(unittest.TestCase):
     def prepare(self, publish=False, acknowledged=False):
         return metadata.prepare(self.directory, self.commit, 'workflow_dispatch', 'refs/heads/main', publish, acknowledged, 'fixture[bot]')
 
-    def publish(self):
+    def publish(self, acknowledged=True):
         with patch.dict(os.environ, {'SVN_USERNAME': 'fixture', 'SVN_PASSWORD': 'fixture-password-only'}):
-            return metadata.publish(self.directory, self.commit, True)
+            return metadata.publish(self.directory, self.commit, acknowledged)
 
     def remote_write(self, name, data):
         checkout = self.temporary / ('external-' + str(len(list(self.temporary.glob('external-*')))))
@@ -163,27 +178,31 @@ class NativeSvnTests(unittest.TestCase):
         published = json.loads((self.directory / 'report/published.json').read_text())
         self.assertEqual(published['revision'], result['revision'])
 
-    def test_existing_blueprint_changes_without_adding_any_directory(self):
+    def test_blueprint_only_publication_without_acknowledgement_is_one_exact_commit(self):
         first = self.prepare(True, True)
         self.publish()
         shutil.rmtree(self.directory)
         blueprint = self.source / 'wordpress-org/assets/blueprints/blueprint.json'
         blueprint.write_bytes(blueprint.read_bytes() + b'\n')
         self.commit = self.commit_source()
-        plan = self.prepare(True, True)
+        plan = self.prepare(True, False)
         self.assertEqual(plan['changed'], [metadata.BLUEPRINT])
         self.assertEqual(plan['added_directories'], [])
-        result = self.publish()
+        with patch.object(metadata, 'run', wraps=metadata.run) as transport:
+            result = self.publish(False)
+        commits = [call for call in transport.call_args_list if call.args[0][:2] == ['svn', 'commit']]
+        self.assertEqual(len(commits), 1)
+        self.assertEqual(result['revision'], str(int(plan['revision']) + 1))
         self.assertEqual(result['changed'], [metadata.BLUEPRINT])
         self.assertEqual(plan['before']['trunk/bhranti.php'], first['before']['trunk/bhranti.php'])
 
-    def test_matching_metadata_is_a_noop_without_credentials(self):
+    def test_matching_metadata_is_a_noop_without_acknowledgement_or_credentials(self):
         self.prepare(True, True)
         self.publish()
         shutil.rmtree(self.directory)
-        self.prepare(True, True)
+        self.prepare(True, False)
         with patch.dict(os.environ, {'SVN_USERNAME': '', 'SVN_PASSWORD': ''}):
-            result = metadata.publish(self.directory, self.commit, True)
+            result = metadata.publish(self.directory, self.commit, False)
         self.assertEqual(result['published'], False)
         self.assertTrue(result['unchanged'])
 
@@ -220,10 +239,30 @@ class NativeSvnTests(unittest.TestCase):
             self.publish()
         self.assertEqual(metadata.remote_revision(), revision)
 
-    def test_live_requires_acknowledgement_again(self):
+    def test_changed_stable_tag_readme_without_acknowledgement_never_commits(self):
+        revision = metadata.remote_revision()
+        with self.assertRaisesRegex(ValueError, 'already disabled'):
+            self.prepare(True, False)
+        self.assertEqual(metadata.remote_revision(), revision)
+        shutil.rmtree(self.directory)
         self.prepare(True, True)
-        with self.assertRaisesRegex(ValueError, 'explicitly approved'):
-            metadata.publish(self.directory, self.commit, False)
+        plan_file = self.directory / 'report/plan.json'
+        plan = json.loads(plan_file.read_text())
+        plan['release_confirmation_disabled'] = False
+        plan_file.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError, 'already disabled'):
+            self.publish(False)
+        self.assertEqual(metadata.remote_revision(), revision)
+
+    def test_publication_acknowledgement_must_match_the_prepared_argument(self):
+        self.prepare(True, True)
+        plan_file = self.directory / 'report/plan.json'
+        plan = json.loads(plan_file.read_text())
+        for prepared, requested in [(True, False), (False, True)]:
+            plan['release_confirmation_disabled'] = prepared
+            plan_file.write_text(json.dumps(plan))
+            with self.subTest(prepared=prepared, requested=requested), self.assertRaisesRegex(ValueError, 'explicitly approved'):
+                metadata.publish(self.directory, self.commit, requested)
 
     def test_stale_commit_and_dirty_inputs_stop_before_preparation(self):
         with self.assertRaises(ValueError):

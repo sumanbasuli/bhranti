@@ -3,18 +3,17 @@ name: Update WordPress.org listing metadata
 on:
   workflow_dispatch:
     inputs:
-      commit:
-        description: 'Full current main commit containing the reviewed readme and Playground blueprint'
+      mode:
+        description: 'Check the listing changes or publish them to WordPress.org'
         required: true
-        type: string
-      publish:
-        description: 'Publish only the current trunk/tag readmes and Playground blueprint (default: dry run)'
-        required: true
-        default: false
-        type: boolean
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - publish
       release_confirmation_disabled:
-        description: 'I verified Release Confirmation is already disabled; this workflow never changes it'
-        required: true
+        description: 'I checked Release Confirmation is disabled (required only when updating the published readme)'
+        required: false
         default: false
         type: boolean
 
@@ -31,17 +30,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      METADATA_COMMIT: ${{ inputs.commit }}
-      METADATA_PUBLISH: ${{ inputs.publish }}
+      METADATA_COMMIT: ${{ github.sha }}
+      METADATA_PUBLISH: ${{ inputs.mode == 'publish' }}
       RELEASE_CONFIRMATION_DISABLED: ${{ inputs.release_confirmation_disabled }}
     steps:
       - name: Select the temporary preparation directory
         run: echo "METADATA_DIRECTORY=$RUNNER_TEMP/bhranti-metadata" >> "$GITHUB_ENV"
 
-      - name: Check out the exact selected commit
+      - name: Check out the selected main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.commit }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -82,7 +81,7 @@ jobs:
           retention-days: 30
 
       - name: Publish only the explicitly selected metadata
-        if: inputs.publish && inputs.release_confirmation_disabled
+        if: inputs.mode == 'publish'
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
           SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}

@@ -20,102 +20,103 @@ It works alongside the WordPress editor, keeps you informed about changes, and a
 
 **Less clicking. Less repetitive work. More time to focus on your website.**
 
-Bhranti requires an administrator account, WordPress 7.0 or later, PHP 8.0 or later, and a compatible AI text connection in Settings > Connectors. Optional image generation depends on your connector and model.
+Requires WordPress 7.0+, PHP 8.0+, administrator access and a compatible text provider in Settings > Connectors. Image generation depends on the connector and model.
 
-[Get started with Bhranti](https://bhranti.org/docs/get-started/) for setup and your first request.
+[Get started](https://bhranti.org/docs/get-started/) or visit the [support forum](https://wordpress.org/support/plugin/bhranti/).
 
 = What you can do =
 
-* Write and edit posts and pages, find content, and recover wording from saved revisions.
-* Edit supported templates, template parts, navigation and styles.
-* Search the Media Library, improve image descriptions and generate images with a supported connection.
-* Install WordPress.org plugins and activate or deactivate permitted plugins, with your approval.
-* Create Contact Form 7 forms when available, or reuse working forms.
-* With WooCommerce, manage simple, non-downloadable products, categories and supported store, stock, shipping and cash-on-delivery settings. Payment account connections remain manual.
-* Check saved pages at desktop and mobile sizes for common layout and accessibility issues. Checks do not certify WCAG conformance or test every visitor interaction.
+* **Posts and pages:** Draft, rewrite and find content, or recover wording from saved revisions.
+* **Site design:** Customize supported templates, template parts, navigation and global styles.
+* **Media and images:** Search the Media Library, improve image descriptions and generate images with a supported connection.
+* **Plugins:** Find, install, activate or deactivate permitted WordPress.org plugins, with your approval.
+* **Forms:** Reuse working forms or create Contact Form 7 forms when that plugin is available.
+* **WooCommerce:** Manage simple, non-downloadable products, categories, stock, shipping, cash-on-delivery and supported store settings. Connect payment accounts manually.
+* **Page checks:** Inspect saved pages for common desktop and mobile layout and accessibility issues. Checks do not certify WCAG conformance or cover every interaction.
+* **Longer tasks:** Follow saved plans and progress, with background work through WordPress scheduling.
 
-Small, clear edits can happen directly. Larger projects begin with questions about your audience, content and design, followed by a work plan.
+Focused edits can happen directly. Larger projects begin with questions about your audience, content and design, then a work plan.
 
-= Stay in control =
+= You choose what can change =
 
-Choose allowed actions in Bhranti > Settings. Plugin installation, later activation/deactivation and uninstall each need an Approve/Cancel card. Installation can include activation when listed; otherwise, it installs inactive. Plugin deletion is off by default.
+Choose allowed actions in Bhranti > Settings. Plugin installation, activation, deactivation and uninstall each ask for your approval in chat. One installation approval can include activation; otherwise, the plugin installs inactive. Plugin deletion is off by default.
 
-Creating a Contact Form 7 form, changing its notification destination, moving supported content to Trash, or making a WooCommerce store or other site pages visible needs an exact Approve/Deny card. Declining stops the task; earlier saved changes remain.
+Approval is required to create Contact Form 7 forms, change their notification destinations, move supported content to Trash, or change WooCommerce coming-soon settings to reveal store or site pages. Declining stops the task; earlier changes remain.
 
-Actions and Undo use your signed-in account, current WordPress permissions and action switches. Bhranti does not create users, edit core, theme or plugin source files, or change accounts, roles, credentials or security settings.
+Actions and Roll back respect your WordPress permissions and the actions allowed in Settings. Bhranti does not create users, edit core, theme or plugin source files, or change accounts, roles, credentials or security settings.
 
-When the editor has no unsaved changes, saved updates can appear as Bhranti works. An overlay helps prevent accidental edits. Stop works between steps; it cannot recall a sent request.
+With no unsaved editor changes, saved updates can appear as Bhranti works. An overlay helps prevent accidental edits. Stop works between steps; it cannot recall a sent request.
 
-In Bhranti > Logs, administrators can search, filter and download actions, outcomes, affected items and requester details. Records retain the executing account.
+In Bhranti > Logs, search, filter or download results, affected items and who requested and performed each action.
 
-= Make it work your way =
+= Make Bhranti work your way =
 
-Add instructions and guardrails in Settings. Create named agents with pasted agent.md text and skills with skill.md text. These cannot override permissions or approvals.
+Add guardrails, writing styles or workflows in Settings. Agents use pasted agent.md instructions; skills use skill.md text. Permissions and approvals still apply.
 
 Ask Bhranti to remember language, tone, design or workflow preferences. Review or reset memory in Settings. Drafts stay with each chat; the sidebar stays open across admin pages.
 
 == Installation ==
 
 1. Install and activate Bhranti. For a ZIP, use Plugins > Add New Plugin > Upload Plugin.
-2. Set up a compatible AI text connection in Settings > Connectors and complete any connector approval.
-3. Review allowed actions and optional instructions in Bhranti > Settings.
-4. Open Bhranti from the admin bar or block editor toolbar and send your first request.
+2. Connect a compatible AI text provider in Settings > Connectors and complete any connector approval.
+3. Review allowed actions in Bhranti > Settings.
+4. Open Bhranti from the admin bar or block editor (Gutenberg) toolbar and describe your task.
 
 == Frequently Asked Questions ==
 
-= Do I enter an API key in Bhranti? =
+= Do I need an AI connection? =
 
-No. Use Settings > Connectors; Bhranti has no separate credentials or model settings. The WordPress AI plugin is not needed. WooCommerce and Contact Form 7 are optional.
+Yes. Connect a text provider in Settings > Connectors. Bhranti has no separate credentials or model settings and needs no WordPress AI plugin. WooCommerce and Contact Form 7 are optional.
 
 = Can I undo a change? =
 
-Supported changes offer Roll back for seven days, with confirmation in chat. Bhranti checks for later edits before restoring an item.
+Supported changes offer Roll back for seven days. Confirm in chat; Bhranti checks for later edits before restoring an item.
 
-Plugin installation/uninstall, generated media and new forms have no automatic Undo. Restoring a form's earlier notification destination, or a WooCommerce visibility setting that would expose pages, needs a new request and approval.
+Plugin installation or uninstall, generated media and new forms have no automatic Undo. Restoring a form recipient or WooCommerce visibility that exposes pages needs a new request and approval.
 
-Plugin status Undo restores active/inactive status. Uninstall may permanently remove data; reinstalling does not recover it. Activation effects, emails, webhooks and other side effects may remain.
+Plugin status Undo restores active or inactive status. Uninstall can permanently remove data; reinstalling cannot recover it. Emails, webhooks and other activation effects may remain.
 
 = Will tasks continue if I close the browser? =
 
-Submitted tasks can continue through WordPress scheduling, which needs site traffic or a configured scheduler. They pause for answers, approvals or unsaved editor changes. Page checks need an open browser.
+Yes. WordPress scheduling needs site traffic or a configured scheduler. Tasks pause for answers or approvals; open editors can delay changes. Page checks need Bhranti's sidebar open.
 
-Saved work and images remain after interruptions. Temporary AI failures can be retried or resumed; uncertain changes are not automatically repeated.
+Saved work and images survive interruptions. Retry or resume temporary AI failures; uncertain changes are not automatically repeated.
 
 = Can it work with every plugin? =
 
-It supports the features listed above. It cannot run arbitrary code, install uploaded ZIPs, switch themes or update plugins. WooCommerce support excludes orders, customer transactions and payment credentials.
+No. Bhranti supports the listed WordPress, WooCommerce and Contact Form 7 features. Plugin changes work only on single-site WordPress. It cannot run arbitrary code, install uploaded ZIPs, switch themes or update plugins. WooCommerce support excludes orders, customer transactions and payment credentials.
 
 = Should I share a password or key in chat? =
 
-No. Bhranti warns about recognizable credentials before saving or sending requests. Flagged drafts stay in browser memory. Checks also cover instructions, background requests and preferences.
+No. Bhranti checks for recognizable credentials before saving or sending requests, including instructions, background work and preferences. Flagged drafts stay in browser memory.
 
-Detection cannot find every secret or read credentials in images. Review attachments yourself. Existing chats are not silently erased; recognized older credentials block further AI requests.
+Detection is incomplete and cannot read secrets in images. Review attachments. Recognized older credentials block further AI requests; existing chats are not silently erased.
 
 == Privacy and external services ==
 
-Bhranti uses WordPress's AI Client to send requests to your connector's provider. Opening the sidebar does not send an AI request. A message may share:
+Requests go through WordPress's AI Client to your connector's provider. Opening the sidebar sends no AI request. A message may share:
 
-* Your request, relevant conversation history, work plans and instructions.
+* Your request, relevant chat history, work plans and instructions.
 * Basic site information, relevant content, search/action results and log metadata.
-* Attached page text or HTML, blocks, images and screenshots.
+* Attached page text/HTML, blocks, images and screenshots.
 * Image prompts, relevant preferences and checked image capabilities.
-* Design-reference content and rendered layout/accessibility check results.
+* Design-reference content and rendered layout/accessibility results.
 
-Your connector determines the provider and account. Usage may consume your allowance or incur charges. Provider terms and privacy:
+Your connector selects the provider and account. Usage may consume your allowance or incur charges. Provider terms and privacy:
 
 * OpenAI: [Terms](https://openai.com/policies/services-agreement/) and [Privacy](https://openai.com/policies/privacy-policy/).
 * Anthropic: [Terms](https://www.anthropic.com/legal/commercial-terms) and [Privacy](https://www.anthropic.com/legal/privacy).
 * Google Gemini: [Terms](https://ai.google.dev/gemini-api/terms) and [Privacy](https://policies.google.com/privacy).
 
-Plugin searches and installations use WordPress.org services ([Privacy](https://wordpress.org/about/privacy/)). Bhranti may retrieve a public HTTPS design reference you supply without sign-in cookies or credentials. Rendered checks use your browser and a local accessibility engine; page scripts and resources still load normally.
+Plugin searches and installs use WordPress.org ([Privacy](https://wordpress.org/about/privacy/)). Bhranti may read a public HTTPS design reference you supply without sign-in cookies or credentials. Rendered checks use your browser and a local accessibility engine; page scripts and resources load normally.
 
 Bhranti has no telemetry. Interface assets load locally. Logs exclude chat bodies and raw provider errors.
 
-Conversations, context, results, plans, rollback records and logs are stored on your site. Conversations are not encrypted in the database. Optional memory is encrypted separately for each user and site. Ordinary unsent drafts use this tab's session storage; unsent images stay in browser memory.
+Your site stores conversations, context, results, plans, rollback records and logs. Conversations are unencrypted in the database; optional memory is encrypted per user and site. Ordinary unsent drafts use this tab's session storage; unsent images stay in browser memory.
 
-Chats are private to their creator. Other administrators can view Logs; database/server administrators can access stored data. WordPress personal-data export and erasure include Bhranti data. You can delete chats and reset memory. Chat deletion removes rollback records, without reversing changes or removing audit entries.
+Chats are private to their creator; other administrators can view Logs. Server/database administrators can access stored data. WordPress data export and erasure include Bhranti records. You can delete chats or reset memory. Chat deletion removes rollback records but leaves site changes and audit entries.
 
-Uninstall removes Bhranti's private data and preferences. Site content, authorship and existing users stay in place.
+Uninstall removes Bhranti's private data and preferences; site content, authorship and existing users remain.
 
 == Screenshots ==
 
@@ -125,17 +126,17 @@ Uninstall removes Bhranti's private data and preferences. Site content, authorsh
 
 == Source code ==
 
-[Public source, issues and release tools](https://github.com/sumanbasuli/bhranti). Build instructions are in docs/release.md.
+[Public source, issues and release tools](https://github.com/sumanbasuli/bhranti). Build instructions: docs/release.md.
 
-Editable PHP, JavaScript and CSS are included in includes/ and assets/. First-party JavaScript is not compiled, bundled or minified. WordPress supplies React components and dependencies. No npm or Composer build is needed; packaging copies these files unchanged into a ZIP.
+includes/ and assets/ contain editable PHP, JavaScript and CSS. First-party JavaScript is not compiled, bundled or minified. WordPress supplies React components and dependencies. Packaging copies files unchanged; no npm or Composer build is needed.
 
 == License and credits ==
 
 Bhranti uses GNU GPL version 2 or later; see LICENSE. Provided without warranty. Bundled third-party code retains its notices.
 
-Bootstrap Icons SVG paths in assets/admin.js and assets/editor.js come from https://github.com/twbs/icons and use MIT (assets/bootstrap-icons-LICENSE.txt).
+Bootstrap Icons SVG paths in assets/admin.js and assets/editor.js use MIT (assets/bootstrap-icons-LICENSE.txt). Source: https://github.com/twbs/icons
 
-The bundled axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). [Original module source and build instructions](https://github.com/dequelabs/axe-core/tree/v4.14.0) are upstream. Its folder includes the readable distribution, package metadata, source hashes and third-party notices.
+axe-core 4.14.0 by Deque Systems uses MPL-2.0 (assets/vendor/axe-core/LICENSE). [Source and build instructions](https://github.com/dequelabs/axe-core/tree/v4.14.0). Its folder includes the readable distribution, package metadata, source hashes and third-party notices.
 
 == Changelog ==
 
