@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -47,6 +48,13 @@ REQUIRED_FILES = (
     "skills/site-design/SKILL.md",
     "skills/wordpress-support/SKILL.md",
 )
+# WordPress.org listing art belongs only in its own package, never the plugin ZIP.
+LISTING_PNG_SIZES = {
+    "banner-772x250.png": (772, 250),
+    "banner-1544x500.png": (1544, 500),
+    "icon-128x128.png": (128, 128),
+    "icon-256x256.png": (256, 256),
+}
 EXCLUDED_COMPONENTS = {"docs", "tests", "scripts", "node_modules", "build", "__pycache__"}
 
 
@@ -127,8 +135,42 @@ def validate_metadata():
     return version
 
 
+def validate_listing_png(data, name):
+    """Check the PNG framing and declared dimensions; this is not an image decoder."""
+    if (len(data) < 45 or data[:16] != b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"
+            or data[-12:] != b"\x00\x00\x00\x00IEND\xaeB`\x82"):
+        fail("Listing artwork must be a complete PNG: " + name)
+    size = (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+    if size != LISTING_PNG_SIZES[name]:
+        fail("Listing artwork dimensions must match its filename: " + name)
+
+
+def validate_listing_svg(data):
+    """Keep our vector icon self-contained, with simple paths and no active content."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("Listing SVG icon must be UTF-8")
+    if "<!" in text or "<?" in text:
+        fail("Listing SVG icon must be a self-contained vector")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as error:
+        fail("Listing SVG icon must be valid XML: " + str(error))
+    namespace = "{http://www.w3.org/2000/svg}"
+    if root.tag != namespace + "svg" or root.get("viewBox") != "0 0 256 256":
+        fail("Listing SVG icon needs an SVG root and a 256 by 256 viewBox")
+    tags = {namespace + name for name in ("svg", "title", "desc", "g", "path", "rect")}
+    attributes = {"viewBox", "width", "height", "x", "y", "rx", "ry", "fill", "d", "transform", "role", "aria-labelledby", "id"}
+    for element in root.iter():
+        if element.tag not in tags or any(name not in attributes for name in element.attrib):
+            fail("Listing SVG icon must contain only simple vector artwork")
+        if any("url(" in value.lower() for value in element.attrib.values()):
+            fail("Listing SVG icon cannot reference external resources")
+
+
 def collect_listing_assets():
-    """Match local listing screenshots to the numbered WordPress.org captions."""
+    """Match screenshots to their captions and include the reviewed listing artwork."""
     readme = (ROOT / "readme.txt").read_text(encoding="utf-8")
     sections = re.findall(r"^== Screenshots ==[ \t]*\r?\n(.*?)(?=^== |\Z)", readme, re.M | re.S)
     if len(sections) != 1:
@@ -141,19 +183,28 @@ def collect_listing_assets():
     if (ROOT / "wordpress-org").is_symlink() or directory.is_symlink() or not directory.is_dir():
         fail("wordpress-org/assets/ must be a real directory")
     files = list(directory.iterdir())
+    artwork = set(LISTING_PNG_SIZES) | {"icon.svg"}
     expected = {"screenshot-{}.jpg".format(number) for number in range(1, len(captions) + 1)}
-    if {path.name for path in files} != expected:
-        fail("Listing screenshot filenames must match the numbered readme.txt captions exactly")
+    if {path.name for path in files} - artwork != expected:
+        fail("Listing filenames must match the numbered readme.txt captions and supported artwork names exactly")
+    if not artwork.issubset({path.name for path in files}):
+        fail("Listing artwork is missing a required banner or icon")
     for path in files:
         if path.is_symlink() or not path.is_file():
-            fail("Listing screenshots must be regular files, not symlinks: " + path.name)
-        if path.stat().st_size > 10_000_000:
-            fail("Listing screenshot exceeds WordPress.org's 10 MB limit: " + path.name)
+            fail("Listing assets must be regular files, not symlinks: " + path.name)
+        limit = 10_000_000 if path.name in expected else 4_000_000 if path.name.startswith("banner-") else 1_000_000
+        if path.stat().st_size > limit:
+            fail("Listing asset exceeds WordPress.org's {} MB limit: {}".format(limit // 1_000_000, path.name))
         data = path.read_bytes()
-        if not data.startswith(b"\xff\xd8\xff") or not data.endswith(b"\xff\xd9"):
-            fail("Listing screenshot must be a JPEG: " + path.name)
-    print("WordPress.org screenshots and captions: passed ({})".format(len(files)))
-    return sorted(files, key=lambda path: int(re.search(r"\d+", path.name)[0]))
+        if path.name in expected:
+            if not data.startswith(b"\xff\xd8\xff") or not data.endswith(b"\xff\xd9"):
+                fail("Listing screenshot must be a JPEG: " + path.name)
+        elif path.name in LISTING_PNG_SIZES:
+            validate_listing_png(data, path.name)
+        else:
+            validate_listing_svg(data)
+    print("WordPress.org listing assets and captions: passed ({})".format(len(files)))
+    return sorted(files, key=lambda path: path.name)
 
 
 def lint_php(files):

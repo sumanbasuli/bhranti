@@ -15,7 +15,7 @@ You need:
 - An administrator account.
 - A compatible text provider configured in WordPress’s native **Settings → Connectors** screen.
 
-[Download the Bhranti plugin ZIP](/download/), then follow the installation steps below.
+[Download the Bhranti plugin ZIP](/download/) and follow the steps below, or find [Bhranti on WordPress.org](https://wordpress.org/plugins/bhranti/).
 
 ## 1. Install and activate the plugin
 

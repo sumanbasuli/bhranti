@@ -1,0 +1,241 @@
+name: Release to WordPress.org
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - SVN-RELEASE
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to check on main; manual runs never publish'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bhranti-wordpress-org
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      active: ${{ steps.plan.outputs.active }}
+      publish: ${{ steps.plan.outputs.publish }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+    steps:
+      - name: Check out the requested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate the release request
+        id: plan
+        env:
+          PUSH_BEFORE: ${{ github.event.before || '' }}
+          INPUT_VERSION: ${{ inputs.version || '' }}
+        run: |
+          python3 scripts/svn-release.py plan \
+            --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" \
+            --before "$PUSH_BEFORE" --commit "$GITHUB_SHA" \
+            --version "$INPUT_VERSION" --github-output "$GITHUB_OUTPUT"
+
+      - name: Explain the inactive publication marker
+        if: steps.plan.outputs.active != 'true'
+        run: echo 'SVN-RELEASE is 0.0; WordPress.org publication is inactive.' >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    needs: plan
+    if: needs.plan.outputs.active == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      plugin_sha: ${{ steps.checksums.outputs.plugin_sha }}
+      assets_sha: ${{ steps.checksums.outputs.assets_sha }}
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends php-cli python3 nodejs
+
+      - name: Test publication safeguards
+        run: python3 tests/svn-release.py
+
+      - name: Build and test the installable artifact
+        run: python3 tests/build.py
+
+      - name: Verify and identify the checked artifacts
+        id: checksums
+        run: |
+          cd build
+          sha256sum -c "bhranti-$RELEASE_VERSION.zip.sha256"
+          sha256sum -c wordpress-org-assets.zip.sha256
+          cmp bhranti.zip "bhranti-$RELEASE_VERSION.zip"
+          plugin_sha="$(sha256sum "bhranti-$RELEASE_VERSION.zip" | cut -d ' ' -f 1)"
+          assets_sha="$(sha256sum wordpress-org-assets.zip | cut -d ' ' -f 1)"
+          echo "plugin_sha=$plugin_sha" >> "$GITHUB_OUTPUT"
+          echo "assets_sha=$assets_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Checked WordPress.org artifact: $RELEASE_VERSION"
+            echo "Commit: $RELEASE_COMMIT"
+            echo "Plugin SHA-256: $plugin_sha"
+            echo "Listing assets SHA-256: $assets_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain the exact checked artifacts
+        id: artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bhranti-svn-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/bhranti-${{ needs.plan.outputs.version }}.zip
+            build/bhranti-${{ needs.plan.outputs.version }}.zip.sha256
+            build/wordpress-org-assets.zip
+            build/wordpress-org-assets.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  dry-run:
+    needs:
+      - plan
+      - package
+    if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.publish == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+      PLUGIN_SHA: ${{ needs.package.outputs.plugin_sha }}
+      ASSETS_SHA: ${{ needs.package.outputs.assets_sha }}
+    steps:
+      - name: Check out the checked source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install SVN preflight tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends subversion
+
+      - name: Download the exact checked artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          path: ${{ runner.temp }}/bhranti-svn-artifact
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment directories
+        run: |
+          python3 scripts/svn-release.py prepare --version "$RELEASE_VERSION" \
+            --plugin-sha "$PLUGIN_SHA" --assets-sha "$ASSETS_SHA" \
+            --artifact-dir "$RUNNER_TEMP/bhranti-svn-artifact"
+
+      - name: Reject an existing SVN tag or a stale main commit
+        run: |
+          python3 scripts/svn-release.py svn-check --version "$RELEASE_VERSION"
+          python3 scripts/svn-release.py current-main --commit "$RELEASE_COMMIT"
+
+      - name: Prepare the WordPress.org release without publishing
+        uses: 10up/action-wordpress-plugin-deploy@008657da18d18e065aaaccd287fa3af53ff768a1
+        with:
+          dry-run: 'true'
+          generate-zip: 'false'
+        env:
+          SLUG: bhranti
+          VERSION: ${{ needs.plan.outputs.version }}
+          BUILD_DIR: build/bhranti
+          ASSETS_DIR: wordpress-org/assets
+
+      - name: Verify the prepared SVN tree
+        run: python3 scripts/svn-release.py verify-tree --directory "$HOME/svn-bhranti" --version "$RELEASE_VERSION"
+
+      - name: Record the dry-run result
+        run: echo 'Dry run completed. No SVN credentials were supplied and no SVN commit was made.' >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs:
+      - plan
+      - package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+      RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+      PLUGIN_SHA: ${{ needs.package.outputs.plugin_sha }}
+      ASSETS_SHA: ${{ needs.package.outputs.assets_sha }}
+    steps:
+      - name: Check out the checked source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install SVN preflight tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends subversion
+
+      - name: Download the exact checked artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          path: ${{ runner.temp }}/bhranti-svn-artifact
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment directories
+        run: |
+          python3 scripts/svn-release.py prepare --version "$RELEASE_VERSION" \
+            --plugin-sha "$PLUGIN_SHA" --assets-sha "$ASSETS_SHA" \
+            --artifact-dir "$RUNNER_TEMP/bhranti-svn-artifact"
+
+      - name: Reject an existing SVN tag or a stale main commit
+        run: |
+          python3 scripts/svn-release.py svn-check --version "$RELEASE_VERSION"
+          python3 scripts/svn-release.py current-main --commit "$RELEASE_COMMIT"
+
+      - name: Publish the checked artifact to WordPress.org
+        uses: 10up/action-wordpress-plugin-deploy@008657da18d18e065aaaccd287fa3af53ff768a1
+        with:
+          dry-run: 'false'
+          generate-zip: 'false'
+        env:
+          SLUG: bhranti
+          VERSION: ${{ needs.plan.outputs.version }}
+          BUILD_DIR: build/bhranti
+          ASSETS_DIR: wordpress-org/assets
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+
+      - name: Verify the committed SVN working tree
+        run: python3 scripts/svn-release.py verify-tree --directory "$HOME/svn-bhranti" --version "$RELEASE_VERSION"
+
+      - name: Verify the published SVN contents
+        run: python3 scripts/svn-release.py verify-remote --version "$RELEASE_VERSION"
+
+      - name: Record the deployment result
+        run: echo "Submitted WordPress.org release $RELEASE_VERSION from $RELEASE_COMMIT. WordPress.org may still require Release Confirmation." >> "$GITHUB_STEP_SUMMARY"

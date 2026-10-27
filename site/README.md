@@ -2,7 +2,7 @@
 
 The public product site and documentation for **bhranti.org**, built with Astro. The site is static: it needs no WordPress installation, database, server adapter, or connector credentials.
 
-The plugin and website source are maintained in the [public Bhranti repository](https://github.com/sumanbasuli/bhranti). Plugin release metadata lives in `src/data/release.ts`; keep its version and WordPress/PHP requirements aligned with `../VERSION`, `../bhranti.php` and `../readme.txt` before deploying.
+The plugin and website source are maintained in the [public Bhranti repository](https://github.com/sumanbasuli/bhranti). Plugin release metadata in `src/data/release.ts` is derived at build time from `../VERSION` and the plugin headers. Keep the root plugin metadata and readme consistent before release.
 
 ## Work locally
 
@@ -68,7 +68,19 @@ Read `PRODUCT.md` and `DESIGN.md` before larger content or visual changes.
 
 ## Release download
 
-The header and primary actions lead to `/download/`. `downloadUrl` in `src/data/release.ts` remains `#` until the release ZIP is published. Replace it with the public `sumanbasuli/bhranti` release ZIP URL, then rebuild before deploying the download page. The version and compatibility information share that release configuration.
+The header and primary actions lead to `/download/`. GitHub source links and the WordPress.org listing appear in the shared navigation/footer and on the download page. Their URLs are centralized in `src/data/release.ts`.
+
+`npm run dev` and `npm run build` first run `scripts/prepare-download.py`, using Python 3.9 or later and its standard library. Cloudflare Workers Builds includes Python; no server-side code or connector is needed for visitor downloads.
+
+The preparer reads the root `VERSION`, downloads the matching public GitHub release's `bhranti-<version>.zip` and `.sha256`, verifies the checksum, ZIP integrity, runtime inventory and version/compatibility headers, and stages the exact published bytes in `public/downloads/`. The website serves `/downloads/bhranti-<version>.zip` and its checksum directly from its own static output. These generated files are ignored by Git and stay outside the WordPress plugin distribution.
+
+A missing release, failed certificate verification, wrong checksum or mismatched ZIP stops the build; it never falls back to a different version or GitHub's automatic source archive. A short, bounded retry handles a release asset that has not appeared yet. The local macOS fallback uses the existing system CA file only when Python has no configured CA; TLS certificate and hostname verification remain enabled.
+
+Run `npm run test:download` for the offline download-safety tests, `npm run check`, `npm run build`, and `npm run check:output` before deployment.
+
+For a new version, first update the root version metadata, complete testing and let the GitHub release workflow publish its ZIP/checksum. Then change `SVN-RELEASE` to request WordPress.org publication. That subsequent main push can also trigger the Cloudflare Git build, now that its matching download exists. If Cloudflare starts before GitHub has published the assets and the bounded retry expires, the website build fails and the existing deployment remains live; rerun it after the release completes. No manual URL or public ZIP edit is needed for each version.
+
+The website needs the full source checkout for its metadata and inventory checks. If moving it to a separate repository, provide a reviewed equivalent release manifest rather than copying only `site/` unchanged.
 
 ## WordPress icon
 

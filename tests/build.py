@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+import xml.etree.ElementTree as ET
 
 
 sys.dont_write_bytecode = True
@@ -94,15 +95,93 @@ class PackagingTests(unittest.TestCase):
         installed = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()}
         self.assertEqual(installed, names)
 
-    def test_listing_screenshots_are_separate_from_the_plugin(self):
+    def test_listing_assets_are_separate_from_the_plugin(self):
         files = builder.collect_listing_assets()
         with zipfile.ZipFile(self.listing) as archive:
             self.assertIsNone(archive.testzip())
             self.assertEqual(archive.namelist(), [path.name for path in files])
             for path in files:
                 self.assertEqual(archive.read(path.name), path.read_bytes())
-        with zipfile.ZipFile(self.archive) as archive:
-            self.assertFalse(any("screenshot-" in name or "wordpress-org" in name for name in archive.namelist()))
+        names = {path.name for path in files}
+        for package in (self.archive, self.versioned):
+            with zipfile.ZipFile(package) as archive:
+                self.assertFalse(any(Path(name).name in names or "wordpress-org" in name for name in archive.namelist()))
+        self.assertFalse(any(path.name in names for path in (ROOT / "build/bhranti").rglob("*")))
+
+    def test_listing_artwork_has_the_official_dimensions(self):
+        expected = {
+            "banner-772x250.png": (772, 250), "banner-1544x500.png": (1544, 500),
+            "icon-128x128.png": (128, 128), "icon-256x256.png": (256, 256),
+        }
+        for name, size in expected.items():
+            data = (ROOT / "wordpress-org/assets" / name).read_bytes()
+            self.assertEqual((int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")), size)
+        self.assertEqual(ET.parse(ROOT / "wordpress-org/assets/icon.svg").getroot().get("viewBox"), "0 0 256 256")
+
+    def test_missing_listing_artwork_is_rejected(self):
+        for name in tuple(builder.LISTING_PNG_SIZES) + ("icon.svg",):
+            with self.subTest(name=name), fixture() as root:
+                (root / "wordpress-org/assets" / name).unlink()
+                with self.assertRaisesRegex(ValueError, "missing a required banner or icon"):
+                    builder.collect_listing_assets()
+
+    def test_unexpected_listing_artwork_is_rejected(self):
+        for name in ("banner-772x250.PNG", "banner-800x250.png", "nested/private.txt", ".DS_Store"):
+            with self.subTest(name=name), fixture() as root:
+                path = root / "wordpress-org/assets" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if name == "banner-772x250.PNG":
+                    (root / "wordpress-org/assets/banner-772x250.png").rename(path)
+                else:
+                    path.write_bytes(b"must not ship")
+                with self.assertRaisesRegex(ValueError, "match.*captions"):
+                    builder.collect_listing_assets()
+
+    def test_invalid_png_artwork_is_rejected(self):
+        for name in builder.LISTING_PNG_SIZES:
+            for change in ("empty", "jpeg", "truncated", "dimensions"):
+                with self.subTest(name=name, change=change), fixture() as root:
+                    path = root / "wordpress-org/assets" / name
+                    data = path.read_bytes()
+                    if change == "empty":
+                        data = b""
+                    elif change == "jpeg":
+                        data = (root / "wordpress-org/assets/screenshot-1.jpg").read_bytes()
+                    elif change == "truncated":
+                        data = data[:24]
+                    else:
+                        data = data[:16] + (999).to_bytes(4, "big") + data[20:]
+                    path.write_bytes(data)
+                    with self.assertRaisesRegex(ValueError, "complete PNG|dimensions must match"):
+                        builder.collect_listing_assets()
+
+    def test_listing_artwork_respects_per_type_size_limits(self):
+        for name, limit in (("banner-772x250.png", 4_000_000), ("icon-256x256.png", 1_000_000), ("icon.svg", 1_000_000)):
+            with self.subTest(name=name), fixture() as root:
+                path = root / "wordpress-org/assets" / name
+                path.write_bytes(path.read_bytes() + b" " * limit)
+                with self.assertRaisesRegex(ValueError, "{} MB limit".format(limit // 1_000_000)):
+                    builder.collect_listing_assets()
+
+    def test_active_or_external_svg_content_is_rejected(self):
+        for content in (
+            '<script>alert(1)</script>',
+            '<image href="https://example.org/image.png"/>',
+            '<path d="M0 0" onload="alert(1)"/>',
+            '<path d="M0 0" fill="url(https://example.org/art.svg)"/>',
+        ):
+            with self.subTest(content=content), fixture() as root:
+                path = root / "wordpress-org/assets/icon.svg"
+                path.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">' + content + '</svg>')
+                with self.assertRaisesRegex(ValueError, "simple vector artwork|external resources"):
+                    builder.collect_listing_assets()
+        utf16 = ('<?xml-stylesheet type="text/css" href="https://example.org/style.css"?>'
+                 '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"/>').encode("utf-16")
+        for data in (b"", b"<svg", b'<!DOCTYPE svg><svg/>', b'<svg viewBox="0 0 16 16"/>', utf16):
+            with self.subTest(data=data), fixture() as root:
+                (root / "wordpress-org/assets/icon.svg").write_bytes(data)
+                with self.assertRaisesRegex(ValueError, "SVG icon"):
+                    builder.collect_listing_assets()
 
     def test_checksums_cover_all_packages(self):
         expected = "".join(
@@ -150,7 +229,7 @@ class PackagingTests(unittest.TestCase):
                     builder.collect_listing_assets()
 
     def test_symlinked_listing_sources_are_rejected(self):
-        for name in ("wordpress-org", "wordpress-org/assets", "wordpress-org/assets/screenshot-1.jpg"):
+        for name in ("wordpress-org", "wordpress-org/assets", "wordpress-org/assets/screenshot-1.jpg", "wordpress-org/assets/banner-772x250.png", "wordpress-org/assets/icon.svg"):
             with self.subTest(path=name), fixture() as root:
                 path = root / name
                 original = root / ("original-" + path.name)
@@ -290,7 +369,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_nonruntime_files_are_excluded(self):
         with fixture() as root:
-            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "assets/debug.log", "wordpress-org/assets/screenshot-999.jpg"):
+            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "SVN-RELEASE", "SECURITY.md", ".github/workflows/svn-release.yml", "wordpress-org/design/banner.svg", "assets/debug.log", "wordpress-org/assets/screenshot-999.jpg"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("must never ship")

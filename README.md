@@ -1,5 +1,7 @@
 # Bhranti
 
+![Bhranti, a helping hand for your WordPress, beside the real editor and chat sidebar.](wordpress-org/assets/banner-1544x500.png)
+
 An AI assistant that works alongside you in WordPress.
 
 Ask Bhranti to update a page, improve your writing, find an image or help set up a product catalog. It reads the relevant content, makes supported changes and shows its actions in a chat beside your editor.
@@ -73,6 +75,10 @@ The documentation website is built from these Markdown files, with a readable we
 Run `./build.sh` to create the installable plugin folder, ZIP and SHA-256 checksums in `build/`. Use `./build.sh --check` for source checks without packaging, or `python3 tests/build.py` for packaging regressions.
 
 See [build and release instructions](docs/release.md), [developer notes and verification](docs/development.md), and the [Astro website README](site/README.md). Website sources, dependencies and development tools are excluded from the installable plugin ZIP.
+
+## Security
+
+Report vulnerabilities privately through [GitHub vulnerability reporting](https://github.com/sumanbasuli/bhranti/security/advisories/new). See the [security policy](SECURITY.md) for reporting guidance.
 
 ## License
 

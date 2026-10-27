@@ -99,6 +99,8 @@ Bhranti for WordPress ${release.wordpress}.
 - [Explore the product](/product/)
 - [Read the documentation](/docs/)
 - [Download Bhranti](/download/)
+- [Source code on GitHub](${release.repositoryUrl})
+- [View on WordPress.org](${release.wordpressOrgUrl})
 
 Made for WordPress. Made for your ideas.
 

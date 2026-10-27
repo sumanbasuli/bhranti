@@ -8,7 +8,11 @@
     "build": "astro build",
     "preview": "astro preview --host 127.0.0.1",
     "check": "astro check",
-    "check:output": "node scripts/check-output.mjs"
+    "check:output": "node scripts/check-output.mjs",
+    "prepare:download": "python3 scripts/prepare-download.py",
+    "predev": "npm run prepare:download",
+    "prebuild": "npm run prepare:download",
+    "test:download": "python3 scripts/test_prepare_download.py"
   },
   "dependencies": {
     "astro": "6.4.8"

@@ -14,6 +14,8 @@ Download the plugin ZIP, then follow the guide to install Bhranti and connect yo
 
 [Download Bhranti ZIP](${release.downloadUrl})
 
+Version ${release.version} · Installable ZIP · [SHA-256 checksum](${release.checksumUrl})
+
 [Read the setup guide](/docs/get-started/)
 
 Requirements: WordPress ${release.wordpress} · PHP ${release.php} · Administrator access
@@ -24,7 +26,9 @@ A regular plugin installation. A native AI connection. Then your first conversat
 
 [Full installation guide](/docs/get-started/)
 
-[Source code on GitHub](https://github.com/sumanbasuli/bhranti)
+[Source code on GitHub](${release.repositoryUrl})
+
+[View on WordPress.org](${release.wordpressOrgUrl})
 
 1. **Install the plugin.** In WordPress, open **Plugins → Add New Plugin → Upload Plugin**. Choose the Bhranti ZIP, install it, and activate the plugin.
 2. **Connect your AI provider.** Configure your provider in **Settings → Connectors**. Bhranti uses the native WordPress AI Client; provider configuration and credentials stay in Connectors.

@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import Mark from '../components/Mark.astro';
+import GitHubMark from '../components/GitHubMark.astro';
 import Arrow from '../components/Arrow.astro';
 import { release } from '../data/release';
 
@@ -44,6 +45,7 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
         <nav class="desktop-nav" aria-label="Main navigation">
           <a href="/product/" aria-current={active === 'product' ? 'page' : undefined}>Product</a>
           <a href="/docs/" aria-current={active === 'docs' ? 'page' : undefined}>Documentation</a>
+          <a class="nav-icon" href={release.repositoryUrl} aria-label="Bhranti source code on GitHub" title="Bhranti on GitHub"><GitHubMark /></a>
           <a class="nav-cta" href="/download/" aria-current={active === 'download' ? 'page' : undefined}>Download Bhranti <Arrow direction="diagonal" /></a>
         </nav>
         <details class="mobile-menu">
@@ -54,6 +56,8 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
             <a href="/docs/" aria-current={active === 'docs' ? 'page' : undefined}>Documentation</a>
             <a href="/download/" aria-current={active === 'download' ? 'page' : undefined}>Download Bhranti <Arrow direction="diagonal" /></a>
             <a href="/docs/get-started/">Get started <Arrow /></a>
+            <a href={release.repositoryUrl}>Source code on GitHub <GitHubMark /></a>
+            <a href={release.wordpressOrgUrl}>View on WordPress.org <Arrow direction="diagonal" /></a>
           </nav>
         </details>
       </div>
@@ -64,6 +68,10 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
         <div class="footer-intro">
           <a class="brand" href="/" aria-label="Bhranti home"><Mark /><span>Bhranti<span class="brand-period">.</span></span></a>
           <p>A helping hand for your WordPress.</p>
+          <div class="footer-project-links">
+            <a href={release.repositoryUrl}><GitHubMark /> GitHub</a>
+            <a href={release.wordpressOrgUrl}>View on WordPress.org <Arrow direction="diagonal" /></a>
+          </div>
         </div>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>

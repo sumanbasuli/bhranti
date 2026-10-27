@@ -11,3 +11,6 @@
 /build/
 __pycache__/
 *.pyc
+
+# Verified website downloads are generated from published GitHub release assets.
+/site/public/downloads/
