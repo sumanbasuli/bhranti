@@ -19,7 +19,7 @@ For version `1.2`, the outputs are:
 | `build/bhranti-1.2.zip` | Identical versioned ZIP for a release |
 | `build/bhranti.zip.sha256` | Unversioned ZIP checksum |
 | `build/bhranti-1.2.zip.sha256` | Versioned ZIP checksum |
-| `build/wordpress-org-assets.zip` | Banner, icons and screenshots for the WordPress.org listing |
+| `build/wordpress-org-assets.zip` | Banner, icons, screenshots and Playground blueprint for WordPress.org |
 | `build/wordpress-org-assets.zip.sha256` | Listing assets checksum |
 | `build/SHA256SUMS` | Checksums for all three ZIPs |
 
@@ -49,7 +49,7 @@ The Astro website, screenshots, development docs, tests, build tools, Git files,
 
 ## WordPress.org listing assets
 
-Keep the deployable listing images in `wordpress-org/assets/`. They are packaged separately from the installable plugin:
+Keep the deployable listing images and Playground blueprint in `wordpress-org/assets/`. They are packaged separately from the installable plugin:
 
 | File | Dimensions | Purpose |
 | --- | --- | --- |
@@ -59,12 +59,13 @@ Keep the deployable listing images in `wordpress-org/assets/`. They are packaged
 | `icon-256x256.png` | 256 × 256 | High-resolution icon |
 | `icon.svg` | 256 × 256 viewBox | Scalable icon, with the PNG fallbacks above |
 | `screenshot-1.jpg` through `screenshot-3.jpg` | Original capture sizes | Real editor, live action and website screenshots |
+| `blueprints/blueprint.json` | Reviewed JSON | Native WordPress Playground setup |
 
 Keep one numbered caption for every screenshot under `== Screenshots ==` in `readme.txt`, in the same order. Check that screenshots contain no private site information. Editable banner source and regeneration instructions live in `wordpress-org/design/` and `wordpress-org/README.md`; these files do not enter either release ZIP.
 
 The build checks the exact filenames, screenshot captions, regular files and symlink boundaries. It checks JPEG markers, PNG framing and declared dimensions, and a self-contained SVG icon. It enforces WordPress.org's 10 MB screenshot, 4 MB banner and 1 MB icon limits. These are packaging checks, not full image decoding. Unexpected files are rejected.
 
-The separate `build/wordpress-org-assets.zip` contains only the deployable images at its root. Extract its contents into the SVN checkout's top-level `assets/` directory, beside `trunk/` and `tags/`. Set `svn:mime-type` to `image/jpeg`, `image/png` or `image/svg+xml` as appropriate. Listing artwork must not go into `trunk/assets/` or a version tag. The captions remain in the released plugin's `readme.txt`.
+The separate `build/wordpress-org-assets.zip` contains the deployable images at its root and `blueprints/blueprint.json`. Extract its contents into the SVN checkout's top-level `assets/` directory, beside `trunk/` and `tags/`. Set `svn:mime-type` to `image/jpeg`, `image/png`, `image/svg+xml` or `application/json` as appropriate. The metadata workflow below sets the blueprint property when it first adds the file; subsequent releases preserve it. Listing artwork must not go into `trunk/assets/` or a version tag. The captions remain in the released plugin's `readme.txt`.
 
 The [official plugin assets guide](https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/) explains the required sizes, filenames, MIME properties and CDN caching. The [readme guide](https://developer.wordpress.org/plugins/wordpress-org/how-your-readme-txt-works/) explains how Stable tag selects the published description and captions.
 
@@ -134,7 +135,7 @@ The workflow uses [10up/action-wordpress-plugin-deploy](https://github.com/10up/
 
 The build job runs the existing `./build.sh` packaging path and its regression tests. It retains the versioned plugin ZIP and listing-assets ZIP as one immutable Actions artifact. The deployment job downloads that exact artifact by ID, checks its recorded SHA-256 values, and checks every file against the selected source commit before extraction. It does not rebuild the ZIP in the deployment job.
 
-`BUILD_DIR=build/bhranti` passes the **contents** of the extracted plugin folder to the action. `ASSETS_DIR=wordpress-org/assets` supplies only the separate listing images. The result is:
+`BUILD_DIR=build/bhranti` passes the **contents** of the extracted plugin folder to the action. `ASSETS_DIR=wordpress-org/assets` supplies only the separate listing assets. The result is:
 
 ```text
 trunk/bhranti.php
@@ -153,24 +154,49 @@ assets/icon.svg
 assets/screenshot-1.jpg
 assets/screenshot-2.jpg
 assets/screenshot-3.jpg
+assets/blueprints/blueprint.json
 ```
 
 There is no `trunk/bhranti/bhranti.php`. No ZIP, Astro website, tests, internal docs, Git data or build tools are uploaded to SVN. The action uses `svn copy` from trunk to the version tag and commits trunk, tag and listing images together. WordPress.org generates its own installable ZIP from SVN.
 
 ### Publication safeguards and later releases
 
-- Live publication requires an actual marker increase on `main`, a known previous marker, consistent version metadata, clean source inputs and an exact current remote-main commit. Manual dispatch can never publish.
+- Live publication requires an actual marker increase on `main`, a known previous marker, consistent version metadata, clean source inputs and an exact current remote-main commit. Manual dispatch of the full-release workflow can never publish.
 - Requests are serialized. An unavailable remote, invalid SVN listing, existing/equivalent version or downgrade stops publication. The workflow never treats a network failure as proof that a tag is absent.
 - Both archives are checked for exact paths, duplicate entries, file sizes, symlinks, source bytes and checksums before extraction. The main plugin file and readme must be directly at the deployment root.
 - After the action, the workflow checks the complete local SVN tree. After a live commit, it independently exports and verifies the public version tag and listing images and reads back their MIME properties.
-- The helper contains no SVN commit command. The pinned action is the only live publication step.
+- The full-release helper contains no SVN commit command. The pinned action is the only live publication step in that release workflow.
 
 For a later release, update the runtime version and changelog together, finish testing, and publish the matching GitHub release. Then change `SVN-RELEASE` to that same version and push to `main` to request WordPress.org publication. Do not edit or replace a published code tag.
 
 If a release fails, first inspect whether its SVN tag exists. A failure after a commit, such as a verification network error, must not be treated as permission to publish again. If no tag was created and `main` has not advanced, rerun the failed workflow. If `main` has advanced, validate the new commit and re-arm the request with an inactive `0.0` commit followed by the intended marker; the remote tag/downgrade checks still apply. A real subsequent code update needs a new version.
 
-Listing-only changes after publication need a separate readme/assets maintenance path. Do not manufacture a code release solely to replace a banner. The 10up release action skips an existing version, so it must not be used to overwrite a released tag.
+Listing-only changes after publication use the explicit metadata workflow below. Do not manufacture a code release solely to change directory copy. The 10up release action skips an existing version, so it must not be used to overwrite a released tag.
 
 The GitHub and WordPress.org workflows are intentionally independent: events created by the GitHub release workflow's `GITHUB_TOKEN` do not reliably launch another workflow. A marker push directly triggers SVN publication.
 
 References: [WordPress SVN guidance](https://developer.wordpress.org/plugins/wordpress-org/how-to-use-subversion/), [readme and Stable tag rules](https://developer.wordpress.org/plugins/wordpress-org/how-your-readme-txt-works/), [release confirmation](https://developer.wordpress.org/plugins/wordpress-org/release-confirmation-emails/), and [10up deployment action](https://github.com/10up/action-wordpress-plugin-deploy).
+
+## Update the current listing without a version bump
+
+For cosmetic readme changes and the Playground blueprint, use **Actions → Update WordPress.org listing metadata → Run workflow**. This is separate from the code-release workflow. It never changes `VERSION`, `SVN-RELEASE`, the installed Plugin Name, executable plugin files, screenshots or artwork.
+
+1. Commit and push the reviewed `readme.txt` and `wordpress-org/assets/blueprints/blueprint.json` to `main`. Copy that full commit SHA.
+2. Run the metadata workflow on `main` with that SHA and leave **Publish** unchecked. The default is a dry run with no SVN credentials or commit. Download its artifact and inspect `metadata.diff`, the candidate readme and blueprint, and the before/after SHA-256 inventory in `plan.json`.
+3. Before publishing, sign in to [Bhranti’s Advanced View](https://wordpress.org/plugins/bhranti/advanced/) and check **The Danger Zone → Release Confirmation**. This workflow requires that it is already **Disabled**; the workflow never changes that setting. If it is enabled, leave the released tag alone and include public description changes in a new release instead.
+4. Run the same metadata workflow with the same current `main` SHA, **Publish** checked and **Release Confirmation disabled** checked. Only the final publication step receives the existing `SVN_USERNAME` and `SVN_PASSWORD` secrets.
+5. Check the summary and SVN diff. A single native SVN commit may change only `trunk/readme.txt`, `tags/<current-version>/readme.txt`, and `assets/blueprints/blueprint.json`, plus the blueprint’s parent directory on first publication. No new version tag or GitHub release is created. If the bytes already match, no commit is made. WordPress.org may take time to refresh its listing cache.
+
+The helper verifies the exact current `main` commit, both existing runtime version headers, native SVN status and the complete checked-out file inventory. It stops if the remote plugin changes between preparation and publication, an unexpected path/property appears, or a candidate differs from the selected commit. Keep the default dry run when experimenting. Do not rerun an uncertain publication until SVN has been inspected.
+
+The local regression tests use disposable Git and `file://` SVN repositories and never use WordPress.org credentials:
+
+```sh
+python3 tests/svn-metadata.py
+```
+
+### Playground preview
+
+The blueprint installs the published WordPress.org plugin in a temporary browser sandbox, signs into that sandbox and opens Bhranti Settings with its real sidebar. It does not contain AI credentials, fake chat responses or an extra provider. A compatible native connection is still required to send messages.
+
+After the blueprint is published, open Advanced View, use **Test Preview**, and enable **Live Preview** when satisfied. Public visibility is a separate WordPress.org setting; uploading a valid blueprint does not enable it automatically. See the [official preview guide](https://developer.wordpress.org/plugins/wordpress-org/previews-and-blueprints/).

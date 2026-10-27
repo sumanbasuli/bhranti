@@ -1,6 +1,6 @@
-=== Bhranti ===
+=== Bhranti - AI Agent Harness ===
 Contributors: txsadhu
-Tags: ai, assistant, content, productivity, automation
+Tags: ai, ai-agent, ai-assistant, automation, content
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.0
@@ -8,17 +8,18 @@ Stable tag: 1.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Write content, update pages and handle everyday WordPress tasks with an AI assistant beside your editor.
+Your AI agent for WordPress. Create pages, update content, manage plugins, and automate everyday tasks by simply asking.
 
 == Description ==
 
-Look after your WordPress site through conversation. Ask Bhranti to update opening hours, improve a page's introduction, find an image or add a product. It reads relevant content, makes supported changes and shows what happened.
+Bhranti is an AI agent for WordPress that helps you manage your website through simple conversations.
+Ask it to create a page, update existing content, improve your writing, manage supported plugins, or help set up your WooCommerce store. Bhranti can take action directly on your website instead of just telling you what to do.
 
-Open Bhranti from the admin bar or editor toolbar. Share page or block context and review results beside your work.
+It works alongside the WordPress editor, keeps you informed about changes, and asks for your approval before sensitive actions.
+
+**Less clicking. Less repetitive work. More time to focus on your website.**
 
 Bhranti requires an administrator account, WordPress 7.0 or later, PHP 8.0 or later, and a compatible AI text connection in Settings > Connectors. Optional image generation depends on your connector and model.
-
-Try: "On this draft, shorten the introduction to two sentences. Keep the rest and leave it unpublished."
 
 [Get started with Bhranti](https://bhranti.org/docs/get-started/) for setup and your first request.
 

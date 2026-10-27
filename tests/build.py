@@ -5,6 +5,7 @@ from contextlib import contextmanager, redirect_stdout
 import hashlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import re
 import shutil
@@ -83,6 +84,7 @@ class PackagingTests(unittest.TestCase):
             "skills/wordpress-support/SKILL.md",
         }
         names.update(path.relative_to(ROOT).as_posix() for path in (ROOT / "includes").rglob("*.php"))
+        self.assertEqual(len(names), 58, "Listing metadata must not broaden the runtime inventory")
         expected = {"bhranti/" + name for name in names}
         with zipfile.ZipFile(self.archive) as archive:
             self.assertIsNone(archive.testzip())
@@ -97,11 +99,15 @@ class PackagingTests(unittest.TestCase):
 
     def test_listing_assets_are_separate_from_the_plugin(self):
         files = builder.collect_listing_assets()
+        listing_root = ROOT / "wordpress-org/assets"
+        relative = lambda path: path.relative_to(listing_root).as_posix()
         with zipfile.ZipFile(self.listing) as archive:
             self.assertIsNone(archive.testzip())
-            self.assertEqual(archive.namelist(), [path.name for path in files])
+            self.assertEqual(archive.namelist(), [relative(path) for path in files])
+            self.assertEqual(len(archive.namelist()), 9)
+            self.assertIn("blueprints/blueprint.json", archive.namelist())
             for path in files:
-                self.assertEqual(archive.read(path.name), path.read_bytes())
+                self.assertEqual(archive.read(relative(path)), path.read_bytes())
         names = {path.name for path in files}
         for package in (self.archive, self.versioned):
             with zipfile.ZipFile(package) as archive:
@@ -183,6 +189,60 @@ class PackagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "SVG icon"):
                     builder.collect_listing_assets()
 
+    def test_missing_blueprint_file_or_directory_is_rejected(self):
+        for name in ("blueprints/blueprint.json", "blueprints"):
+            with self.subTest(path=name), fixture() as root:
+                path = root / "wordpress-org/assets" / name
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                with self.assertRaisesRegex(ValueError, "Listing blueprints/"):
+                    builder.collect_listing_assets()
+
+    def test_extra_blueprint_or_unreviewed_nested_asset_is_rejected(self):
+        for name in ("blueprints/extra.json", "blueprints/nested/private.json", "blueprints/.env", "other/blueprint.json", "blueprint.json"):
+            with self.subTest(path=name), fixture() as root:
+                path = root / "wordpress-org/assets" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}")
+                with self.assertRaisesRegex(ValueError, "Listing"):
+                    builder.collect_listing_assets()
+
+    def test_blueprint_must_be_bounded_valid_unique_key_json(self):
+        original = (ROOT / "wordpress-org/assets/blueprints/blueprint.json").read_bytes()
+        for data in (b"", b"not JSON", b"\xff", b"{", b"[]", b"null",
+                     original.replace(b'"networking": true', b'"networking": true, "networking": true'),
+                     original + b" " * builder.LISTING_BLUEPRINT_MAX_BYTES):
+            with self.subTest(data=data[:60]), fixture() as root:
+                (root / "wordpress-org/assets/blueprints/blueprint.json").write_bytes(data)
+                with self.assertRaisesRegex(ValueError, "Listing blueprint"):
+                    builder.collect_listing_assets()
+
+    def test_blueprint_accepts_only_the_reviewed_public_demo_configuration(self):
+        original = json.loads((ROOT / "wordpress-org/assets/blueprints/blueprint.json").read_text())
+        changes = [
+            lambda data: data.pop("landingPage"),
+            lambda data: data.update({"landingPage": "/wp-admin/"}),
+            lambda data: data.update({"credentials": {"password": "private"}}),
+            lambda data: data["preferredVersions"].update({"php": "8.4"}),
+            lambda data: data["preferredVersions"].update({"wp": "7.0"}),
+            lambda data: data["features"].update({"networking": False}),
+            lambda data: data["features"].update({"networking": 1}),
+            lambda data: data["steps"][0]["pluginData"].update({"slug": "other"}),
+            lambda data: data["steps"][0].update({"pluginData": {"resource": "url", "url": "https://example.org/code.zip"}}),
+            lambda data: data["steps"][0]["options"].update({"activate": 1}),
+            lambda data: data["steps"].append({"step": "runPHP", "code": "<?php echo 'remote code';"}),
+            lambda data: data["steps"][1].update({"username": "admin", "password": "private"}),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(change=index), fixture() as root:
+                data = json.loads(json.dumps(original))
+                change(data)
+                (root / "wordpress-org/assets/blueprints/blueprint.json").write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, "reviewed Bhranti Playground configuration"):
+                    builder.collect_listing_assets()
+
     def test_checksums_cover_all_packages(self):
         expected = "".join(
             hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
@@ -229,13 +289,13 @@ class PackagingTests(unittest.TestCase):
                     builder.collect_listing_assets()
 
     def test_symlinked_listing_sources_are_rejected(self):
-        for name in ("wordpress-org", "wordpress-org/assets", "wordpress-org/assets/screenshot-1.jpg", "wordpress-org/assets/banner-772x250.png", "wordpress-org/assets/icon.svg"):
+        for name in ("wordpress-org", "wordpress-org/assets", "wordpress-org/assets/screenshot-1.jpg", "wordpress-org/assets/banner-772x250.png", "wordpress-org/assets/icon.svg", "wordpress-org/assets/blueprints", "wordpress-org/assets/blueprints/blueprint.json"):
             with self.subTest(path=name), fixture() as root:
                 path = root / name
                 original = root / ("original-" + path.name)
                 path.rename(original)
                 path.symlink_to(original, target_is_directory=original.is_dir())
-                with self.assertRaisesRegex(ValueError, "real directory|symlinks"):
+                with self.assertRaisesRegex(ValueError, "real directory|symlinks|symlink"):
                     builder.collect_listing_assets()
 
     def test_metadata_version_mismatch_is_rejected(self):
@@ -369,7 +429,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_nonruntime_files_are_excluded(self):
         with fixture() as root:
-            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "SVN-RELEASE", "SECURITY.md", ".github/workflows/svn-release.yml", "wordpress-org/design/banner.svg", "assets/debug.log", "wordpress-org/assets/screenshot-999.jpg"):
+            for name in (".env", "site/public/private.jpg", "site/node_modules/secret.json", "docs/private.txt", "tests/fixture.php", "scripts/preview-listing.py", "tools/listing-preview/index.html", "tools/listing-preview/private.json", "SVN-RELEASE", "SECURITY.md", ".github/workflows/svn-release.yml", "wordpress-org/design/banner.svg", "assets/debug.log", "wordpress-org/assets/screenshot-999.jpg"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("must never ship")

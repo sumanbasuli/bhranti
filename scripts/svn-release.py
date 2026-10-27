@@ -172,7 +172,8 @@ def prepare(version, plugin_sha, assets_sha, artifact_dir):
     if artifacts.is_symlink() or not artifacts.is_dir():
         fail('Artifact directory must be a real directory')
     plugin = archive_payload(artifacts / ('bhranti-' + version + '.zip'), plugin_sha, expected, 'bhranti/')
-    assets = archive_payload(artifacts / 'wordpress-org-assets.zip', assets_sha, {path.name: path for path in listing}, '')
+    assets = archive_payload(artifacts / 'wordpress-org-assets.zip', assets_sha,
+                             {path.relative_to(ROOT / 'wordpress-org/assets').as_posix(): path for path in listing}, '')
     build = ROOT / 'build'
     if build.is_symlink() or (build.exists() and not build.is_dir()):
         fail('Build directory must not be a symlink')
@@ -216,7 +217,7 @@ def verify_tree(directory, version):
     if version != builder.validate_metadata():
         fail('SVN version does not match the checked source')
     files = {path.relative_to(ROOT).as_posix(): path for path in builder.collect_files()}
-    assets = {path.name: path for path in builder.collect_listing_assets()}
+    assets = {path.relative_to(ROOT / 'wordpress-org/assets').as_posix(): path for path in builder.collect_listing_assets()}
     directory = Path(directory)
     compare_tree(directory / 'trunk', files)
     compare_tree(directory / 'tags' / version, files)
@@ -232,15 +233,26 @@ def verify_remote(version):
         compare_tree(target, {path.relative_to(ROOT).as_posix(): path for path in builder.collect_files()})
         assets = Path(temporary) / 'assets'
         run(['svn', 'export', '--ignore-externals', '--non-interactive', SVN_URL + '/assets', str(assets)])
-        expected = {path.name: path for path in builder.collect_listing_assets()}
+        expected = {path.relative_to(ROOT / 'wordpress-org/assets').as_posix(): path for path in builder.collect_listing_assets()}
         compare_tree(assets, expected)
         properties = run(['svn', 'propget', 'svn:mime-type', '--xml', '--recursive', '--non-interactive', SVN_URL + '/assets'])
         try:
             tree = ET.fromstring(properties)
         except ET.ParseError:
             fail('SVN returned invalid listing MIME properties')
-        actual = {entry.get('path', '').rsplit('/', 1)[-1]: entry.findtext("property[@name='svn:mime-type']") for entry in tree.findall('target')}
-        mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml'}
+        if tree.tag != 'properties':
+            fail('SVN returned invalid listing MIME properties')
+        actual = {}
+        prefix = SVN_URL + '/assets/'
+        for entry in tree.findall('target'):
+            target = entry.get('path', '')
+            if not target.startswith(prefix):
+                fail('SVN returned an unexpected listing MIME target')
+            name = target[len(prefix):]
+            if name not in expected or name in actual:
+                fail('SVN returned an unexpected or duplicate listing MIME target')
+            actual[name] = entry.findtext("property[@name='svn:mime-type']")
+        mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json'}
         if actual != {name: mime[Path(name).suffix] for name in expected}:
             fail('Published listing MIME properties do not match the checked assets')
 

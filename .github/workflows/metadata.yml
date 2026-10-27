@@ -1,0 +1,103 @@
+name: Update WordPress.org listing metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Full current main commit containing the reviewed readme and Playground blueprint'
+        required: true
+        type: string
+      publish:
+        description: 'Publish only the current trunk/tag readmes and Playground blueprint (default: dry run)'
+        required: true
+        default: false
+        type: boolean
+      release_confirmation_disabled:
+        description: 'I verified Release Confirmation is already disabled; this workflow never changes it'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bhranti-wordpress-org
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      METADATA_COMMIT: ${{ inputs.commit }}
+      METADATA_PUBLISH: ${{ inputs.publish }}
+      RELEASE_CONFIRMATION_DISABLED: ${{ inputs.release_confirmation_disabled }}
+    steps:
+      - name: Select the temporary preparation directory
+        run: echo "METADATA_DIRECTORY=$RUNNER_TEMP/bhranti-metadata" >> "$GITHUB_ENV"
+
+      - name: Check out the exact selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the native SVN client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends subversion
+
+      - name: Test metadata safeguards with a disposable local SVN repository
+        run: python3 tests/svn-metadata.py
+
+      - name: Prepare the exact metadata change without credentials
+        run: |
+          python3 scripts/svn-metadata.py prepare \
+            --directory "$METADATA_DIRECTORY" --commit "$METADATA_COMMIT" \
+            --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" --actor "$GITHUB_ACTOR" \
+            --publish "$METADATA_PUBLISH" \
+            --release-confirmation-disabled "$RELEASE_CONFIRMATION_DISABLED"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          plan = json.loads((Path(os.environ['METADATA_DIRECTORY']) / 'report/plan.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('### WordPress.org listing metadata: ' + plan['version'] + '\n\n')
+              for label, key in [('Source commit', 'commit'), ('Requested by', 'actor'), ('SVN baseline revision', 'revision')]:
+                  summary.write(label + ': `' + plan[key] + '`\n\n')
+              summary.write('Mode: ' + ('explicit publication requested' if plan['publish'] else 'dry run; no SVN credentials or commit') + '\n\n')
+              summary.write('Changed files: ' + (', '.join('`' + path + '`' for path in plan['changed']) or 'none') + '\n\n')
+              summary.write('The artifact contains the exact diff, candidate metadata and before/after SHA-256 hashes for every checked-out file.\n')
+          PY
+
+      - name: Retain the exact review artifact before any publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bhranti-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bhranti-metadata/report/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish only the explicitly selected metadata
+        if: inputs.publish && inputs.release_confirmation_disabled
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+        run: |
+          python3 scripts/svn-metadata.py publish \
+            --directory "$METADATA_DIRECTORY" --commit "$METADATA_COMMIT" \
+            --release-confirmation-disabled "$RELEASE_CONFIRMATION_DISABLED"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          result_file = Path(os.environ['METADATA_DIRECTORY']) / 'report/published.json'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              if result_file.exists():
+                  result = json.loads(result_file.read_text())
+                  summary.write('\nVerified metadata-only SVN revision: `' + result['revision'] + '`\n')
+              else:
+                  summary.write('\nMetadata already matches; no SVN commit was needed.\n')
+          PY

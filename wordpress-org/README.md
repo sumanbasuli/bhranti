@@ -1,16 +1,17 @@
 # WordPress.org listing assets
 
-The deployable images live in `assets/`; editable banner source and its export script live in `design/`.
+The deployable images and Playground blueprint live in `assets/`; editable banner source and its export script live in `design/`.
 
 | Asset | Files |
 | --- | --- |
 | Banner | `banner-772x250.png`, `banner-1544x500.png` |
 | Plugin icon | `icon-128x128.png`, `icon-256x256.png`, `icon.svg` |
 | Real screenshots | `screenshot-1.jpg`, `screenshot-2.jpg`, `screenshot-3.jpg` |
+| Playground preview | `blueprints/blueprint.json` |
 
 The artwork uses Bhranti's existing sparkle mark, WordPress blue and charcoal palette. The banner shows a real editor screenshot. Screenshot numbers match the captions in `readme.txt`.
 
-Run `./build.sh` from the repository root to create `build/wordpress-org-assets.zip`. Its images belong in the WordPress.org SVN repository's top-level `assets/` directory, beside `trunk/` and `tags/`. They are excluded from the installable plugin ZIP. See [release instructions](../docs/release.md) and the [official assets guide](https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/).
+Run `./build.sh` from the repository root to create `build/wordpress-org-assets.zip`. Its contents belong in the WordPress.org SVN repository's top-level `assets/` directory, beside `trunk/` and `tags/`. These listing files are excluded from the installable plugin ZIP. The blueprint opens the real Settings and sidebar in a temporary native WordPress sandbox; it contains no provider connection or simulated AI. See the metadata workflow in the release instructions for readme/blueprint updates without a new plugin version. See [release instructions](../docs/release.md) and the [official assets guide](https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/).
 
 ## License and credits
 

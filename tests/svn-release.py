@@ -259,14 +259,18 @@ class ArtifactTests(SourceFixture):
 
     def test_valid_checked_artifacts_restore_exact_svn_root_layout(self):
         expected_plugin = {p.relative_to(self.root).as_posix(): p.read_bytes() for p in release.builder.collect_files()}
-        expected_art = {p.name: p.read_bytes() for p in release.builder.collect_listing_assets()}
+        assets_root = self.root / 'wordpress-org/assets'
+        expected_art = {p.relative_to(assets_root).as_posix(): p.read_bytes() for p in release.builder.collect_listing_assets()}
         result = self.prepare()
         plugin_root = self.root / 'build/bhranti'
         self.assertEqual(result['main_file'], 'build/bhranti/bhranti.php')
         self.assertTrue((plugin_root / 'bhranti.php').is_file())
         self.assertFalse((plugin_root / 'bhranti').exists())
         self.assertEqual({p.relative_to(plugin_root).as_posix(): p.read_bytes() for p in plugin_root.rglob('*') if p.is_file()}, expected_plugin)
-        self.assertEqual({p.name: p.read_bytes() for p in (self.root / 'wordpress-org/assets').iterdir()}, expected_art)
+        self.assertEqual({p.relative_to(assets_root).as_posix(): p.read_bytes() for p in assets_root.rglob('*') if p.is_file()}, expected_art)
+        self.assertEqual((result['plugin_files'], result['listing_files']), (58, 9))
+        self.assertEqual((assets_root / 'blueprints/blueprint.json').read_bytes(), expected_art['blueprints/blueprint.json'])
+        self.assertNotIn('blueprints/blueprint.json', expected_plugin)
 
     def test_wrong_checksum_does_not_change_any_outputs(self):
         before = self.outputs()
@@ -412,13 +416,26 @@ class ArtifactTests(SourceFixture):
                     return '<properties'
                 entries = []
                 for source in release.builder.collect_listing_assets():
-                    mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml'}[source.suffix]
+                    name = source.relative_to(self.root / 'wordpress-org/assets').as_posix()
+                    mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json'}[source.suffix]
                     if source.name == 'banner-772x250.png':
                         if property_failure == 'missing':
                             continue
                         if property_failure == 'wrong':
                             mime = 'application/octet-stream'
-                    entries.append('<target path="' + release.SVN_URL + '/assets/' + source.name + '"><property name="svn:mime-type">' + mime + '</property></target>')
+                    if source.suffix == '.json':
+                        if property_failure == 'json-missing':
+                            continue
+                        if property_failure == 'json-wrong':
+                            mime = 'application/octet-stream'
+                        if property_failure == 'basename':
+                            name = source.name
+                        if property_failure == 'foreign-root':
+                            name = '../outside/' + name
+                    entry = '<target path="' + release.SVN_URL + '/assets/' + name + '"><property name="svn:mime-type">' + mime + '</property></target>'
+                    entries.append(entry)
+                    if property_failure == 'duplicate' and source.suffix == '.json':
+                        entries.append(entry)
                 return '<?xml version="1.0"?><properties>' + ''.join(entries) + '</properties>'
             self.fail('Unexpected remote verification command: ' + repr(command))
         return transport
@@ -433,7 +450,7 @@ class ArtifactTests(SourceFixture):
                     release.verify_remote('1.2')
 
     def test_remote_listing_requires_complete_correct_native_mime_properties(self):
-        for failure in ('wrong', 'missing', 'malformed'):
+        for failure in ('wrong', 'missing', 'malformed', 'json-wrong', 'json-missing', 'basename', 'foreign-root', 'duplicate'):
             with self.subTest(failure=failure), patch.object(release, 'run', side_effect=self.remote_transport(property_failure=failure)):
                 with self.assertRaisesRegex(ValueError, 'MIME'):
                     release.verify_remote('1.2')

@@ -55,6 +55,8 @@ LISTING_PNG_SIZES = {
     "icon-128x128.png": (128, 128),
     "icon-256x256.png": (256, 256),
 }
+LISTING_BLUEPRINT_NAME = "blueprints/blueprint.json"
+LISTING_BLUEPRINT_MAX_BYTES = 10_000
 EXCLUDED_COMPONENTS = {"docs", "tests", "scripts", "node_modules", "build", "__pycache__"}
 
 
@@ -169,8 +171,38 @@ def validate_listing_svg(data):
             fail("Listing SVG icon cannot reference external resources")
 
 
+def validate_listing_blueprint(data):
+    """Accept only the reviewed public demo setup, with no arbitrary code or credentials."""
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                fail("Listing blueprint must not contain duplicate JSON keys")
+            result[key] = value
+        return result
+
+    try:
+        blueprint = json.loads(data.decode("utf-8"), object_pairs_hook=unique_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        fail("Listing blueprint must be valid UTF-8 JSON")
+    expected = {
+        "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+        "landingPage": "/wp-admin/admin.php?page=bhranti&bhranti=1",
+        "preferredVersions": {"php": "8.3", "wp": "latest"},
+        "features": {"networking": True},
+        "steps": [
+            {"step": "installPlugin", "pluginData": {"resource": "wordpress.org/plugins", "slug": "bhranti"},
+             "options": {"activate": True}},
+            {"step": "login"},
+        ],
+    }
+    # JSON serialization distinguishes booleans from integers as well as all keys and values.
+    if json.dumps(blueprint, sort_keys=True) != json.dumps(expected, sort_keys=True):
+        fail("Listing blueprint must match the reviewed Bhranti Playground configuration")
+
+
 def collect_listing_assets():
-    """Match screenshots to their captions and include the reviewed listing artwork."""
+    """Match screenshots to captions and include only reviewed listing assets."""
     readme = (ROOT / "readme.txt").read_text(encoding="utf-8")
     sections = re.findall(r"^== Screenshots ==[ \t]*\r?\n(.*?)(?=^== |\Z)", readme, re.M | re.S)
     if len(sections) != 1:
@@ -185,13 +217,26 @@ def collect_listing_assets():
     files = list(directory.iterdir())
     artwork = set(LISTING_PNG_SIZES) | {"icon.svg"}
     expected = {"screenshot-{}.jpg".format(number) for number in range(1, len(captions) + 1)}
-    if {path.name for path in files} - artwork != expected:
+    if {path.name for path in files} - artwork - {"blueprints"} != expected:
         fail("Listing filenames must match the numbered readme.txt captions and supported artwork names exactly")
     if not artwork.issubset({path.name for path in files}):
         fail("Listing artwork is missing a required banner or icon")
+    blueprints = directory / "blueprints"
+    if blueprints.is_symlink() or not blueprints.is_dir():
+        fail("Listing blueprints/ must be a real directory, not a symlink")
+    blueprint_files = list(blueprints.iterdir())
+    if len(blueprint_files) != 1 or {path.name for path in blueprint_files} != {"blueprint.json"}:
+        fail("Listing blueprints/ must contain only the required blueprint.json")
+    files = [path for path in files if path != blueprints] + blueprint_files
     for path in files:
+        name = path.relative_to(directory).as_posix()
         if path.is_symlink() or not path.is_file():
-            fail("Listing assets must be regular files, not symlinks: " + path.name)
+            fail("Listing assets must be regular files, not symlinks: " + name)
+        if name == LISTING_BLUEPRINT_NAME:
+            if path.stat().st_size > LISTING_BLUEPRINT_MAX_BYTES:
+                fail("Listing blueprint exceeds its 10,000 byte limit")
+            validate_listing_blueprint(path.read_bytes())
+            continue
         limit = 10_000_000 if path.name in expected else 4_000_000 if path.name.startswith("banner-") else 1_000_000
         if path.stat().st_size > limit:
             fail("Listing asset exceeds WordPress.org's {} MB limit: {}".format(limit // 1_000_000, path.name))
@@ -204,7 +249,7 @@ def collect_listing_assets():
         else:
             validate_listing_svg(data)
     print("WordPress.org listing assets and captions: passed ({})".format(len(files)))
-    return sorted(files, key=lambda path: path.name)
+    return sorted(files, key=lambda path: path.relative_to(directory).as_posix())
 
 
 def lint_php(files):

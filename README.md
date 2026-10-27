@@ -74,6 +74,8 @@ The documentation website is built from these Markdown files, with a readable we
 
 Run `./build.sh` to create the installable plugin folder, ZIP and SHA-256 checksums in `build/`. Use `./build.sh --check` for source checks without packaging, or `python3 tests/build.py` for packaging regressions.
 
+Run `python3 scripts/preview-listing.py` and open [127.0.0.1:4331](http://127.0.0.1:4331/) to preview the WordPress.org listing from the current readme and artwork. Save edits and refresh to review them before publishing; no build or WordPress instance is required. See [local preview instructions](docs/listing-preview.md). This development tool stays in the repository and is excluded from both packages and SVN.
+
 See [build and release instructions](docs/release.md), [developer notes and verification](docs/development.md), and the [Astro website README](site/README.md). Website sources, dependencies and development tools are excluded from the installable plugin ZIP.
 
 ## Support and contact
