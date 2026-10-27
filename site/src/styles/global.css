@@ -80,6 +80,12 @@
   .button svg { width: 18px; height: 18px; }
   .button-secondary { background: transparent; color: var(--color-text); border-color: #686e73; }
   .button-secondary:hover { background: var(--color-surface); border-color: var(--color-muted); }
+  .button-preview { background: transparent; color: var(--color-accent); border-color: var(--color-accent); gap: 14px; }
+  .button-preview:hover { background: var(--color-accent); color: var(--color-accent-ink); border-color: var(--color-accent); }
+  .preview-note { margin-top: 14px; max-width: 390px; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
+  .preview-note a { color: var(--color-text); }
+  .end-note .preview-note { margin: 14px 0 0; }
+
   .text-link { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; font-size: 14px; text-decoration: none; }
   .text-link:hover { color: var(--color-accent); }
   .section-label { font-size: 12px; color: var(--color-muted); letter-spacing: .02em; }

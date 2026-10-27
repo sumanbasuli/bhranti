@@ -21,6 +21,8 @@ import { contact } from '../data/contact';
           <p>Download the plugin ZIP, then follow the guide to install Bhranti and connect your AI provider.</p>
           <a class="download-button" href={release.downloadUrl} download>Download Bhranti ZIP <span aria-hidden="true">↓</span></a>
           <p class="download-meta"><span>Version {release.version} · Installable ZIP</span><a href={release.checksumUrl} download>SHA-256 checksum</a></p>
+          <a class="button button-preview" href={release.previewUrl}>Try Live Preview <Arrow direction="diagonal" /></a>
+          <p class="preview-note">Explore a temporary WordPress site in your browser. Connect an AI provider in Settings → Connectors to send messages.</p>
           <a class="hero-link" href="/docs/get-started/">Read the setup guide <Arrow /></a>
         </div>
       </div>
@@ -70,6 +72,9 @@ import { contact } from '../data/contact';
   .download-button { display: flex; justify-content: space-between; align-items: center; gap: 22px; min-height: 58px; margin-top: 30px; padding: 15px 20px; background: var(--color-bg); border: 1px solid var(--color-bg); color: var(--color-text); text-decoration: none; font-size: 15px; font-weight: 500; transition: background-color 150ms; }
   .download-action .download-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 12px; line-height: 1.6; }
   .download-meta a { display: inline-flex; align-items: center; min-height: 24px; }
+  .download-action .button-preview { display: flex; justify-content: space-between; margin-top: 24px; color: var(--color-accent-ink); border-color: currentColor; }
+  .download-action .button-preview:hover { background: #9ec5e8; }
+  .download-action .preview-note { margin-top: 12px; color: var(--color-accent-ink); font-size: 12px; }
   .download-button:hover { background: #333; }
   .download-button > span { font-size: 23px; line-height: 1; }
   .download-button :global(svg), .hero-link :global(svg) { flex-shrink: 0; width: 20px; height: 20px; }

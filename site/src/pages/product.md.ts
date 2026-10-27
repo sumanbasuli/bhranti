@@ -1,4 +1,5 @@
 import { productWalkthrough, siteFooter } from '../data/marketing';
+import { release } from '../data/release';
 
 export function GET() {
   return new Response(`# From “what if” to what’s next.
@@ -143,7 +144,9 @@ Bhranti stores no connector credentials and adds no telemetry. The configured pr
 
 Open the guide, make the connection, and try one clear request on your WordPress site.
 
-[Download Bhranti](/download/) · [All documentation](/docs/)
+[Download Bhranti](/download/) · [Try Live Preview](${release.previewUrl})
+
+Try Bhranti in a temporary WordPress site. Connect an AI provider in Settings → Connectors to send messages. [All documentation](/docs/).
 
 ${siteFooter}
 

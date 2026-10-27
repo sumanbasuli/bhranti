@@ -23,4 +23,5 @@ export const release = {
   checksumUrl: `/downloads/bhranti-${version}.zip.sha256`,
   repositoryUrl: 'https://github.com/sumanbasuli/bhranti',
   wordpressOrgUrl: 'https://wordpress.org/plugins/bhranti/',
+  previewUrl: 'https://wordpress.org/plugins/bhranti/?preview=1',
 };

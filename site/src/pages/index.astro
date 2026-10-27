@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import { release } from '../data/release';
 import Mark from '../components/Mark.astro';
 import Arrow from '../components/Arrow.astro';
 import ProductDemo from '../components/ProductDemo.astro';
@@ -17,8 +18,9 @@ import WordPressMark from '../components/WordPressMark.astro';
       <p class="hero-detail">Content, design, and the everyday work in between. Right beside your editor.</p>
       <div class="hero-actions">
         <a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>
-        <a class="text-link" href="/docs/get-started/">Get started <Arrow /></a>
+        <a class="button button-preview" href={release.previewUrl}>Try Live Preview <Arrow direction="diagonal" /></a>
       </div>
+      <p class="preview-note">Opens a temporary WordPress site in your browser. Connect an AI provider to chat. <a href="/docs/get-started/">Get started</a>.</p>
     </div>
   </section>
 
@@ -120,7 +122,8 @@ import WordPressMark from '../components/WordPressMark.astro';
     <h2 id="start-title">What will you<br /><span class="serif">make next?</span></h2>
     <div>
       <p>Get to know Bhranti, connect your native WordPress AI provider, and start with one useful task.</p>
-      <div class="end-actions"><a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a><a class="text-link" href="/docs/">Read the docs <Arrow /></a></div>
+      <div class="end-actions"><a class="button" href="/download/">Download Bhranti <Arrow direction="diagonal" /></a><a class="button button-preview" href={release.previewUrl}>Try Live Preview <Arrow direction="diagonal" /></a></div>
+      <p class="preview-note">Try Bhranti in a temporary WordPress site, then connect an AI provider when you’re ready to chat. <a href="/docs/">Read the docs</a>.</p>
     </div>
   </section>
 </Base>
@@ -134,8 +137,8 @@ import WordPressMark from '../components/WordPressMark.astro';
   .hero-intro > p:first-child { max-width: 390px; font-size: 20px; line-height: 1.55; letter-spacing: -.025em; }
   .hero-detail { margin-top: 14px; max-width: 360px; color: var(--color-muted); font-size: 14px; }
   .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 23px; margin-top: 28px; }
-  .hero-actions .button { gap: 31px; }
-  .hero-actions .text-link { font-size: 13px; }
+  .hero-actions .button { gap: 14px; }
+  .hero-intro .preview-note { grid-column: 1 / -1; }
   .native-section { display: grid; grid-template-columns: 1fr 1.25fr .8fr; gap: 40px; align-items: center; padding-block: 75px 87px; }
   .native-title { display: flex; gap: 20px; align-items: center; }
   .native-title :global(.wordpress-mark) { display: block; flex-shrink: 0; color: #c3c4c7; }
@@ -236,7 +239,7 @@ import WordPressMark from '../components/WordPressMark.astro';
     .hero-intro > p:first-child { font-size: 18px; max-width: 390px; }
     .hero-detail { margin-top: 12px; max-width: 330px; }
     .hero-actions { gap: 12px 22px; }
-    .hero-actions .button { gap: 25px; }
+    .hero-actions .button { gap: 14px; }
     .native-section { grid-template-columns: 1fr; gap: 24px; padding-block: 50px 58px; }
     .native-section > a { grid-column: auto; margin-top: -12px; }
     .native-title h2 br { display: none; }

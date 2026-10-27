@@ -1,4 +1,5 @@
 import { productWalkthrough, siteFooter } from '../data/marketing';
+import { release } from '../data/release';
 
 export function GET() {
   return new Response(`# More creating. Less clicking.
@@ -9,7 +10,9 @@ Meet Bhranti. Your WordPress-aware assistant for turning a thought into somethin
 
 Content, design, and the everyday work in between. Right beside your editor.
 
-[Download Bhranti](/download/) · [Get started](/docs/get-started/)
+[Download Bhranti](/download/) · [Try Live Preview](${release.previewUrl})
+
+Opens a temporary WordPress site in your browser. Connect an AI provider to chat. [Get started](/docs/get-started/).
 
 ${productWalkthrough}
 
@@ -90,7 +93,9 @@ Give an agent a role. Add your writing style or a repeatable workflow as a Markd
 
 Get to know Bhranti, connect your native WordPress AI provider, and start with one useful task.
 
-[Download Bhranti](/download/) · [Read the docs](/docs/)
+[Download Bhranti](/download/) · [Try Live Preview](${release.previewUrl})
+
+Try Bhranti in a temporary WordPress site, then connect an AI provider when you’re ready to chat. [Read the docs](/docs/).
 
 ${siteFooter}
 

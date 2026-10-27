@@ -17,6 +17,10 @@ Download the plugin ZIP, then follow the guide to install Bhranti and connect yo
 
 Version ${release.version} · Installable ZIP · [SHA-256 checksum](${release.checksumUrl})
 
+[Try Live Preview](${release.previewUrl})
+
+Explore a temporary WordPress site in your browser. Connect an AI provider in Settings → Connectors to send messages.
+
 [Read the setup guide](/docs/get-started/)
 
 Requirements: WordPress ${release.wordpress} · PHP ${release.php} · Administrator access
