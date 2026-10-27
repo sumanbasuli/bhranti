@@ -13,6 +13,7 @@ Your AI agent for WordPress. Create pages, update content, manage plugins, and a
 == Description ==
 
 Bhranti is an AI agent for WordPress that helps you manage your website through simple conversations.
+
 Ask it to create a page, update existing content, improve your writing, manage supported plugins, or help set up your WooCommerce store. Bhranti can take action directly on your website instead of just telling you what to do.
 
 It works alongside the WordPress editor, keeps you informed about changes, and asks for your approval before sensitive actions.
