@@ -1,0 +1,26 @@
+---
+import SocialMark from './SocialMark.astro';
+import Arrow from './Arrow.astro';
+import { socialChannels } from '../data/social';
+interface Props { label?: string; }
+const { label = 'Bhranti social channels' } = Astro.props;
+---
+<nav class="social-links" aria-label={label}>
+  {socialChannels.map((channel) => (
+    <a href={channel.href} target="_blank" rel="noopener noreferrer">
+      <span class="social-icon"><SocialMark platform={channel.id} /></span>
+      <span>{channel.action}</span>
+      <Arrow direction="diagonal" />
+      <span class="sr-only">(opens in a new tab)</span>
+    </a>
+  ))}
+</nav>
+<style>
+  .social-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 28px; }
+  .social-links a { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
+  .social-links a:hover { color: var(--color-accent); }
+  .social-icon { display: inline-flex; align-items: center; color: var(--color-accent); }
+  .social-icon :global(svg) { width: 19px; height: 19px; flex-shrink: 0; }
+  .social-links a > :global(svg) { width: 14px; height: 14px; flex-shrink: 0; color: var(--color-muted); }
+  .social-links a:hover > :global(svg) { color: var(--color-accent); }
+</style>

@@ -17,7 +17,7 @@ import { contactIntro, contactSections } from '../data/contact';
           <div class="contact-details">
             <p>{section.description}</p>
             <div class="contact-links">
-              {section.links.map((link) => <a href={link.href}>{link.label}<Arrow direction="diagonal" /></a>)}
+              {section.links.map((link) => <a href={link.href} target={link.newTab ? '_blank' : undefined} rel={link.newTab ? 'noopener noreferrer' : undefined}>{link.label}{link.newTab && <span class="sr-only">(opens in a new tab)</span>}<Arrow direction="diagonal" /></a>)}
             </div>
           </div>
         </section>

@@ -1,5 +1,6 @@
 import { contact } from './contact';
 import { release } from './release';
+import { socialChannels } from './social';
 
 export const productWalkthrough = `## A small edit. The whole picture.
 
@@ -106,6 +107,8 @@ Bhranti for WordPress ${release.wordpress}.
 - [Contact & support](/contact/)
 
 Say hello: [${contact.generalEmail}](mailto:${contact.generalEmail})
+
+Follow along: ${socialChannels.map((channel) => `[${channel.name}](${channel.href})`).join(' · ')}
 
 Made for WordPress. Made for your ideas.
 

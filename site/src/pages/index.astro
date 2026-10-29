@@ -5,6 +5,8 @@ import Mark from '../components/Mark.astro';
 import Arrow from '../components/Arrow.astro';
 import ProductDemo from '../components/ProductDemo.astro';
 import WordPressMark from '../components/WordPressMark.astro';
+import SocialLinks from '../components/SocialLinks.astro';
+import { socialIntro } from '../data/social';
 ---
 
 <Base title="Bhranti" description="A helping hand for your WordPress. Bhranti brings a context-aware assistant beside your editor, with native actions, visible progress, and you in control." markdownHref="/index.md" active="home" pageClass="home-page">
@@ -26,6 +28,14 @@ import WordPressMark from '../components/WordPressMark.astro';
 
   <section class="container demo-section" aria-label="An illustrative look at Bhranti">
     <ProductDemo />
+  </section>
+
+  <section id="in-action" class="container demo-follow" aria-labelledby="in-action-title">
+    <div>
+      <h2 id="in-action-title">{socialIntro.title}</h2>
+      <p>{socialIntro.description}</p>
+    </div>
+    <SocialLinks label="Watch and follow Bhranti" />
   </section>
 
   <section class="container native-section" aria-labelledby="native-title">
@@ -129,6 +139,12 @@ import WordPressMark from '../components/WordPressMark.astro';
 </Base>
 
 <style>
+  .demo-follow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 28px; padding-block: 30px 38px; border-bottom: 1px solid var(--color-soft-border); }
+  .demo-follow h2 { font-size: 25px; line-height: 1.25; letter-spacing: -.03em; }
+  .demo-follow p { margin-top: 8px; max-width: 510px; font-size: 14px; color: var(--color-muted); }
+  @media (max-width: 900px) {
+    .demo-follow { grid-template-columns: 1fr; gap: 16px; padding-block: 26px 32px; }
+  }
   .hero { display: grid; grid-template-columns: 1.5fr 1fr; column-gap: 68px; padding-top: 92px; padding-bottom: 76px; align-items: end; }
   .hero .eyebrow { margin-bottom: 28px; }
   .hero h1 { font-size: clamp(3.5rem, 6.45vw, 5.55rem); line-height: 1.04; letter-spacing: -.065em; }

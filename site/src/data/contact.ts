@@ -1,3 +1,5 @@
+import { socialChannels } from './social';
+
 export const contact = {
   supportUrl: 'https://wordpress.org/support/plugin/bhranti/',
   generalEmail: 'hey@bhranti.org',
@@ -7,7 +9,10 @@ export const contact = {
 
 export const contactIntro = 'A question, an idea, or something not working? Here’s where to reach us.';
 
-export const contactSections = [
+interface ContactLink { label: string; href: string; newTab?: boolean; }
+interface ContactSection { id: string; title: string; description: string; links: ContactLink[]; }
+
+export const contactSections: ContactSection[] = [
   {
     id: 'plugin-support',
     title: 'Plugin support',
@@ -28,5 +33,11 @@ export const contactSections = [
       { label: contact.securityEmail, href: `mailto:${contact.securityEmail}` },
       { label: 'Report privately on GitHub', href: contact.privateReportUrl },
     ],
+  },
+  {
+    id: 'watch-and-follow',
+    title: 'Watch & follow',
+    description: 'See Bhranti at work, pick up a useful idea, and follow what’s taking shape.',
+    links: socialChannels.map((channel) => ({ label: channel.action, href: channel.href, newTab: true })),
   },
 ];

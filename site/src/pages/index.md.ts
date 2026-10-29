@@ -1,5 +1,6 @@
 import { productWalkthrough, siteFooter } from '../data/marketing';
 import { release } from '../data/release';
+import { socialIntro, socialChannels } from '../data/social';
 
 export function GET() {
   return new Response(`# More creating. Less clicking.
@@ -15,6 +16,12 @@ Content, design, and the everyday work in between. Right beside your editor.
 Opens a temporary WordPress site in your browser. Connect an AI provider to chat. [Get started](/docs/get-started/).
 
 ${productWalkthrough}
+
+## ${socialIntro.title}
+
+${socialIntro.description}
+
+${socialChannels.map((channel) => `[${channel.action}](${channel.href})`).join(' · ')}
 
 ## At home in WordPress.
 

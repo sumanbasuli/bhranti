@@ -5,6 +5,7 @@ import GitHubMark from '../components/GitHubMark.astro';
 import Arrow from '../components/Arrow.astro';
 import { release } from '../data/release';
 import { contact } from '../data/contact';
+import SocialLinks from '../components/SocialLinks.astro';
 
 interface Props {
   title: string;
@@ -76,6 +77,10 @@ const pageTitle = title === 'Bhranti' ? 'Bhranti — A helping hand for WordPres
             <a href={contact.supportUrl}>Plugin support <Arrow direction="diagonal" /></a>
           </div>
           <p class="footer-contact">Say hello: <a href={`mailto:${contact.generalEmail}`}>{contact.generalEmail}</a></p>
+          <div class="footer-social">
+            <p class="footer-social-label">Follow along</p>
+            <SocialLinks />
+          </div>
         </div>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="/download/">Download Bhranti <Arrow direction="diagonal" /></a>
